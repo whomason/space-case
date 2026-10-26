@@ -8,7 +8,7 @@ function frame(now) {
   T_NOW += dt; IN.cursor = 'default';
   let gdt = dt; if (FX.hitstop > 0) { FX.hitstop -= dt; gdt = dt * 0.05; } else if (FX.slowmo > 0) { FX.slowmo -= dt; gdt = dt * 0.35; }
   FX.shake = Math.max(0, FX.shake - dt * 18);
-  try { netTick(dt); } catch (e) { console.error(e); }
+  try { netTick(dt); duelTick(dt); } catch (e) { console.error(e); }
   const modal = NAMEUI.open || !!NET.choice;
   let held = null; if (modal) { held = { pr: IN.pr, kp: new Set(IN.kp), mx: IN.mx, my: IN.my, wheel: IN.wheel, down: IN.down }; IN.pr = false; IN.kp.clear(); IN.wheel = 0; IN.mx = -999; IN.my = -999; IN.down = false; }
   ctx.save();
@@ -24,6 +24,7 @@ function frame(now) {
       case 'map': drawMap(dt); break;
       case 'warp': drawWarp(dt); break;
       case 'range': updateRange(gdt); if (RANGE) drawRange(dt); break;
+      case 'arena': arUpdate(dt); if (AM) arDraw(dt); break;
     }
   } catch (e) { console.error(e); if (!ERR || ERR.message !== e.message) ERR_T = 0; ERR = e; }
   ctx.restore();
@@ -34,7 +35,7 @@ function frame(now) {
   drawToasts(dt);
   drawTip();
   if (ERR) { ERR_T += 1 / 60; if (ERR_T > 5) { ERR = null; } else if (SCENE !== 'title') text('ERROR: ' + String(ERR.message || ERR).slice(0, 70), 4, H - 8, '#f55', FS); }
-  cvs.style.cursor = ((SCENE === 'planet' && RUN && !RUN.paused && !RUN.choice) || (SCENE === 'range' && IN.my > 24 && IN.my < H - 26)) ? 'none' : IN.cursor;
+  cvs.style.cursor = ((SCENE === 'planet' && RUN && !RUN.paused && !RUN.choice) || (SCENE === 'range' && IN.my > 24 && IN.my < H - 26) || (SCENE === 'arena' && AM && !AM.menu && !AM.ended)) ? 'none' : IN.cursor;
   endInput();
   requestAnimationFrame(frame);
 }

@@ -112,6 +112,7 @@ create table if not exists public.deliveries (
   claimed_at  timestamptz
 );
 create index if not exists deliveries_open on public.deliveries (user_id) where claimed_at is null;
+alter table public.deliveries add column if not exists crates jsonb not null default '[]'::jsonb;  -- free crate tiers (arena rewards)
 
 -- ------------------------------------------------- read rules (RLS)
 alter table public.profiles      enable row level security;
@@ -372,7 +373,8 @@ begin
   select * into f from public.friendships where a = least(uid, them) and b = greatest(uid, them);
   return sc_private.card(them) || jsonb_build_object('loadout', p.loadout, 'showcase', p.showcase, 'stats', p.stats,
     'friend', case when f is null then 'none' when f.status = 'accepted' then 'friends' when f.requested_by = uid then 'sent' else 'incoming' end,
-    'me', them = uid);
+    'me', them = uid,
+    'arena', (select jsonb_build_object('trophies', a.trophies, 'kills', a.kills, 'deaths', a.deaths, 'best_streak', a.best_streak, 'duels_won', a.duels_won, 'duels_lost', a.duels_lost) from public.arena_stats a where a.user_id = them));
 end $$;
 
 create or replace function public.search_players(p_query text) returns jsonb
@@ -667,9 +669,13 @@ begin
   d := s.data;
   for m in select * from public.deliveries where user_id = uid and claimed_at is null order by id for update skip locked loop
     d := sc_private.grant_items(d, m.items, m.coins);
+    if jsonb_array_length(coalesce(m.crates, '[]'::jsonb)) > 0 then
+      if jsonb_typeof(d -> 'choiceQueue') is distinct from 'array' then d := jsonb_set(d, '{choiceQueue}', '[]'::jsonb); end if;
+      d := jsonb_set(d, '{choiceQueue}', (d -> 'choiceQueue') || (select coalesce(jsonb_agg(jsonb_build_object('tier', least(7, greatest(0, (t #>> '{}')::int)), 'title', 'ARENA CRATE')), '[]'::jsonb) from jsonb_array_elements(m.crates) t));
+    end if;
     update public.deliveries set claimed_at = now() where id = m.id;
     got := got || jsonb_build_array(jsonb_build_object('items', (select coalesce(jsonb_agg(k), '[]'::jsonb) from jsonb_object_keys(m.items) k),
-      'coins', m.coins, 'reason', m.reason, 'from', (select callsign from public.profiles where id = m.from_user)));
+      'coins', m.coins, 'crates', jsonb_array_length(coalesce(m.crates, '[]'::jsonb)), 'reason', m.reason, 'from', (select callsign from public.profiles where id = m.from_user)));
   end loop;
   if jsonb_array_length(got) = 0 then return jsonb_build_object('got', got, 'version', s.version); end if;
   update public.saves set data = d, version = s.version + 1, econ_ver = s.version + 1, updated_at = now() where user_id = uid;
@@ -705,6 +711,319 @@ begin
     'mail', (select count(*) from public.deliveries where user_id = uid and claimed_at is null));
 end $$;
 
+-- =====================================================================
+-- ARENAS, 1V1 DUELS, TROPHIES AND LEADERBOARDS
+-- Matches run on players' devices (with AI pilots filling empty spots);
+-- the server keeps the records, checks reports against time limits and
+-- pays out coins, crates and trophies through the mailbox.
+-- =====================================================================
+create table if not exists public.arena_stats (
+  user_id      uuid primary key references public.profiles(id) on delete cascade,
+  kills        int not null default 0,
+  deaths       int not null default 0,
+  best_streak  int not null default 0,
+  trophies     int not null default 0,
+  duels_won    int not null default 0,
+  duels_lost   int not null default 0,
+  ranked_won   int not null default 0,
+  ranked_lost  int not null default 0,
+  updated_at   timestamptz not null default now()
+);
+create index if not exists arena_stats_trophies on public.arena_stats (trophies desc);
+create index if not exists arena_stats_kills on public.arena_stats (kills desc);
+
+create table if not exists public.arena_servers (
+  id          text primary key,
+  name        text not null,
+  private     boolean not null default false,
+  code        text unique,
+  owner       uuid references public.profiles(id) on delete cascade,
+  theme       int not null default 1,
+  created_at  timestamptz not null default now()
+);
+insert into public.arena_servers (id, name, theme) values
+  ('alpha', 'ALPHA STATION', 3), ('bravo', 'BRAVO RING', 8), ('nova', 'NOVA PIT', 14), ('void', 'VOID DOME', 20)
+  on conflict (id) do nothing;
+
+create table if not exists public.arena_presence (
+  user_id      uuid primary key references public.profiles(id) on delete cascade,
+  server_id    text not null references public.arena_servers(id) on delete cascade,
+  joined_at    timestamptz not null default now(),
+  last_seen    timestamptz not null default now(),
+  reported_at  timestamptz not null default now()
+);
+create index if not exists arena_presence_server on public.arena_presence (server_id, last_seen);
+
+create table if not exists public.duel_queue (
+  user_id     uuid primary key references public.profiles(id) on delete cascade,
+  ranked      boolean not null,
+  trophies    int not null default 0,
+  created_at  timestamptz not null default now(),
+  match_id    uuid
+);
+
+create table if not exists public.duels (
+  id          uuid primary key default gen_random_uuid(),
+  a           uuid not null references public.profiles(id) on delete cascade,
+  b           uuid references public.profiles(id) on delete cascade,   -- null: an AI pilot
+  ranked      boolean not null,
+  created_at  timestamptz not null default now(),
+  a_result    text check (a_result in ('win', 'loss')),
+  b_result    text check (b_result in ('win', 'loss')),
+  done        boolean not null default false,
+  winner      uuid
+);
+alter table public.duels add column if not exists a_change int;
+alter table public.duels add column if not exists b_change int;
+
+-- these tables are only reached through the functions below
+alter table public.arena_stats    enable row level security;
+alter table public.arena_servers  enable row level security;
+alter table public.arena_presence enable row level security;
+alter table public.duel_queue     enable row level security;
+alter table public.duels          enable row level security;
+revoke all on public.arena_stats, public.arena_servers, public.arena_presence, public.duel_queue, public.duels from anon, authenticated;
+
+-- ranks by trophies
+create or replace function sc_private.rank_of(t int) returns text language sql immutable set search_path = '' as $$
+  select case when t >= 6000 then 'GALACTIC' when t >= 3500 then 'MASTER' when t >= 2000 then 'DIAMOND' when t >= 1000 then 'PLATINUM'
+              when t >= 500 then 'GOLD' when t >= 200 then 'SILVER' when t >= 50 then 'BRONZE' else 'ROOKIE' end
+$$;
+create or replace function sc_private.rank_idx(t int) returns int language sql immutable set search_path = '' as $$
+  select case when t >= 6000 then 7 when t >= 3500 then 6 when t >= 2000 then 5 when t >= 1000 then 4 when t >= 500 then 3 when t >= 200 then 2 when t >= 50 then 1 else 0 end
+$$;
+create or replace function sc_private.astats(uid uuid) returns public.arena_stats language plpgsql volatile set search_path = '' as $$
+declare r public.arena_stats;
+begin
+  insert into public.arena_stats (user_id) values (uid) on conflict (user_id) do nothing;
+  select * into r from public.arena_stats where user_id = uid for update;
+  return r;
+end $$;
+create or replace function sc_private.humans_in(sid text) returns int language sql stable set search_path = '' as $$
+  select count(*)::int from public.arena_presence where server_id = sid and last_seen > now() - interval '25 seconds'
+$$;
+create or replace function sc_private.arena_cap() returns int language sql immutable set search_path = '' as $$ select 5 $$;  -- real players per arena (free Supabase plan)
+
+-- ------------------------------------------------------------ arenas
+create or replace function public.arena_list() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me();
+begin
+  return (select coalesce(jsonb_agg(x order by (x ->> 'private')::boolean, x ->> 'name'), '[]'::jsonb) from (
+    select jsonb_build_object('id', s.id, 'name', s.name, 'private', s.private, 'theme', s.theme, 'humans', sc_private.humans_in(s.id), 'cap', sc_private.arena_cap(),
+      'owner', (select callsign from public.profiles where id = s.owner), 'mine', s.owner = uid, 'code', case when s.owner = uid then s.code else null end,
+      'players', (select coalesce(jsonb_agg(p.callsign), '[]'::jsonb) from public.arena_presence ap join public.profiles p on p.id = ap.user_id where ap.server_id = s.id and ap.last_seen > now() - interval '25 seconds')) as x
+    from public.arena_servers s
+    where not s.private or s.owner = uid
+       or exists (select 1 from public.friendships f where f.status = 'accepted' and f.a = least(uid, s.owner) and f.b = greatest(uid, s.owner))) q);
+end $$;
+
+create or replace function public.arena_create(p_name text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); nm text := left(sc_private.clean_name(p_name), 16); sid text; cd text;
+begin
+  if (select callsign from public.profiles where id = uid) is null then raise exception 'SET A CALLSIGN FIRST'; end if;
+  if char_length(nm) < 3 then raise exception 'SERVER NAMES ARE 3-16 CHARACTERS'; end if;
+  if sc_private.bad_name(nm) then raise exception 'PICK A FRIENDLIER NAME'; end if;
+  delete from public.arena_servers where owner = uid and private;   -- one private server each
+  sid := 'p' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 11);
+  cd := upper(translate(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6), '01', '89'));
+  insert into public.arena_servers (id, name, private, code, owner, theme) values (sid, nm, true, cd, uid, 1 + floor(random() * 20)::int);
+  return jsonb_build_object('id', sid, 'code', cd, 'name', nm);
+end $$;
+
+create or replace function public.arena_join(p_server text, p_code text default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); s record; n int;
+begin
+  if (select callsign from public.profiles where id = uid) is null then raise exception 'SET A CALLSIGN FIRST'; end if;
+  if p_code is not null and p_code <> '' then select * into s from public.arena_servers where code = upper(btrim(p_code));
+  else select * into s from public.arena_servers where id = p_server; end if;
+  if not found then raise exception 'NO SERVER WITH THAT CODE'; end if;
+  if s.private and s.owner <> uid and coalesce(upper(btrim(p_code)), '') <> s.code
+     and not exists (select 1 from public.friendships f where f.status = 'accepted' and f.a = least(uid, s.owner) and f.b = greatest(uid, s.owner)) then
+    raise exception 'THAT SERVER IS PRIVATE';
+  end if;
+  n := (select count(*) from public.arena_presence where server_id = s.id and user_id <> uid and last_seen > now() - interval '25 seconds');
+  if n >= sc_private.arena_cap() then raise exception 'SERVER FULL. TRY ANOTHER'; end if;
+  insert into public.arena_presence (user_id, server_id) values (uid, s.id)
+    on conflict (user_id) do update set server_id = excluded.server_id, joined_at = now(), last_seen = now(), reported_at = now();
+  perform sc_private.astats(uid);
+  return jsonb_build_object('id', s.id, 'name', s.name, 'theme', s.theme, 'private', s.private, 'code', case when s.owner = uid then s.code else null end);
+end $$;
+
+create or replace function public.arena_ping(p_server text) returns int
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me();
+begin
+  update public.arena_presence set last_seen = now() where user_id = uid and server_id = p_server;
+  update public.profiles set last_seen = now() where id = uid;
+  return sc_private.humans_in(p_server);
+end $$;
+
+create or replace function public.arena_leave() returns void
+language sql security definer set search_path = '' as $$
+  delete from public.arena_presence where user_id = auth.uid()
+$$;
+
+-- kills since the last report. Limited by the time that passed, so nobody can claim more than they could have done.
+create or replace function public.arena_report(p_server text, p_kills int, p_human_kills int, p_deaths int, p_streak int) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); pr record; st public.arena_stats; secs numeric; k int; hk int; dth int; coins int; tro int; crates jsonb := '[]'::jsonb; i int; tier int;
+begin
+  select * into pr from public.arena_presence where user_id = uid and server_id = p_server for update;
+  if not found then raise exception 'NOT IN THAT ARENA'; end if;
+  secs := extract(epoch from now() - pr.reported_at);
+  k := least(greatest(coalesce(p_kills, 0), 0), floor(secs / 1.2)::int + 2);
+  hk := least(greatest(coalesce(p_human_kills, 0), 0), k);
+  dth := least(greatest(coalesce(p_deaths, 0), 0), floor(secs / 2)::int + 2);
+  update public.arena_presence set reported_at = now(), last_seen = now() where user_id = uid;
+  st := sc_private.astats(uid);
+  coins := (k - hk) * 20 + hk * 60;
+  tro := k + hk * 2;
+  tier := least(6, 2 + sc_private.rank_idx(st.trophies) / 2);
+  for i in 1..k loop
+    if jsonb_array_length(crates) < 3 and random() < (case when i <= hk then 0.10 else 0.03 end) then crates := crates || to_jsonb(tier); end if;
+  end loop;
+  update public.arena_stats set kills = kills + k, deaths = deaths + dth, trophies = trophies + tro,
+    best_streak = greatest(best_streak, least(greatest(coalesce(p_streak, 0), 0), kills + k)), updated_at = now() where user_id = uid;
+  if coins > 0 or jsonb_array_length(crates) > 0 then
+    insert into public.deliveries (user_id, coins, crates, reason) values (uid, coins, crates, 'arena kills');
+  end if;
+  return jsonb_build_object('kills', k, 'coins', coins, 'crates', jsonb_array_length(crates), 'trophies_gained', tro, 'trophies', st.trophies + tro, 'rank', sc_private.rank_of(st.trophies + tro));
+end $$;
+
+-- ------------------------------------------------------------ 1v1 duels
+create or replace function public.duel_find(p_ranked boolean) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); q record; o record; st public.arena_stats; mid uuid; dl record; waited numeric;
+begin
+  if (select callsign from public.profiles where id = uid) is null then raise exception 'SET A CALLSIGN FIRST'; end if;
+  delete from public.duel_queue where created_at < now() - interval '3 minutes' and user_id <> uid;
+  st := sc_private.astats(uid);
+  insert into public.duel_queue (user_id, ranked, trophies) values (uid, coalesce(p_ranked, false), st.trophies)
+    on conflict (user_id) do update set ranked = excluded.ranked, trophies = excluded.trophies,
+      created_at = case when public.duel_queue.match_id is null and public.duel_queue.ranked = excluded.ranked then public.duel_queue.created_at else now() end;
+  select * into q from public.duel_queue where user_id = uid for update;
+  if q.match_id is not null then
+    select * into dl from public.duels where id = q.match_id;
+    delete from public.duel_queue where user_id = uid;
+    return jsonb_build_object('match', dl.id, 'host', dl.a = uid, 'ranked', dl.ranked, 'opponent', sc_private.card(case when dl.a = uid then dl.b else dl.a end));
+  end if;
+  waited := extract(epoch from now() - q.created_at);
+  select * into o from public.duel_queue
+    where user_id <> uid and match_id is null and ranked = q.ranked and created_at > now() - interval '40 seconds'
+      and abs(trophies - q.trophies) <= 150 + 30 * waited
+    order by created_at limit 1 for update skip locked;
+  if not found then return jsonb_build_object('waiting', true, 'waited', floor(waited)); end if;
+  insert into public.duels (a, b, ranked) values (o.user_id, uid, q.ranked) returning id into mid;
+  update public.duel_queue set match_id = mid where user_id = o.user_id;
+  delete from public.duel_queue where user_id = uid;
+  return jsonb_build_object('match', mid, 'host', false, 'ranked', q.ranked, 'opponent', sc_private.card(o.user_id));
+end $$;
+
+create or replace function public.duel_cancel() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); q record; dl record;
+begin
+  select * into q from public.duel_queue where user_id = uid for update;
+  if not found then return jsonb_build_object('cancelled', true); end if;
+  if q.match_id is not null then   -- someone found us at the last second
+    select * into dl from public.duels where id = q.match_id; delete from public.duel_queue where user_id = uid;
+    return jsonb_build_object('match', dl.id, 'host', dl.a = uid, 'ranked', dl.ranked, 'opponent', sc_private.card(case when dl.a = uid then dl.b else dl.a end));
+  end if;
+  delete from public.duel_queue where user_id = uid;
+  return jsonb_build_object('cancelled', true);
+end $$;
+
+create or replace function public.duel_ai(p_ranked boolean) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); mid uuid;
+begin
+  delete from public.duel_queue where user_id = uid;
+  perform sc_private.astats(uid);
+  insert into public.duels (a, b, ranked) values (uid, null, coalesce(p_ranked, false)) returning id into mid;
+  return jsonb_build_object('match', mid, 'host', true, 'ranked', coalesce(p_ranked, false));
+end $$;
+
+create or replace function sc_private.duel_settle(uid uuid, won boolean, ranked boolean, vs_ai boolean) returns jsonb language plpgsql volatile set search_path = '' as $$
+declare st public.arena_stats; dt int := 0; coins int;
+begin
+  st := sc_private.astats(uid);
+  if ranked then dt := case when won then (case when vs_ai then 14 else 30 end) else -(case when vs_ai then 8 else 15 end) end; end if;
+  dt := greatest(dt, -st.trophies);
+  update public.arena_stats set trophies = trophies + dt,
+    duels_won = duels_won + (case when won then 1 else 0 end), duels_lost = duels_lost + (case when won then 0 else 1 end),
+    ranked_won = ranked_won + (case when ranked and won then 1 else 0 end), ranked_lost = ranked_lost + (case when ranked and not won then 1 else 0 end), updated_at = now()
+    where user_id = uid;
+  coins := case when won then (case when vs_ai then 80 else 200 end) else (case when vs_ai then 25 else 60 end) end;
+  insert into public.deliveries (user_id, coins, crates, reason) values (uid, coins,
+    case when won and ranked and random() < 0.35 then jsonb_build_array(least(6, 2 + sc_private.rank_idx(st.trophies + dt) / 2)) else '[]'::jsonb end, case when won then 'duel won' else 'duel played' end);
+  return jsonb_build_object('won', won, 'trophy_change', dt, 'trophies', st.trophies + dt, 'rank', sc_private.rank_of(st.trophies + dt), 'coins', coins);
+end $$;
+
+create or replace function public.duel_report(p_match uuid, p_won boolean) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); dl record; mine text := case when p_won then 'win' else 'loss' end; other text; res jsonb; oth jsonb;
+begin
+  select * into dl from public.duels where id = p_match for update;
+  if not found or uid not in (dl.a, coalesce(dl.b, dl.a)) then raise exception 'NOT YOUR MATCH'; end if;
+  if dl.done then
+    return jsonb_build_object('done', true, 'won', dl.winner is not null and dl.winner = uid, 'disputed', dl.winner is null and dl.b is not null,
+      'trophy_change', coalesce(case when uid = dl.a then dl.a_change else dl.b_change end, 0),
+      'trophies', (select trophies from public.arena_stats where user_id = uid), 'rank', sc_private.rank_of(coalesce((select trophies from public.arena_stats where user_id = uid), 0)));
+  end if;
+  if dl.created_at < now() - interval '30 minutes' then raise exception 'THAT MATCH IS TOO OLD'; end if;
+  if uid = dl.a then update public.duels set a_result = mine where id = dl.id; other := dl.b_result;
+  else update public.duels set b_result = mine where id = dl.id; other := dl.a_result; end if;
+  if dl.b is null then   -- against an AI pilot
+    res := sc_private.duel_settle(uid, p_won, dl.ranked, true);
+    update public.duels set done = true, winner = case when p_won then uid else null end, a_change = (res ->> 'trophy_change')::int where id = dl.id;
+    return jsonb_build_object('done', true) || res;
+  end if;
+  if other is null and not (mine = 'loss' or dl.created_at < now() - interval '4 minutes') then
+    return jsonb_build_object('done', false, 'pending', true);
+  end if;
+  update public.duels set done = true where id = dl.id;
+  if other is not null and other = mine then return jsonb_build_object('done', true, 'disputed', true); end if;   -- both claim the same: nobody gains
+  if p_won then update public.duels set winner = uid where id = dl.id; else update public.duels set winner = case when uid = dl.a then dl.b else dl.a end where id = dl.id; end if;
+  res := sc_private.duel_settle(uid, p_won, dl.ranked, false);
+  oth := sc_private.duel_settle(case when uid = dl.a then dl.b else dl.a end, not p_won, dl.ranked, false);
+  update public.duels set a_change = case when uid = dl.a then (res ->> 'trophy_change')::int else (oth ->> 'trophy_change')::int end,
+                          b_change = case when uid = dl.a then (oth ->> 'trophy_change')::int else (res ->> 'trophy_change')::int end where id = dl.id;
+  return jsonb_build_object('done', true) || res;
+end $$;
+
+-- ------------------------------------------------------- leaderboards
+create or replace function public.leaderboard(p_kind text default 'trophies') returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); col text := case p_kind when 'kills' then 'kills' when 'streak' then 'best_streak' when 'duels' then 'ranked_won' else 'trophies' end; top jsonb; me jsonb;
+begin
+  execute format($q$select coalesce(jsonb_agg(jsonb_build_object('callsign', p.callsign, 'value', a.%1$I, 'rank', sc_private.rank_of(a.trophies),
+      'crew', (select c.tag from public.crew_members m join public.crews c on c.id = m.crew_id where m.user_id = a.user_id), 'me', a.user_id = $1) order by a.%1$I desc, a.updated_at), '[]'::jsonb)
+    from (select * from public.arena_stats order by %1$I desc, updated_at limit 50) a join public.profiles p on p.id = a.user_id where p.callsign is not null$q$, col) into top using uid;
+  execute format($q$select jsonb_build_object('value', a.%1$I, 'place', (select count(*) + 1 from public.arena_stats b where b.%1$I > a.%1$I)) from public.arena_stats a where a.user_id = $1$q$, col) into me using uid;
+  return jsonb_build_object('kind', col, 'top', top, 'me', me);
+end $$;
+
+create or replace function public.my_arena() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); st public.arena_stats;
+begin
+  st := sc_private.astats(uid);
+  return to_jsonb(st) - 'user_id' || jsonb_build_object('rank', sc_private.rank_of(st.trophies), 'rank_idx', sc_private.rank_idx(st.trophies));
+end $$;
+
+-- how busy it is: real players online, plus the AI pilots flying in arenas that are running right now
+create or replace function public.online_counts() returns jsonb
+language sql security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'online', (select count(*) from public.profiles where last_seen > now() - interval '90 seconds'),
+    'in_arenas', (select count(*) from public.arena_presence where last_seen > now() - interval '25 seconds'),
+    'ai', (select coalesce(sum(greatest(0, 20 - h)), 0) from (select count(*) as h from public.arena_presence where last_seen > now() - interval '25 seconds' group by server_id) x)
+         + (select count(*) from public.duels where b is null and not done and created_at > now() - interval '5 minutes'))
+$$;
+
 -- ------------------------------------------------- who may call what
 do $$
 declare f record;
@@ -718,7 +1037,9 @@ begin
            where n.nspname = 'public' and p.proname in ('init_player', 'save_game', 'load_game', 'touch', 'set_callsign', 'get_profile', 'search_players',
              'friend_request', 'friend_respond', 'friend_remove', 'crew_create', 'crew_join', 'crew_decline_invite', 'crew_leave', 'crew_kick',
              'crew_set_role', 'crew_transfer', 'crew_invite', 'crew_respond', 'crew_update', 'crew_list', 'crew_view',
-             'trade_propose', 'trade_accept', 'trade_decline', 'trade_inventory', 'claim_mail', 'my_social') loop
+             'trade_propose', 'trade_accept', 'trade_decline', 'trade_inventory', 'claim_mail', 'my_social',
+             'arena_list', 'arena_create', 'arena_join', 'arena_ping', 'arena_leave', 'arena_report',
+             'duel_find', 'duel_cancel', 'duel_ai', 'duel_report', 'leaderboard', 'my_arena', 'online_counts') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
   end loop;

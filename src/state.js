@@ -1,5 +1,5 @@
 // ===== STATE: save data, inventory, loadout, economy, crate rolls, goals =====
-const SAVE_KEY = 'spacecase.save.v1';
+const SAVE_KEY = 'spacecase.save.v1' + TEST_NS;
 let S = null, DIRTY = false;
 const SLOTS_GEAR = ['weapon', 'tool', 'helmet', 'chest', 'boots', 'jetpack', 'o2'];
 const SLOTS_SHIP = ['engine', 'hull', 'cargo', 'scanner', 'shield'];

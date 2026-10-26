@@ -9,6 +9,7 @@ const NAV = [
   { id: 'workshop', n: 'WORKSHOP', sub: 'BLUEPRINTS, EVOLUTIONS AND ARTIFACTS', icon: 'wrench' },
   { id: 'profile', n: 'PROFILE', sub: 'SKILLS, TITLES AND STATS', icon: 'star' },
   { id: 'mining', n: 'MINING', sub: 'AUTO-MINERS EARN COINS WHILE YOU ARE AWAY', icon: 'pick' },
+  { id: 'arena', n: 'ARENA', sub: 'FFA SERVERS, 1V1 DUELS, TROPHIES AND RANKS', icon: 'swords' },
 ];
 const ICONS = {
   rocket: '.....#.....|....###....|....#.#....|...#####...|...##.##...|...#####...|...#####...|..#######..|.##.###.##.|.#..#.#..#.|....#.#....',
@@ -19,6 +20,7 @@ const ICONS = {
   wrench: '.......###.|......#..#.|......#....|.....###..#|....###.##.|...###.....|..###......|.###.......|###........|##.........',
   star: '.....#.....|.....#.....|....###....|###########|.#########.|..#######..|..###.###..|.###...###.|.#.......#.',
   pick: '..#######..|.#...#...#.|#....#....#|.....#.....|.....#.....|.....#.....|.....#.....|....###....',
+  swords: '#.........#|.#.......#.|..#.....#..|...#...#...|....#.#....|.....#.....|....#.#....|.##.....##.|##.......##',
 };
 function drawIcon(name, x, y, c, sc = 1) { const rows = ICONS[name].split('|'); ctx.fillStyle = c; rows.forEach((r, yy) => { for (let xx = 0; xx < r.length; xx++) if (r[xx] === '#') ctx.fillRect(Math.floor(x) + xx * sc, Math.floor(y) + yy * sc, sc, sc); }); }
 function openStation(id) {
@@ -169,7 +171,7 @@ function drawNav(dimmed) {
   const lb = navBadge('launch'); if (lb) { const bw = textW(lb.t, FS) + 6; panel(x + w - bw - 4, ly - 5, bw, 10, { bg: COL.pink, bd: '#fff', flat: true }); text(lb.t, x + w - bw / 2 - 4, ly - 3, COL.navy, FS, 1); }
   if (lhov) { IN.cursor = 'pointer'; if (clickIn(x, ly, w, lh)) openStation('launch'); }
   // rows
-  const ry0 = 80, rh = 21;
+  const ry0 = 80, rh = NAV.length > 8 ? 19 : 21;
   for (let i = 1; i < NAV.length; i++) {
     const n = NAV[i], y = ry0 + (i - 1) * (rh + 2); const hov = !dimmed && inBox(x, y, w, rh); if (hov && HUB.sel !== i) { HUB.sel = i; SND.play('hover'); }
     const sel = HUB.sel === i;
@@ -181,7 +183,7 @@ function drawNav(dimmed) {
     if (b) { const bw = textW(b.t, FS) + 6; if (b.quiet) text(b.t, x + w - 5, y + 8, b.c, FS, 2); else { if (b.pulse) { ctx.globalAlpha = 0.3 + 0.25 * Math.sin(T_NOW * 6); rect(x + w - bw - 5, y + 3, bw + 4, 14, b.c); ctx.globalAlpha = 1; } panel(x + w - bw - 3, y + 5, bw, 10, { bg: b.c, bd: b.pulse ? '#fff' : b.c, flat: true }); text(b.t, x + w - bw / 2 - 3, y + 7, COL.navy, FS, 1); } }
     if (hov) { IN.cursor = 'pointer'; if (clickIn(x, y, w, rh)) openStation(n.id); }
   }
-  if (!dimmed) { const s = NAV[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, 244 + k * 7, COL.dim, FS)); }
+  if (!dimmed) { const s = NAV[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, ry0 + (NAV.length - 1) * (rh + 2) + 2 + k * 7, COL.dim, FS)); }
   // first-time guidance
   if (!dimmed) {
     const tip = S.stats.crates === 0 ? [1, 'START HERE: OPEN A CRATE'] : S.planet.landings === 0 ? [0, 'NEXT: LAUNCH TO DUSTMOOR'] : null;
@@ -246,6 +248,7 @@ function drawPanel() {
   if (p === 'profile') return panelProfile(st);
   if (p === 'mining') return panelMining(st);
   if (p === 'social') return panelSocial(st);
+  if (p === 'arena') return panelArena(st);
 }
 function ownedFor(slot) {
   const want = slot; const ids = Object.keys(S.inv).filter(id => { const d = getDef(id); return slotOf(d) === want; });

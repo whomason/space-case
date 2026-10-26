@@ -22,3 +22,11 @@ An 8-bit space crate-opening game: open crates, gear up your astronaut and ship,
 
 - `server/test_schema.py` runs the backend against a local Postgres.
 - `server/e2e.py` plays sign-up, friends, crews and a full trade in real browsers against `server/mock_supabase.py`.
+- `server/arena_e2e.py` plays FFA servers, kill rewards, host hand-over, ranked 1v1s and AI duels across browser tabs.
+
+## Live play
+
+- Arenas and duels use Supabase Realtime: broadcast plus presence.
+- The first player in a room also runs the AI pilots.
+- On the free plan, up to 5 real players fit in one server, and AI pilots fill the rest up to 20.
+- The free plan allows 100 realtime messages per second for the whole project, so that's the real limit on how many live matches can run at once.

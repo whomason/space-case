@@ -1,6 +1,8 @@
 'use strict';
 // ===== CORE: canvas, input, math, rng, color, font, drawing, particles =====
 const W = 480, H = 270, TAU = Math.PI * 2;
+// local multi-tab tests only (?api=http://localhost...&ns=x): give each tab its own storage
+const TEST_NS = (() => { try { const q = new URLSearchParams(location.search); return /^http:\/\/(localhost|127\.0\.0\.1)/.test(q.get('api') || '') && q.get('ns') ? '.' + q.get('ns').replace(/[^a-z0-9]/gi, '') : ''; } catch (e) { return ''; } })();
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d', { alpha: false });
 cvs.width = W; cvs.height = H;

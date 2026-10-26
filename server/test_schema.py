@@ -143,4 +143,42 @@ r = call('D', 'select save_game(%s, 1)', (J({'inv': {}, 'coins': 20}),)); ok('D 
 r = call('D', 'select save_game(%s, 1)', (J({'inv': {}, 'coins': 99}),)); ok('D stale device conflict, may force', r['conflict'] and r['can_force'] is True, r)
 r = call('D', 'select save_game(%s, 1, true)', (J({'inv': {}, 'coins': 99}),)); ok('D keeps this device progress', r['ok'] and r['version'] == 3, r)
 r = call('D', 'select load_game()'); ok('D cloud now has device save', r['data']['coins'] == 99, r)
+# --- arenas, duels, trophies
+r = call('A', 'select arena_list()'); ok('4 public arenas listed', len([x for x in r if not x['private']]) == 4 and all(x['cap'] == 5 for x in r), r)
+r = call('A', "select arena_join('alpha')"); ok('A joins alpha', r['id'] == 'alpha', r)
+r = call('B', "select arena_join('alpha')"); ok('B joins alpha', r['id'] == 'alpha', r)
+r = call('A', 'select arena_list()'); al = [x for x in r if x['id'] == 'alpha'][0]; ok('alpha shows 2 humans', al['humans'] == 2 and set(al['players']) == {'MASON', 'KAI-7'}, al)
+r = call('A', 'select online_counts()'); ok('counts: real players + AI pilots', r['in_arenas'] == 2 and r['ai'] == 18 and r['online'] >= 2, r)
+r = call('A', "select arena_report('alpha', 50, 5, 3, 9)"); ok('kills capped by time passed', r['kills'] <= 2, r)
+c.execute('reset role'); c.execute("update public.arena_presence set reported_at = now() - interval '60 seconds' where user_id = %s", (U['A'],))
+r = call('A', "select arena_report('alpha', 20, 4, 3, 9)"); ok('a minute of kills pays coins and trophies', r['kills'] == 20 and r['coins'] == 16 * 20 + 4 * 60 and r['trophies_gained'] == 28, r)
+r = call('A', 'select claim_mail()'); ok('arena coins arrive by mail', any(g['reason'] == 'arena kills' for g in r['got']), r)
+r = call('A', "select arena_report('bravo', 5, 0, 0, 1)"); ok('cannot report for an arena you are not in', str(r).startswith('ERR'), r)
+r = call('A', "select arena_create('mason pals')"); code = r['code']; pid = r['id']; ok('private server made', len(code) == 6, r)
+r = call('B', 'select arena_list()'); ok('friend sees private server, without its code', any(x['id'] == pid and x['code'] is None for x in r), r)
+r = call('C', 'select arena_list()'); ok('stranger does not see it', not any(x['id'] == pid for x in r), r)
+r = call('C', f"select arena_join('{pid}')"); ok('stranger cannot join without code', str(r).startswith('ERR') and 'PRIVATE' in r, r)
+r = call('C', f"select arena_join(null, '{code.lower()}')"); ok('anyone with the code can join', r['id'] == pid, r)
+r = call('C', 'select arena_leave()'); r = call('A', 'select arena_list()'); ok('leaving frees the slot', [x for x in r if x['id'] == pid][0]['humans'] == 0, r)
+r = call('A', "select leaderboard('trophies')"); ok('trophy leaderboard', r['top'][0]['callsign'] == 'MASON' and r['me']['place'] == 1, r)
+r = call('B', "select get_profile('mason')"); ok('profile shows arena stats', r['arena']['kills'] == 22 or r['arena']['kills'] >= 20, r.get('arena'))
+# duels: two humans find each other
+r = call('A', 'select duel_find(true)'); ok('A waits in queue', r.get('waiting') is True, r)
+r = call('B', 'select duel_find(true)'); m = r.get('match'); ok('B is matched with A', m and r['opponent']['callsign'] == 'MASON' and r['host'] is False, r)
+r = call('A', 'select duel_find(true)'); ok('A learns the match and hosts', r.get('match') == m and r['host'] is True and r['opponent']['callsign'] == 'KAI-7', r)
+r = call('A', f"select duel_report('{m}', true)"); ok('winner report waits for the other side', r.get('pending') is True, r)
+r = call('C', f"select duel_report('{m}', true)"); ok('outsider cannot report', str(r).startswith('ERR'), r)
+before = call('A', 'select my_arena()')['trophies']
+r = call('B', f"select duel_report('{m}', false)"); ok('loser concedes: done', r['done'] and r['trophy_change'] <= 0, r)
+r = call('A', 'select my_arena()'); ok('ranked win +30 trophies', r['trophies'] == before + 30 and r['ranked_won'] == 1, r)
+r = call('A', f"select duel_report('{m}', true)"); ok('settled match: winner still learns +30, no double pay', r['done'] and r['won'] and r['trophy_change'] == 30 and call('A', 'select my_arena()')['trophies'] == before + 30, r)
+# vs AI
+r = call('D', "select set_callsign('dee')")
+r = call('D', 'select duel_ai(true)'); mai = r['match']
+r = call('D', f"select duel_report('{mai}', true)"); ok('beating the AI in ranked gives a few trophies', r['done'] and r['trophy_change'] == 14, r)
+r = call('D', 'select duel_ai(true)'); mai2 = r['match']
+r = call('D', f"select duel_report('{mai2}', false)"); ok('losing to the AI costs some', r['trophy_change'] == -8, r)
+r = call('D', 'select duel_ai(false)'); mai3 = r['match']
+r = call('D', f"select duel_report('{mai3}', true)"); ok('unranked changes no trophies', r['trophy_change'] == 0, r)
+r = call('B', 'select duel_find(false)'); r = call('B', 'select duel_cancel()'); ok('cancel queue', r.get('cancelled') is True, r)
 print('\nFAILURES:', fails); sys.exit(1 if fails else 0)

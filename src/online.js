@@ -3,7 +3,7 @@
 // cloud. Anything that moves items between players (trades, mailbox) happens on the server.
 const NET_URL = 'https://covyfmkuqynrlzsaieme.supabase.co';
 const NET_KEY = 'sb_publishable_ImfcmYTq1l8lW_Y-rnHqBA_PwwgC6JV';
-const NET_SESS_KEY = 'spacecase.auth.v1', NET_META_KEY = 'spacecase.netmeta.v1';
+const NET_SESS_KEY = 'spacecase.auth.v1' + TEST_NS, NET_META_KEY = 'spacecase.netmeta.v1' + TEST_NS;
 const NET = {
   url: NET_URL, st: 'off', sess: null, ver: 0, last: '', lastT: 0, busy: null, err: '', offline: false, mail: 0,
   social: null, socialT: -1e9, socialBusy: false, pending: null, choice: null, syncT: 0, retryT: 0, touchT: 0,
@@ -151,6 +151,7 @@ function netTick(dt) {
   }
   NET.syncT += dt; if (NET.syncT > 12) { NET.syncT = 0; netSync(); }
   if (T_NOW - NET.socialT > (HUB.panel === 'social' ? 8 : 30)) netRefreshSocial();
+  if (T_NOW - (NET.countsT || -99) > 30) { NET.countsT = T_NOW; rpc('online_counts').then(r => { NET.counts = r; }).catch(() => { }); }
   if (NET.mail > 0 && safe && !NET.claiming && !NET.busy && !NET.choice && !NET.pending) { NET.claiming = true; netClaimMail().catch(e => { NET.err = e.message; }).finally(() => { NET.claiming = false; }); }
 }
 function netBoot() {
@@ -206,7 +207,7 @@ function netBadgeCount() {
 }
 function drawOnlinePill(x, y) {
   const on = NET.st === 'on', n = netBadgeCount();
-  const label = NET.st === 'off' ? 'PLAY ONLINE' : NET.st === 'connecting' ? 'CONNECTING' : NET.st === 'error' || NET.offline ? 'OFFLINE' : 'ONLINE';
+  const label = NET.st === 'off' ? 'PLAY ONLINE' : NET.st === 'connecting' ? 'CONNECTING' : NET.st === 'error' || NET.offline ? 'OFFLINE' : NET.counts ? fmt((NET.counts.online || 0) + (NET.counts.ai || 0)) + ' ONLINE' : 'ONLINE';
   const fo = on && NET.social ? (NET.social.friends || []).filter(f => f.online).length : 0;
   const w = textW(label, FS) + (on ? 22 : 12) + (fo ? textW(fo + '', FS) + 8 : 0);
   if (button(x, y, w, 14, '', { kind: NET.st === 'off' ? 'blue' : 'def', tip: NET.st === 'off' ? 'SIGN IN FOR CLOUD SAVES, FRIENDS, CREWS AND TRADING' : NET.err && (NET.st === 'error' || NET.offline) ? NET.err : 'FRIENDS, CREW AND TRADES' })) openStation('social');
@@ -303,7 +304,7 @@ function drawProfileCard(p, x, y, w, h, acts, cs) {
   text(tt ? tt.n : 'ASTRONAUT', tx, y + 24, COL.lilac, FS);
   if (p.crew) text(`CREW [${p.crew.tag}] ${p.crew.name}`, tx, y + 32, COL.cyan, FS);
   sDot(tx, y + 41, p.online); text(p.online ? 'ONLINE NOW' : 'SEEN ' + ago(p.last_seen), tx + 7, y + 40, p.online ? '#7dffb0' : COL.mute, FS);
-  const s = p.stats || {}; const rows = [['LEVEL', p.level], ['FURTHEST', planetDef(Math.max(1, p.planet || 1)).name], ['SHIP RATING', s.power || '-'], ['ITEMS FOUND', s.items || 0], ['ALIENS', fmt(s.kills || 0)], ['CRATES', fmt(s.crates || 0)], ['LEGENDARY+', (s.legendaries || 0) + (s.mythics || 0) + (s.cosmics || 0)]];
+  const s = p.stats || {}, ar = p.arena || {}; const rows = [['LEVEL', p.level], ['FURTHEST', planetDef(Math.max(1, p.planet || 1)).name], ['SHIP RATING', s.power || '-'], ['ITEMS FOUND', s.items || 0], ['ALIENS', fmt(s.kills || 0)], ['CRATES', fmt(s.crates || 0)], ['LEGENDARY+', (s.legendaries || 0) + (s.mythics || 0) + (s.cosmics || 0)], ['RANK', rankOf(ar.trophies || 0)[0] + ' ' + fmt(ar.trophies || 0)]];
   rows.forEach(([k, v], i) => { const cx = tx + (i % 2) * 82, cy = y + 52 + Math.floor(i / 2) * 9; text(k, cx, cy, COL.mute, FS); text(String(v), cx + 78, cy, COL.ink, FS, 2); });
   text('BEST FINDS', x + 8, y + 104, COL.gold, FS);
   const sh = (Array.isArray(p.showcase) ? p.showcase : []).filter(netValid).slice(0, 4);
