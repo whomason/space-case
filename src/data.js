@@ -25,7 +25,8 @@ const TIERS = [
   { n: 'BLACK HOLE', cost: 64, odds: [5, 18, 30, 27, 13.5, 5, 1.5], unlock: 16, h: 270, s: 0.8 },
   { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
 ];
-const CRATE_COIN = 100; // coins per tier cost unit
+const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
+const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
 function donChance(stacks = 0) { return Math.round((45 + S.skills.luck) * Math.pow(0.72, stacks)); } // double or nothing gets harder each time it stacks

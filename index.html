@@ -560,7 +560,8 @@ const TIERS = [
   { n: 'BLACK HOLE', cost: 64, odds: [5, 18, 30, 27, 13.5, 5, 1.5], unlock: 16, h: 270, s: 0.8 },
   { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
 ];
-const CRATE_COIN = 100; // coins per tier cost unit
+const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
+const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
 function donChance(stacks = 0) { return Math.round((45 + S.skills.luck) * Math.pow(0.72, stacks)); } // double or nothing gets harder each time it stacks
@@ -2368,7 +2369,7 @@ function kindInfo(kind) {
   if (t === 'finisher') { const pg = PAGES.find(p => p.id === kind.slice(9)); return { n: (pg ? pg.n : 'SET') + ' FINISHER', mul: 2, em: 'finisher' }; }
   return { n: kind.toUpperCase(), mul: 1, em: 'weapon' };
 }
-function crateCost(kind, tier) { return Math.max(1, Math.ceil(TIERS[tier].cost * kindInfo(kind).mul)) * CRATE_COIN; }
+function crateCost(kind, tier) { return Math.max(1, Math.ceil(TIERS[tier].cost * kindInfo(kind).mul)) * CRATE_COIN * CRATE_PRICE; }
 function poolFor(kind) {
   const map = { weapon: 'w', armor: 'a', ship: 's', mining: 't', skin: 'k', cosmetic: 'c', backdrop: 'b', gadget: 'g', pet: 'p', galaxy: 'galaxy' };
   if (map[kind]) return POOLS[map[kind]];
@@ -2462,7 +2463,7 @@ function goals() {
   const w = S.eq.weapon && getDef(S.eq.weapon);
   if (w) { const m = S.mast[w.sub] || { k: 0, c: 0 }; const need = MAST_STEPS[Math.min(m.c, MAST_STEPS.length - 1)]; if (m.k >= need && m.c < MAST_STEPS.length) G.push({ t: `${CLS[w.sub].n} BLUEPRINT READY IN WORKSHOP`, f: 1, c: COL.orange, go: 'workshop' }); else G.push({ t: `${CLS[w.sub].n} MASTERY ${m.k}/${need} KILLS`, f: m.k / need, c: COL.orange, go: 'workshop' }); }
   if (w && w.r <= 2 && !w.evo && w.o.t !== 'art') { const k = S.ikills[w.id] || 0, need = EVO_NEED[w.r]; G.push({ t: k >= need ? 'EVOLVE YOUR WEAPON IN THE WORKSHOP' : `EVOLVE ${w.name}: ${k}/${need}`, f: k / need, c: COL.mint, go: 'workshop' }); }
-  const aff = Math.floor(S.coins / CRATE_COIN); if (aff >= 1) G.push({ t: `YOU CAN AFFORD ${aff} CRATE${aff > 1 ? 'S' : ''}`, f: 1, c: COL.gold, go: 'crates' });
+  const aff = Math.floor(S.coins / crateCost('weapon', 0)); if (aff >= 1) G.push({ t: `YOU CAN AFFORD ${aff} CRATE${aff > 1 ? 'S' : ''}`, f: 1, c: COL.gold, go: 'crates' });
   const ms = minerSlots().filter(p => !S.miners.slots[p]); if (ms.length && Object.keys(S.inv).some(id => id.startsWith('t|miner'))) G.push({ t: 'PLACE AN AUTO-MINER IN THE MINING OFFICE', f: 0, c: COL.mint, go: 'mining' });
   return G;
 }
@@ -5970,7 +5971,7 @@ function donButton(x, y, w, h, r, can) {
   if (!can) return button(x, y, w, h, 'ALREADY COSMIC: CAN\'T DOUBLE', { disabled: true, font: FS });
   const pulse = 0.5 + 0.5 * Math.sin(T_NOW * 5);
   ctx.globalAlpha = 0.25 + 0.3 * pulse; rect(x - 3, y - 3, w + 6, h + 6, '#ff5cb0'); ctx.globalAlpha = 1;
-  const hit = button(x, y, w, h, '', { kind: 'don', tip: 'WIN: SWAP FOR AN ITEM ONE RARITY HIGHER (SAME KIND). LOSE: THIS PULL IS GONE' });
+  const hit = button(x, y, w, h, '', { kind: 'don' });
   // dice icon
   const dx = x + 6, dy = y + 4; rect(dx, dy, 12, 12, '#fff'); rect(dx + 1, dy + 1, 10, 10, '#ffe3f2');
   for (const [a, b] of [[3, 3], [8, 8], [3, 8], [8, 3], [5.5, 5.5]]) rect(dx + a, dy + b, 2, 2, '#a8286a');
@@ -6440,7 +6441,7 @@ function navBadge(id) {
   if (S.unlockNew && S.unlockNew[id]) return { t: 'NEW!', c: COL.pink, pulse: true };
   switch (id) {
     case 'launch': { const n = S.planet.reached + 1; return shipRating() >= PLANET_REQ(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
-    case 'crates': { const n = Math.floor(S.coins / CRATE_COIN); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
+    case 'crates': { const n = Math.floor(S.coins / crateCost('weapon', 0)); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
     case 'hangar': { const n = freshCount('hangar'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : { t: '' + shipRating(), c: COL.blueL, quiet: true }; }
     case 'locker': { const n = freshCount('locker'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : null; }
     case 'collection': { const n = PAGES.filter(pg => pageDone(pg) && !S.pages[pg.id]).length; return n ? { t: n + ' REWARD' + (n > 1 ? 'S' : ''), c: COL.pink } : null; }

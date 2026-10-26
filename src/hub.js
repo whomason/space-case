@@ -82,7 +82,7 @@ function navBadge(id) {
   if (S.unlockNew && S.unlockNew[id]) return { t: 'NEW!', c: COL.pink, pulse: true };
   switch (id) {
     case 'launch': { const n = S.planet.reached + 1; return shipRating() >= PLANET_REQ(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
-    case 'crates': { const n = Math.floor(S.coins / CRATE_COIN); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
+    case 'crates': { const n = Math.floor(S.coins / crateCost('weapon', 0)); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
     case 'hangar': { const n = freshCount('hangar'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : { t: '' + shipRating(), c: COL.blueL, quiet: true }; }
     case 'locker': { const n = freshCount('locker'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : null; }
     case 'collection': { const n = PAGES.filter(pg => pageDone(pg) && !S.pages[pg.id]).length; return n ? { t: n + ' REWARD' + (n > 1 ? 'S' : ''), c: COL.pink } : null; }

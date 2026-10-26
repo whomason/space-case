@@ -167,7 +167,7 @@ function kindInfo(kind) {
   if (t === 'finisher') { const pg = PAGES.find(p => p.id === kind.slice(9)); return { n: (pg ? pg.n : 'SET') + ' FINISHER', mul: 2, em: 'finisher' }; }
   return { n: kind.toUpperCase(), mul: 1, em: 'weapon' };
 }
-function crateCost(kind, tier) { return Math.max(1, Math.ceil(TIERS[tier].cost * kindInfo(kind).mul)) * CRATE_COIN; }
+function crateCost(kind, tier) { return Math.max(1, Math.ceil(TIERS[tier].cost * kindInfo(kind).mul)) * CRATE_COIN * CRATE_PRICE; }
 function poolFor(kind) {
   const map = { weapon: 'w', armor: 'a', ship: 's', mining: 't', skin: 'k', cosmetic: 'c', backdrop: 'b', gadget: 'g', pet: 'p', galaxy: 'galaxy' };
   if (map[kind]) return POOLS[map[kind]];
@@ -261,7 +261,7 @@ function goals() {
   const w = S.eq.weapon && getDef(S.eq.weapon);
   if (w) { const m = S.mast[w.sub] || { k: 0, c: 0 }; const need = MAST_STEPS[Math.min(m.c, MAST_STEPS.length - 1)]; if (m.k >= need && m.c < MAST_STEPS.length) G.push({ t: `${CLS[w.sub].n} BLUEPRINT READY IN WORKSHOP`, f: 1, c: COL.orange, go: 'workshop' }); else G.push({ t: `${CLS[w.sub].n} MASTERY ${m.k}/${need} KILLS`, f: m.k / need, c: COL.orange, go: 'workshop' }); }
   if (w && w.r <= 2 && !w.evo && w.o.t !== 'art') { const k = S.ikills[w.id] || 0, need = EVO_NEED[w.r]; G.push({ t: k >= need ? 'EVOLVE YOUR WEAPON IN THE WORKSHOP' : `EVOLVE ${w.name}: ${k}/${need}`, f: k / need, c: COL.mint, go: 'workshop' }); }
-  const aff = Math.floor(S.coins / CRATE_COIN); if (aff >= 1) G.push({ t: `YOU CAN AFFORD ${aff} CRATE${aff > 1 ? 'S' : ''}`, f: 1, c: COL.gold, go: 'crates' });
+  const aff = Math.floor(S.coins / crateCost('weapon', 0)); if (aff >= 1) G.push({ t: `YOU CAN AFFORD ${aff} CRATE${aff > 1 ? 'S' : ''}`, f: 1, c: COL.gold, go: 'crates' });
   const ms = minerSlots().filter(p => !S.miners.slots[p]); if (ms.length && Object.keys(S.inv).some(id => id.startsWith('t|miner'))) G.push({ t: 'PLACE AN AUTO-MINER IN THE MINING OFFICE', f: 0, c: COL.mint, go: 'mining' });
   return G;
 }

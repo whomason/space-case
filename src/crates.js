@@ -320,7 +320,7 @@ function donButton(x, y, w, h, r, can) {
   if (!can) return button(x, y, w, h, 'ALREADY COSMIC: CAN\'T DOUBLE', { disabled: true, font: FS });
   const pulse = 0.5 + 0.5 * Math.sin(T_NOW * 5);
   ctx.globalAlpha = 0.25 + 0.3 * pulse; rect(x - 3, y - 3, w + 6, h + 6, '#ff5cb0'); ctx.globalAlpha = 1;
-  const hit = button(x, y, w, h, '', { kind: 'don', tip: 'WIN: SWAP FOR AN ITEM ONE RARITY HIGHER (SAME KIND). LOSE: THIS PULL IS GONE' });
+  const hit = button(x, y, w, h, '', { kind: 'don' });
   // dice icon
   const dx = x + 6, dy = y + 4; rect(dx, dy, 12, 12, '#fff'); rect(dx + 1, dy + 1, 10, 10, '#ffe3f2');
   for (const [a, b] of [[3, 3], [8, 8], [3, 8], [8, 3], [5.5, 5.5]]) rect(dx + a, dy + b, 2, 2, '#a8286a');
