@@ -478,7 +478,7 @@ function artifactIngredients(k) { const r = RNG(k * 7919 + 1); const cats = [['w
 // ---------- draw ----------
 function drawRun() {
   const R = RUN, w = R.w, map = R.map, pl = w.player, p = R.p;
-  let cx = Math.floor(R.cam.x), cy = Math.floor(R.cam.y);
+  let cx = Math.floor(R.cam.x + (pl.kickX || 0)), cy = Math.floor(R.cam.y + (pl.kickY || 0));
   if (FX.shake > 0) { cx += Math.round((R0() - 0.5) * FX.shake * 2); cy += Math.round((R0() - 0.5) * FX.shake * 2); }
   rect(0, 0, W, H, '#000');
   ctx.drawImage(map.ground, cx, cy, W, H, 0, 0, W, H);

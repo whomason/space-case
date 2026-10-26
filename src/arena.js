@@ -136,6 +136,7 @@ function arDuelFallback() { // the other player never showed up or dropped: an A
   const A = AM; if (!A || A.ended) return;
   const opp = [...A.fighters.values()].find(f => !f.local && f.human); if (opp) A.fighters.delete(opp.id);
   if (!arBots().length) { const c = A.opp ? { callsign: A.opp.callsign, level: A.opp.level, eq: A.oppEq } : null; arAddDuelBot(c); }
+  if (!A.vsAI) { A.fellBack = true; toast('YOUR OPPONENT LOST CONNECTION. AN AI PILOT TOOK OVER', COL.coral); }
   A.host = true; A.vsAI = true;
 }
 function arRespawn(f, first) {
@@ -182,7 +183,7 @@ function arMove(f, mx, my, dt) {
   if (f.boostT > 0) { f.boostT -= dt; mx = f.bx; my = f.by; }
   f.vx = mx * spd; f.vy = my * spd; f.x += f.vx * dt; f.y += f.vy * dt; arCollide(f);
   f.moving = Math.hypot(mx, my) > 0.1; if (f.moving) f.walk += dt * 9;
-  f.boostCd -= dt; if (f.inv > 0) f.inv -= dt; if (f.recoil > 0) f.recoil = Math.max(0, f.recoil - dt * 20); if (f.hurtT > 0) f.hurtT -= dt;
+  f.boostCd -= dt; if (f.inv > 0) f.inv -= dt; if (f.recoil > 0) f.recoil = Math.max(0, f.recoil - dt * 20); if (f.kickX) { const d = Math.pow(0.0005, dt); f.kickX *= d; f.kickY *= d; } if (f.hurtT > 0) f.hurtT -= dt;
   const ca = Math.cos(f.aim), sa = Math.sin(f.aim); f.dir = Math.abs(ca) > Math.abs(sa) * 0.9 ? (ca < 0 ? 2 : 3) : (sa < 0 ? 1 : 0);
   f.lastHit += dt; if (f.lastHit > 4 && f.hp < f.maxHp) f.hp = Math.min(f.maxHp, f.hp + 14 * dt);
 }
@@ -195,13 +196,14 @@ function arBoost(f, dx, dy) {
 function arTryFire(f, dt) {
   f.fireCd -= dt; if (f.fireCd > 0) return;
   f.fireCd += 1 / f.wpn.rate; if (f.fireCd < 0) f.fireCd = 0;
-  const seed = (Math.random() * 1e6) | 0, x = f.x + Math.cos(f.aim) * 9, y = f.y - 7 + Math.sin(f.aim) * 9;
+  const seed = (Math.random() * 1e6) | 0, [x, y] = muzzlePt(f, f.aim);
   arSpawnShots(f, x, y, f.aim, seed, 0); f.fired.push([Math.round(x), Math.round(y), Math.round(f.aim * 1000) / 1000, seed]); f.recoil = 2;
   if (f.local) SND.play(f.wpn.cls === 'rifle' || f.wpn.cls === 'beam' ? 'rifle' : f.wpn.cls === 'blade' ? 'slash' : 'pew');
 }
 function arSpawnShots(f, x, y, a, seed, ff) {
   const A = AM, W = f.wpn, R = RNG(seed), col = W.col;
   if (W.cls === 'blade') { arSlash(f, x, y, a); return; }
+  if (W.cls !== 'drone' && W.cls !== 'beam') gunFx(A.fx, f, a, col, W.cls);
   for (let i = 0; i < W.pellets; i++) {
     const aa = a + (W.pellets > 1 ? (i / (W.pellets - 1) - 0.5) * W.spread : (R() - 0.5) * W.spread);
     const spd = W.spd * (W.pellets > 1 ? 0.85 + R() * 0.3 : 1);
@@ -218,7 +220,7 @@ function arSlash(f, x, y, a) {
 // decide damage: only for my own pilot, or for AI pilots if I run them
 function arAuth(o) { return o.local || (o.bot && AM.host); }
 function arHit(o, dmg, by, x, y) {
-  const A = AM; A.fx.burst(x, y, 4, { c: ['#fff', '#ffcb3d'], sp: 60, life: 0.25 });
+  const A = AM, sh = A.fighters.get(by); { const dx = sh ? o.x - sh.x : 1, dy = sh ? o.y - sh.y : 0, l = Math.hypot(dx, dy) || 1; impactFx(A.fx, x, y, dx / l, dy / l, sh && sh.wpn ? sh.wpn.col : null, false); }
   if (by === A.me.id && o !== A.me && o.alive && !(o.inv > 0)) { A.hitT = 0.14; SND.play('hit'); A.fx.text(o.x + (Math.random() - 0.5) * 8, o.y - 26, Math.max(1, Math.round(dmg)) + '', dmg >= 30 ? '#ffcb3d' : '#ffffff', { f: FS, vy: -40, life: 0.6 }); }
   if (!arAuth(o) || !o.alive || o.inv > 0) return;
   o.hp -= dmg; o.lastHit = 0; o.hurtT = 0.15; o.lastBy = by;
@@ -341,7 +343,7 @@ function arDuelEnd(won) {
 }
 function arDuelReport(won, tries = 0) {
   const A = AM, mid = A && A.matchId; if (!mid) return;
-  rpc('duel_report', { p_match: mid, p_won: won }).then(r => {
+  rpcNew('duel_report', { p_match: mid, p_won: won, p_ai: !!(A && A.fellBack) }, { p_match: mid, p_won: won }).then(r => {
     if (!AM || AM.matchId !== mid) { if (r && r.done && r.trophy_change !== undefined) toast(`${won ? 'WIN' : 'LOSS'}: ${r.trophy_change >= 0 ? '+' : ''}${r.trophy_change} TROPHIES`, COL.gold); return; }
     if (r.pending && tries < 12) { AM.result.msg = 'WAITING FOR THE OTHER PILOT TO CONFIRM...'; setTimeout(() => arDuelReport(won, tries + 1), 3000); return; }
     AM.result.pending = false; AM.result.r = r; if (r.disputed) AM.result.msg = 'RESULTS DID NOT MATCH. NO TROPHIES THIS TIME';
@@ -395,7 +397,7 @@ function arUpdate(dt) {
 }
 // ---------- drawing ----------
 function arDraw(dt) {
-  const A = AM; if (!A) return; const cx = Math.floor(A.cam.x), cy = Math.floor(A.cam.y), M = A.M;
+  const A = AM; if (!A) return; const cx = Math.floor(A.cam.x + (A.me.kickX || 0)), cy = Math.floor(A.cam.y + (A.me.kickY || 0)), M = A.M;
   rect(0, 0, W, H, '#03040b'); ctx.drawImage(A.F.c, -cx, -cy);
   const objs = [];
   for (const b of M.blocks) objs.push([b[1] + b[3], 0, b]);
@@ -415,7 +417,7 @@ function arDraw(dt) {
     if (s.stopT !== undefined) { circ(x, y, 2, '#222'); px(x, y, s.t > s.stopT + s.arm && Math.floor(T_NOW * 8) % 2 ? '#fff' : c.mid); continue; }
     if (s.kind === 'launcher') { rect(x - 2, y - 2, 4, 4, c.edge); rect(x - 1, y - 1, 2, 2, c.core); continue; }
     if (s.kind === 'throwing') { const f = Math.floor(s.t * 20) % 2; if (f) { rect(x - 3, y, 7, 1, c.mid); rect(x, y - 3, 1, 7, c.mid); } else { line(x - 2, y - 2, x + 2, y + 2, c.mid); line(x - 2, y + 2, x + 2, y - 2, c.mid); } continue; }
-    const L = s.kind === 'railgun' || s.kind === 'sniper' ? 0.03 : 0.02; line(x, y, x - s.vx * L, y - s.vy * L, c.mid); px(x, y, c.core);
+    drawBolt(x, y, s.vx, s.vy, s.kind === 'railgun' || s.kind === 'sniper' ? 0.032 : 0.026, c, s.t);
   }
   A.fx.draw(cx, cy); arDrawKillFeel(cx, cy, dt);
   // dead overlay
@@ -509,27 +511,33 @@ async function arJoinServer(id, code) {
   arStart({ mode: 'ffa', server: s, live: true });
 }
 // matchmaking: look for a real pilot for a few seconds, then match an AI pilot
+// with a friend code you only meet whoever typed the same code, and there is no AI
 const DQ = { on: false, ranked: false, t: 0, busy: false, found: null };
-function duelSearch(ranked) {
+const DQ_ALONE = 10, DQ_CROWD = 35, DQ_FRIEND = 180;
+function duelSearch(ranked, code) {
   if (NET.st !== 'on') { toast('SIGN IN FOR 1V1. PRACTICE WORKS OFFLINE', COL.coral); return; }
   if (!NET.callsign) { openNameUI(false); return; }
-  Object.assign(DQ, { on: true, ranked: !!ranked, t: 0, busy: false, found: null, poll: 0 }); setScene('hub'); openStation('arena'); HUB.ps.arena.tab = 1;
+  Object.assign(DQ, { on: true, ranked: !!ranked && !code, code: code || null, t: 0, busy: false, found: null, poll: 0, wait: DQ_ALONE + Math.random() * 3, others: 0, aiNow: false });
+  setScene('hub'); openStation('arena'); HUB.ps.arena.tab = 1;
 }
 function duelTick(dt) {
   if (!DQ.on) return; DQ.t += dt; DQ.poll -= dt;
   if (DQ.found) { DQ.ft = (DQ.ft || 0) + dt; if (DQ.ft > 2.2) { const f = DQ.found; DQ.on = false; DQ.found = null; arStart({ mode: 'duel', matchId: f.match, ranked: f.ranked, opponent: f.opponent, live: !f.ai, vsAI: !!f.ai, botCard: f.ai ? f.card : null, hostFirst: f.host, seed: f.match }); } return; }
-  if (DQ.busy || DQ.poll > 0) return; DQ.busy = true; DQ.poll = 1.5;
-  const giveUp = DQ.t > 10 + Math.random() * 4;
-  (giveUp ? rpc('duel_cancel').then(r => r.match ? r : rpc('duel_ai', { p_ranked: DQ.ranked }).then(x => Object.assign(x, { ai: true }))) : rpc('duel_find', { p_ranked: DQ.ranked }))
+  if (DQ.code && DQ.t > DQ_FRIEND) { duelCancel(); toast('NOBODY USED THAT CODE. TRY AGAIN WHEN YOUR FRIEND IS ON', COL.coral); return; }
+  if (DQ.busy || (DQ.poll > 0 && !DQ.aiNow)) return; DQ.busy = true; DQ.poll = 1.2;
+  const giveUp = !DQ.code && (DQ.aiNow || DQ.t > DQ.wait);
+  (giveUp ? rpc('duel_cancel').then(r => r.match ? r : rpc('duel_ai', { p_ranked: DQ.ranked }).then(x => Object.assign(x, { ai: true }))) : (DQ.code ? rpc('duel_find', { p_ranked: DQ.ranked, p_code: DQ.code }) : rpcNew('duel_find', { p_ranked: DQ.ranked, p_code: null }, { p_ranked: DQ.ranked })))
     .then(r => {
       if (!DQ.on) { if (r && r.match && !r.ai) rpc('duel_cancel').catch(() => { }); return; }
+      // other real pilots are on: give them time to hit 1V1 too
+      if (r && r.waiting) { DQ.others = (r.others | 0) + (r.searching | 0); if (DQ.others > 0) DQ.wait = Math.max(DQ.wait, DQ_CROWD); }
       if (r && r.match) {
         if (r.ai) { const R = RNG(hashStr(r.match)); const tro = Math.max(0, ((NET.arena && NET.arena.trophies) || 0) + R.ir(-80, 80)); r.card = { callsign: botName(R), level: Math.max(1, (S.lvl || 1) + R.ir(-4, 6)), trophies: tro }; r.opponent = r.card; }
         DQ.found = r; DQ.ft = 0; SND.play('upgradeHint');
       }
     }).catch(e => { DQ.on = false; toast(e.message, COL.coral); }).finally(() => { DQ.busy = false; });
 }
-function duelCancel() { DQ.on = false; DQ.found = null; rpc('duel_cancel').catch(() => { }); }
+function duelCancel() { DQ.on = false; DQ.found = null; DQ.code = null; rpc('duel_cancel').catch(() => { }); }
 // ---------- the ARENA station panel ----------
 const ARL = { list: null, listT: -99, lb: {}, lbT: {}, me: null, meT: -99, counts: null, cT: -99 };
 function arenaRefresh(force) {
@@ -542,7 +550,7 @@ function panelArena(st) {
   if (panelFrame('ARENA', COL.coral)) { if (DQ.on) duelCancel(); return; }
   st.tab = tabs(92, 9, ['FFA', '1V1', 'RANKS'], st.tab || 0, 60);
   const on = NET.st === 'on'; arenaRefresh(false);
-  const c = ARL.counts; if (c) text(`${fmt(c.online + c.ai)} ONLINE`, W - 74, 13, '#7dffb0', FS, 2);
+  const c = ARL.counts; if (c) text(`${fmt(shownOnline(c))} ONLINE`, W - 74, 13, '#7dffb0', FS, 2);
   // my rank strip
   const me = ARL.me; const tr = me ? me.trophies : 0, rk = rankOf(tr);
   panel(14, 30, W - 28, 25, { bg: COL.void0, bd: COL.void3, flat: true });
@@ -594,11 +602,18 @@ function arenaDuel(st, on) {
   const x = 14, y = 60;
   if (DQ.on) {
     panel(W / 2 - 120, y + 10, 240, 120, { bg: COL.void1, bd: COL.gold });
-    if (DQ.found) { const o = DQ.found.opponent || {}; const rk = rankOf(o.trophies || 0); textO('MATCH FOUND!', W / 2, y + 22, COL.gold, '#000', FB, 1, 2); text('VS', W / 2, y + 48, COL.dim, FS, 1); textO(o.callsign || '???', W / 2, y + 60, COL.ink, '#000', FB, 1, 2); text(`LV ${o.level || 1}  ${rk[0]}`, W / 2, y + 80, rk[2] === 'RAINBOW' ? rainbow(T_NOW) : rk[2], FS, 1); return; }
-    textO(`FINDING A ${DQ.ranked ? 'RANKED' : 'UNRANKED'} OPPONENT`, W / 2, y + 24, COL.ink, '#000', FB, 1);
-    const n = Math.floor(T_NOW * 3) % 4; text('SEARCHING' + '.'.repeat(n), W / 2, y + 46, COL.dim, FS, 1); text(`${Math.floor(DQ.t)}S`, W / 2, y + 56, COL.mute, FS, 1);
-    for (let i = 0; i < 8; i++) { const a = T_NOW * 3 + i / 8 * TAU; ctx.globalAlpha = (i + 1) / 8; rect(W / 2 + Math.cos(a) * 14 - 1, y + 82 + Math.sin(a) * 10, 3, 3, COL.gold); } ctx.globalAlpha = 1;
-    if (button(W / 2 - 40, y + 102, 80, 16, 'CANCEL', { font: FS })) duelCancel();
+    if (DQ.found) { const o = DQ.found.opponent || {}; const rk = rankOf(o.trophies || 0); textO('MATCH FOUND!', W / 2, y + 22, COL.gold, '#000', FB, 1, 2); text('VS', W / 2, y + 48, COL.dim, FS, 1); textO(o.callsign || '???', W / 2, y + 60, COL.ink, '#000', FB, 1, 2); text(`LV ${o.level || 1}  ${rk[0]}`, W / 2, y + 80, rk[2] === 'RAINBOW' ? rainbow(T_NOW) : rk[2], FS, 1);
+      text(DQ.found.ranked ? 'RANKED MATCH' : DQ.ranked && !DQ.found.ai ? 'UNRANKED: THEY PICKED UNRANKED' : 'UNRANKED MATCH', W / 2, y + 96, DQ.found.ranked ? COL.gold : COL.mute, FS, 1); return; }
+    textO(DQ.code ? 'WAITING FOR YOUR FRIEND' : `FINDING A ${DQ.ranked ? 'RANKED' : 'UNRANKED'} OPPONENT`, W / 2, y + 24, COL.ink, '#000', FB, 1);
+    const n = Math.floor(T_NOW * 3) % 4;
+    text(DQ.code ? `CODE ${DQ.code}: THEY TYPE THE SAME CODE ON THEIR 1V1 TAB` : DQ.aiNow ? 'GETTING AN AI PILOT READY' : 'LOOKING FOR A REAL PILOT' + '.'.repeat(n), W / 2, y + 40, DQ.code ? COL.magenta : COL.dim, FS, 1);
+    text(`${Math.floor(DQ.t)}S`, W / 2, y + 50, COL.mute, FS, 1);
+    for (let i = 0; i < 8; i++) { const a = T_NOW * 3 + i / 8 * TAU; ctx.globalAlpha = (i + 1) / 8; rect(W / 2 + Math.cos(a) * 14 - 1, y + 74 + Math.sin(a) * 9, 3, 3, DQ.code ? COL.magenta : COL.gold); } ctx.globalAlpha = 1;
+    if (DQ.code) { if (button(W / 2 - 40, y + 100, 80, 16, 'CANCEL', { font: FS })) duelCancel(); }
+    else {
+      if (button(W / 2 - 104, y + 100, 120, 16, 'FIGHT AN AI NOW', { kind: 'blue', font: FS, disabled: DQ.aiNow })) DQ.aiNow = true;
+      if (button(W / 2 + 22, y + 100, 82, 16, 'CANCEL', { font: FS })) duelCancel();
+    }
     return;
   }
   text('1V1 DUEL: FIRST TO 5 KILLS, 3 MINUTES. SAME DAMAGE FOR EVERY WEAPON TYPE, SO SKILL DECIDES', x, y - 2, COL.dim, FS);
@@ -606,8 +621,13 @@ function arenaDuel(st, on) {
   box(x, 'RANKED', ['WIN +30 TROPHIES', 'LOSE -15', 'CLIMB THE RANKS'], 'primary', () => duelSearch(true));
   box(x + 150, 'UNRANKED', ['NO TROPHIES ON THE LINE', 'COINS FOR PLAYING', 'GOOD FOR WARMING UP'], 'blue', () => duelSearch(false));
   box(x + 300, 'PRACTICE', ['VS AN AI PILOT', 'WORKS OFFLINE', 'NO REWARDS'], 'def', () => arPractice('duel'));
+  // play a friend: both type the same code
+  const fy = y + 108; panel(x, fy, W - 28, 20, { bg: COL.void0, bd: COL.magenta, flat: true });
+  text('PLAY A FRIEND', x + 6, fy + 3, COL.magenta, FS); text('YOU BOTH TYPE THE SAME CODE', x + 6, fy + 11, COL.mute, FS);
+  const fc = textField('duelCode', x + 150, fy + 3, 150, 14, { ph: 'ANY CODE, LIKE PALS', max: 12, filter: v => v.toUpperCase().replace(/[^A-Z0-9]/g, ''), label: 'Friend 1v1 code' });
+  if (button(x + 306, fy + 3, 140, 14, 'FIND MY FRIEND', { kind: 'primary', font: FS, disabled: !on || fc.value.length < 3 }) || (fc.enter && fc.value.length >= 3 && on)) duelSearch(false, fc.value);
   // rank ladder
-  const ly = y + 112; text('RANKS', x, ly, COL.gold, FS);
+  const ly = y + 134; text('RANKS', x, ly, COL.gold, FS);
   AR_RANKS.forEach((r, i) => { const bx = x + i * 56; drawRankBadge(bx, ly + 8, r, 14); text(r[0], bx + 16, ly + 10, r[2] === 'RAINBOW' ? rainbow(T_NOW, i * 40) : r[2], FS); text(fmt(r[1]), bx + 16, ly + 17, COL.mute, FS); });
 }
 function arenaRanks(st, on) {

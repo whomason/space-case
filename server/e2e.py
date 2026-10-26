@@ -24,7 +24,7 @@ async def boot(ctx, seed=None, tag=''):
     pg.on('pageerror', lambda e: errs.append(tag + ' PAGEERR ' + str(e)[:300]))
     pg.on('console', lambda m: errs.append(tag + ' CONSOLE ' + m.text[:300]) if m.type == 'error' else None)
     await pg.goto(BASE); await pg.wait_for_timeout(900)
-    await pg.mouse.click(480, 300); await pg.wait_for_timeout(500)
+    await pg.mouse.click(480, 300); await pg.wait_for_timeout(120); await pg.mouse.click(480, 300); await pg.wait_for_timeout(650); await pg.wait_for_timeout(500)
     if seed: await pg.evaluate(seed)
     return pg, errs
 async def wait_for(pg, js, ms=8000):
@@ -123,7 +123,7 @@ async def main():
         await A.evaluate("netSignIn('mason@example.com', 'secret1', false)")
         ok('signed back in, same save', await wait_for(A, f"NET.st === 'on' && !NET.choice && S.coins === {a_coins} + 1150"), await A.evaluate("[NET.st, !!NET.choice, S.coins]"))
         # ---- reload keeps the session
-        await A.reload(); await A.wait_for_timeout(900); await A.mouse.click(480, 300)
+        await A.reload(); await A.wait_for_timeout(900); await A.mouse.click(480, 300); await A.wait_for_timeout(120); await A.mouse.click(480, 300); await A.wait_for_timeout(650)
         ok('session survives reload', await wait_for(A, "NET.st === 'on' && NET.callsign === 'MASON'"), await A.evaluate("[NET.st, NET.err]"))
         await A.evaluate("openStation('social'); HUB.ps.social.tab = 3"); await A.wait_for_timeout(500); await A.screenshot(path=OUT + 'n12_account.png')
         errs = eA + eB + eA2

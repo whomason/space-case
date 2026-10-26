@@ -16,10 +16,14 @@ function nearestEnemy(w, x, y, maxD = 1e9, skip) {
   return best;
 }
 // ---------- firing ----------
+// the tip of the gun the pilot is holding (drawPlayer measures it)
+function muzzlePt(pl, a) { const L = (pl.gunLen || 11) - 1; return [pl.x + Math.cos(a) * L, pl.y - 8 + Math.sin(a) * L]; }
 function makeShot(w, pl, W, a, o = {}) {
   const cls = W.cls; const col = W.col;
+  let [sx, sy] = o.child ? [pl.x + Math.cos(a) * 8, pl.y - 6 + Math.sin(a) * 8] : muzzlePt(pl, a);
+  if (!o.child) for (const e of w.ents) if (!e.dead && segDist(e.x, e.y - 4, pl.x, pl.y - 6, sx, sy) < e.r + 3) { sx = pl.x + Math.cos(a) * 3; sy = pl.y - 6 + Math.sin(a) * 3; break; }
   const s = {
-    x: pl.x + Math.cos(a) * 8, y: pl.y - 6 + Math.sin(a) * 8, ang: a, spd: o.spd || W.spd || 200, dmg: o.dmg || W.dmg, life: (o.rng || W.rng) / (o.spd || W.spd || 200), r: o.r || 3,
+    x: sx, y: sy, ang: a, spd: o.spd || W.spd || 200, dmg: o.dmg || W.dmg, life: (o.rng || W.rng) / (o.spd || W.spd || 200), r: o.r || 3,
     pierce: (W.pierce || 0) + (W.v.pierce ? W.v.pierce + 1 : 0), hits: new Set(), v: o.noVerbs ? {} : W.v, el: W.el, col, kind: o.kind || 'bolt', t: 0, owner: pl,
     bounce: W.v.bounce || 0, child: !!o.child, aoe: W.aoe || 0, phase: 0, travel: 0, rng: o.rng || W.rng,
   };
@@ -74,9 +78,26 @@ function fireWeapon(w, pl, W, inp, dt) {
       if (w.mines.length > 8) w.mines.shift(); wsnd(w, 'mine'); break;
     }
   }
+  if (shots.length && !w.demo) gunFx(w.fx, pl, a, W.col, cls);
   if (W.sig === 'reliable' && pl.shotN % 6 === 0) shots.forEach(s => { s.forceCrit = true; s.r += 1; });
   if (W.sig === 'zeus' && pl.shotN % 5 === 0) shots.forEach(s => { s.zeus = true; s.r = 3; });
   if (W.quirk === 'echo' && pl.shotN % 4 === 0) for (const s0 of shots) { const c = Object.assign({}, s0, { hits: new Set(), ang: s0.ang + 0.08, giant: false }); c.vx = Math.cos(c.ang) * c.spd; c.vy = Math.sin(c.ang) * c.spd; w.shots.push(c); }
+}
+const GUN_KICK = { blaster: 0.8, rifle: 0.6, shotgun: 2.6, sniper: 3, launcher: 2.2, throwing: 0.6, railgun: 4 };
+function gunFx(F, pl, a, col, cls) {
+  const [mx, my] = muzzlePt(pl, a), big = cls === 'shotgun' ? 1.6 : cls === 'sniper' || cls === 'railgun' ? 1.9 : cls === 'launcher' ? 1.4 : cls === 'rifle' ? 0.8 : 1;
+  if (cls !== 'throwing' && cls !== 'mine') F.add({ x: mx, y: my, life: 0.07, c: col.mid, c2: col.core, a, s: big, t: 'muzzle', drag: 0 });
+  const n = cls === 'shotgun' ? 5 : cls === 'throwing' || cls === 'mine' ? 0 : 2;
+  for (let i = 0; i < n; i++) { const sa = a + (R0() - 0.5) * (cls === 'shotgun' ? 0.9 : 0.5), sp = 110 + R0() * 90; F.add({ x: mx, y: my, vx: Math.cos(sa) * sp, vy: Math.sin(sa) * sp, life: 0.09 + R0() * 0.06, c: R0() < 0.5 ? '#ffffff' : col.core, t: 'spark', drag: 7 }); }
+  if (cls === 'blaster' || cls === 'rifle' || cls === 'shotgun' || cls === 'sniper') { const side = Math.cos(a) < 0 ? 1 : -1, px0 = -Math.sin(a) * side, py0 = Math.cos(a) * side; F.add({ x: pl.x + Math.cos(a) * 4, y: pl.y - 9, vx: px0 * 45 + (R0() - 0.5) * 20, vy: -55 - R0() * 30, g: 340, life: 0.32, c: cls === 'shotgun' ? '#d84a3a' : '#e8c36a', drag: 1 }); }
+  if (cls === 'shotgun' || cls === 'sniper' || cls === 'launcher' || cls === 'railgun') for (let i = 0; i < 2; i++) F.add({ x: mx + Math.cos(a) * 3, y: my + Math.sin(a) * 3, vx: Math.cos(a) * 18 + (R0() - 0.5) * 10, vy: Math.sin(a) * 18 - 10, life: 0.45, c: '#8d88a8', s: 1.5 + R0(), t: 'puff', drag: 2 });
+  const k = GUN_KICK[cls] || 0.8; pl.kickX = (pl.kickX || 0) - Math.cos(a) * k; pl.kickY = (pl.kickY || 0) - Math.sin(a) * k;
+}
+// where a shot lands: sparks fly back the way it came
+function impactFx(F, x, y, dx, dy, col, crit) {
+  const back = Math.atan2(-(dy || 0), -(dx || 1)), n = crit ? 6 : 3;
+  for (let i = 0; i < n; i++) { const a = back + (R0() - 0.5) * 1.7, sp = 60 + R0() * 80; F.add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.1 + R0() * 0.08, c: i % 3 === 0 ? '#ffffff' : (col ? col.core : '#ffe9a8'), t: 'spark', drag: 6 }); }
+  F.add({ x, y, life: crit ? 0.1 : 0.06, c: crit ? '#ffd23d' : (col ? col.mid : '#ffffff'), s: crit ? 5 : 3, t: 'hitflash', drag: 0 });
 }
 function bladeSwing(w, pl, W, a) {
   const R = W.rng + 6;
@@ -116,7 +137,7 @@ function railFire(w, pl, W, a, ch) {
   if (W.sig === 'meteors') for (let i = 1; i <= 5; i++) { const k = i / 5.5; w.strikes.push({ x: lerp(x0, x1, k), y: lerp(y0, y1, k) + 6, t: 0, max: 0.35 + i * 0.12, r: 24, dmg: dmg * 0.7, col: PLASMA_COL }); }
   if (W.sig === 'rift') for (let i = 1; i <= 8; i++) { const k = i / 8.5; w.hazards.push({ x: lerp(x0, x1, k), y: lerp(y0, y1, k) + 6, r: 11, t: 2.6, dps: dmg * 0.35, el: 'void', col: '#b45cff', kind: 'rift' }); }
   for (let i = 0; i < 30; i++) { const k = R0(); w.fx.add({ x: lerp(x0, x1, k), y: lerp(y0, y1, k), vx: (R0() - 0.5) * 30, vy: (R0() - 0.5) * 30, life: 0.4, c: W.col.mid, s: 1 }); }
-  wsnd(w, 'rail'); if (!w.demo) { shake(3 + ch * 3 + (perfect ? 3 : 0)); } pl.recoil = 4;
+  wsnd(w, 'rail'); if (!w.demo) { shake(3 + ch * 3 + (perfect ? 3 : 0)); gunFx(w.fx, pl, a, W.col, 'railgun'); } pl.recoil = 4;
 }
 function beamDamage(w, pl, W, a, dt) {
   if (w.beam.multi) { w.beam.lens = w.beam.multi.map(aa => beamCast(w, pl, W, aa, dt, 0.6)); w.beam.len = w.beam.lens[1]; }
@@ -153,6 +174,8 @@ function hitEnemy(w, e, dmg, o = {}) {
   if (tag && tag !== 'back' && (!o.quiet || R0() < 0.1)) w.fx.text(e.x + 8, e.y - e.r - 12, tag, tag === 'ARMOR' ? '#9aa3c0' : COL.gold, { f: FS, life: 0.5 });
   if (tag && tag !== 'ARMOR' && !o.quiet) stat(w, 'weakhits');
   w.lastW = W || null;
+  if (o.x !== undefined && !o.quiet && !w.demo) impactFx(w.fx, o.x, o.y, o.dx, o.dy, W && W.col, crit);
+  if (o.dx !== undefined && o.dy !== undefined && !e.boss && !e.nest && !e.dummy && !e.part) { const kb = (e.armored ? 14 : 34) * (o.kb ?? 1); e.kx = clamp(e.kx + o.dx * kb, -160, 160); e.ky = clamp(e.ky + o.dy * kb, -160, 160); }
   damageEnemy(w, e, dmg, { crit, quiet: o.quiet, col: o.col });
   if (!W || o.noFx) return;
   if (W.el && !o.child2 && !e.dead) applyElement(w, e, W, dmg, o);
@@ -171,7 +194,11 @@ function damageEnemy(w, e, dmg, o = {}) {
   if (e.invuln || e.under || e.hidden) { if (!o.quiet && R0() < 0.25) w.fx.text(e.x, e.y - e.r - 10, 'IMMUNE', '#9aa3c0', { f: FS, life: 0.4 }); return; }
   if (e.dummy) { (w.dmgLog = w.dmgLog || []).push([w.t, dmg]); }
   e.hp -= dmg; e.flash = 0.08; e.lastSrc = o.src || null;
-  if (!o.quiet || R0() < 0.15) w.fx.text(e.x + (R0() - 0.5) * 6, e.y - e.r - 4, fmt(Math.max(1, dmg)), o.crit ? COL.gold : (o.col || '#fff'), { sc: 1, f: o.crit ? FB : FS, life: o.crit ? 0.9 : 0.6, vy: -40 });
+  if (!o.quiet || R0() < 0.15) {
+    const T = e.dmgTxt;
+    if (!o.crit && T && T.life > T.max - 0.35 && T.life > 0) { T.val += dmg; T.txt = fmt(Math.max(1, T.val)); T.life = T.max; T.pop = 0.05; T.x = e.x; T.vy = -28; }
+    else { const p = w.fx.text(e.x + (R0() - 0.5) * 4, e.y - e.r - 6, fmt(Math.max(1, dmg)), o.crit ? COL.gold : (o.col || '#fff'), { sc: 1, f: o.crit ? FB : FS, life: o.crit ? 0.9 : 0.7, vy: o.crit ? -55 : -40 }); p.val = dmg; if (!o.crit) e.dmgTxt = p; else p.pop = 0.06; }
+  }
   if (!o.quiet) wsnd(w, 'hit');
   if (o.crit && !w.demo) { FX.hitstop = Math.max(FX.hitstop, 0.03); }
   if (e.dummy && e.hp <= 0) e.hp = e.maxHp;
@@ -279,7 +306,7 @@ function updateShots(w, dt) {
     }
     if (w.solid(nx, ny)) {
       if (s.bounce > 0) { if (w.solid(nx, s.y)) s.vx = -s.vx; if (w.solid(s.x, ny)) s.vy = -s.vy; s.ang = Math.atan2(s.vy, s.vx); s.bounce--; if (s.sig === 'pinball') pinball(s); }
-      else { if (s.v.detonate) explode(w, s.x, s.y, 14 + s.v.detonate * 6, s.dmg * 0.8, s.col); else w.fx.burst(s.x, s.y, 3, { c: [s.col.mid, '#fff'], sp: 50 }); if (s.sig === 'dragon') fireAt(w, s.x, s.y, s.dmg); s.dead = true; continue; }
+      else { if (s.v.detonate) explode(w, s.x, s.y, 14 + s.v.detonate * 6, s.dmg * 0.8, s.col); else impactFx(w.fx, s.x, s.y, s.vx / (s.spd || 1), s.vy / (s.spd || 1), s.col, false); if (s.sig === 'dragon') fireAt(w, s.x, s.y, s.dmg); s.dead = true; continue; }
     } else { s.x = nx; s.y = ny; }
     if ((w.bw || (w.boss && (w.boss.shards || w.boss.reflect > 0))) && bossBlocksShot(w, s)) { s.dead = true; continue; }
     s.life -= dt;
@@ -292,7 +319,7 @@ function updateShots(w, dt) {
         let mult = 1;
         if (s.kind === 'pellet' && s.travel < 48) { mult = 1.35; if (!pl.pbShown) { pl.pbShown = true; w.fx.text(e.x, e.y - e.r - 16, 'POINT BLANK', COL.lilac, { f: FS, life: 0.5 }); } }
         if (s.kind === 'slug' && s.travel > 200) { mult = 1.5; w.fx.text(e.x, e.y - e.r - 16, 'LONG SHOT', COL.lilac, { f: FS, life: 0.5 }); }
-        hitEnemy(w, e, s.dmg, { W: Wl, x: s.x, y: s.y, dx: s.vx / (s.spd || 1), forceCrit: s.forceCrit, mult });
+        hitEnemy(w, e, s.dmg, { W: Wl, x: s.x, y: s.y, dx: s.vx / (s.spd || 1), dy: s.vy / (s.spd || 1), kb: s.kind === 'pellet' ? 0.6 : s.kind === 'slug' ? 2.2 : 1, forceCrit: s.forceCrit, mult });
         if (s.zeus) { chainZap(w, e, s.dmg * 1.2, 8, ARC_COL); w.zaps.push({ x0: e.x, y0: e.y - 120, x1: e.x, y1: e.y - 3, t: 0, col: '#fff25a' }); }
         if (s.solar) explode(w, s.x, s.y, 32, s.dmg * 2, PLASMA_COL);
         if (s.sig === 'dragon') fireAt(w, s.x, s.y, s.dmg);
@@ -515,6 +542,14 @@ function hurtPlayer(w, dmg, src) {
   return false;
 }
 // ---------- draw ----------
+// a glowing streak: dim tail, bright 2px head
+function drawBolt(x, y, vx, vy, L, c, t) {
+  const grow = Math.min(1, (t || 1) / 0.05), tx = x - vx * L * grow, ty = y - vy * L * grow, horiz = Math.abs(vx) > Math.abs(vy);
+  ctx.globalAlpha = 0.28; circ(x, y, 3, c.mid); ctx.globalAlpha = 1;
+  line(tx, ty, x, y, c.edge); if (horiz) line(tx, ty + 1, x, y + 1, c.edge); else line(tx + 1, ty, x + 1, y, c.edge);
+  const hx = lerp(tx, x, 0.55), hy = lerp(ty, y, 0.55); line(hx, hy, x, y, c.mid); if (horiz) line(hx, hy + 1, x, y + 1, c.mid); else line(hx + 1, hy, x + 1, y, c.mid);
+  rect(x - (horiz ? 1 : 0), y, 2, 2, c.core);
+}
 function drawShots(w, ox, oy) {
   for (const s of w.shots) {
     if (s.burrow) continue;
@@ -522,7 +557,7 @@ function drawShots(w, ox, oy) {
     if (s.solar || s.zeus || s.forceCrit) { ctx.globalAlpha = 0.4; circ(x, y, 4, s.solar ? '#fca311' : s.zeus ? '#fff25a' : '#fff'); ctx.globalAlpha = 1; }
     if (s.stuck) { rect(x - 1, y - 1, 3, 3, (Math.floor(T_NOW * 20) % 2) ? '#fff' : c.mid); continue; }
     switch (s.kind) {
-      case 'pellet': case 'shard': if (s.giant) { circ(x, y, 3, c.mid); px(x, y, c.core); break; } rect(x - 1, y - 1, 2, 2, c.mid); px(x, y, c.core); break;
+      case 'pellet': case 'shard': if (s.giant) { circ(x, y, 3, c.mid); px(x, y, c.core); break; } line(x, y, x - s.vx * 0.012, y - s.vy * 0.012, c.edge); rect(x - 1, y - 1, 2, 2, c.mid); px(x, y, c.core); break;
       case 'spud': { const f = Math.floor(s.t * 10) % 2; ellipse(x, y, 3, f ? 2 : 3, '#8a6a3a'); px(x - 1, y - 1, '#c8a060'); px(x + 1, y, '#5a4020'); break; }
       case 'star': { const f = Math.floor(s.t * 24) % 2; if (f) { line(x - 3, y, x + 3, y, c.mid); line(x, y - 3, x, y + 3, c.mid); } else { line(x - 2, y - 2, x + 2, y + 2, c.mid); line(x - 2, y + 2, x + 2, y - 2, c.mid); } px(x, y, '#fff'); break; }
       case 'rocket': rect(x - 2, y - 2, 4, 4, c.edge); rect(x - 1, y - 1, 2, 2, c.core); break;
@@ -530,7 +565,7 @@ function drawShots(w, ox, oy) {
       case 'wave': { ctx.strokeStyle = c.mid; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x - Math.cos(s.ang) * 4, y - Math.sin(s.ang) * 4, 7, s.ang - 1, s.ang + 1); ctx.stroke(); ctx.lineWidth = 1; ctx.strokeStyle = c.core; ctx.beginPath(); ctx.arc(x - Math.cos(s.ang) * 4, y - Math.sin(s.ang) * 4, 7, s.ang - 0.6, s.ang + 0.6); ctx.stroke(); break; }
       case 'prism': line(x, y, x - s.vx * 0.025, y - s.vy * 0.025, rainbow(T_NOW * 3, s.t * 500)); break;
       case 'slug': line(x, y, x - s.vx * 0.02, y - s.vy * 0.02, c.mid); line(x, y, x - s.vx * 0.008, y - s.vy * 0.008, c.core); break;
-      default: { if (s.r >= 4) { circ(x, y, Math.floor(s.r), c.edge); circ(x, y, Math.max(1, Math.floor(s.r) - 1), c.mid); px(x, y, '#fff'); break; } const L = 0.018; line(x, y, x - s.vx * L, y - s.vy * L, s.zeus ? '#fff25a' : c.edge); rect(x - 1, y - 1, 2, 2, s.zeus ? '#fff' : c.mid); px(x, y, c.core); }
+      default: { if (s.r >= 4) { ctx.globalAlpha = 0.3; circ(x, y, Math.floor(s.r) + 2, c.mid); ctx.globalAlpha = 1; circ(x, y, Math.floor(s.r), c.edge); circ(x, y, Math.max(1, Math.floor(s.r) - 1), c.mid); px(x, y, '#fff'); break; } drawBolt(x, y, s.vx, s.vy, s.kind === 'bolt' && s.r <= 2 ? 0.03 : 0.024, s.zeus ? { edge: '#fff25a', mid: '#fff', core: '#fff' } : c, s.t); }
     }
   }
   for (const s of w.eshots) { const x = s.x - ox, y = s.y - oy; const b = Math.floor(T_NOW * 12) % 2; rect(x - 2, y - 2, 4, 4, b ? '#fff' : s.col); rect(x - 1, y - 1, 2, 2, b ? s.col : '#fff'); }
@@ -584,6 +619,7 @@ function drawEnemy(w, e, ox, oy) {
   const winding = (e.st === 'wind' || e.windup) && !(e.stun > 0);
   ctx.save(); ctx.translate(x, y + bob);
   if (e.face < 0) ctx.scale(-1, 1);
+  if (e.flash > 0 && !e.boss) ctx.scale(1.14, 0.88);
   if (winding && Math.floor(T_NOW * 30) % 2) ctx.translate(1, 0);
   ctx.drawImage(spr, -Math.floor(sw / 2), -sh + 2, sw, sh);
   if (winding && Math.floor(T_NOW * 12) % 2) { ctx.globalAlpha = 0.55; ctx.drawImage(maskOf(spr, '#fff2a0'), -Math.floor(sw / 2), -sh + 2, sw, sh); ctx.globalAlpha = 1; }
@@ -614,7 +650,7 @@ function makePlayer(x, y, L) {
   return { x, y, vx: 0, vy: 0, r: 5, hp: L.hp, maxHp: L.hp, armor: L.armor, aim: 0, dir: 0, walk: 0, moving: false, fireCd: 0, boostCd: 0, boostT: 0, charges: ch, maxCharges: ch, inv: 0, mode: 'weapon', charge: 0, heat: 0, perks: L.perks, recoil: 0, hurtT: 0, sprintT: 0, setAb: sa, focusT: 0, shadowT: 0, solarT: 0, wi: 0 };
 }
 function updatePlayer(w, pl, inp, dt, L) {
-  pl.inv -= dt; pl.hurtT -= dt; pl.recoil = Math.max(0, pl.recoil - dt * 20);
+  pl.inv -= dt; pl.hurtT -= dt; pl.recoil = Math.max(0, pl.recoil - dt * 20); if (pl.kickX) { const d = Math.pow(0.0005, dt); pl.kickX *= d; pl.kickY *= d; }
   if (pl.focusT > 0) pl.focusT -= dt; if (pl.shadowT > 0) pl.shadowT -= dt;
   const sa = pl.setAb || {};
   if (sa[9] && !pl.solarReady) { pl.solarT += dt; if (pl.solarT >= (sa[9] > 1 ? 2.5 : 4)) { pl.solarReady = true; w.fx.text(pl.x, pl.y - 30, 'FLARE READY', '#fca311', { f: FS, life: 0.6 }); } }
@@ -666,7 +702,7 @@ function drawPlayer(w, pl, ox, oy, eq, opt = {}) {
     const id = pl.mode === 'tool' ? eq.tool : eq.weapon; if (!id) return;
     const skin = pl.mode === 'tool' ? eq.skin_tool : eq.skin_weapon;
     const s = pl.mode === 'tool' ? (skin ? getSkinnedSpr(id, skin) : getItemSpr(id)) : getHeldSpr(id, skin);
-    const img = frameOf(s);
+    const img = frameOf(s); if (pl.mode !== 'tool') pl.gunLen = s.w;
     const a = pl.aim, flip = Math.cos(a) < 0;
     ctx.save(); ctx.translate(x + Math.cos(a) * (3 - pl.recoil), y - 8 + Math.sin(a) * 3); ctx.rotate(a); if (flip) ctx.scale(1, -1);
     ctx.drawImage(img, pl.mode === 'tool' ? -4 : -3, -Math.floor(s.h / 2));

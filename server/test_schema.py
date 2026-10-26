@@ -26,7 +26,7 @@ sql = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.sql'
 c.execute(sql); c.execute(sql)  # twice: must be safe to re-run
 print('schema ran twice OK')
 
-U = {n: str(uuid.uuid4()) for n in ['A', 'B', 'C', 'D']}
+U = {n: str(uuid.uuid4()) for n in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']}
 for n, u in U.items(): c.execute('insert into auth.users values (%s, %s)', (u, n.lower() + '@x.com'))
 
 fails = 0
@@ -181,4 +181,29 @@ r = call('D', f"select duel_report('{mai2}', false)"); ok('losing to the AI cost
 r = call('D', 'select duel_ai(false)'); mai3 = r['match']
 r = call('D', f"select duel_report('{mai3}', true)"); ok('unranked changes no trophies', r['trophy_change'] == 0, r)
 r = call('B', 'select duel_find(false)'); r = call('B', 'select duel_cancel()'); ok('cancel queue', r.get('cancelled') is True, r)
+# matchmaking for a small player base
+for n, cs in [('E', 'echo'), ('F', 'fox'), ('G', 'golf'), ('H', 'hotel')]: call(n, 'select init_player(null)'); call(n, "select set_callsign(%s)", (cs,))
+def age(n, secs, col='created_at'): c.execute('reset role'); c.execute(f"update public.duel_queue set {col} = now() - interval '{secs} seconds' where user_id = %s", (U[n],))
+r = call('E', 'select duel_find(false)'); ok('E waits, told how many others are around', r.get('waiting') is True and r['others'] >= 1, r)
+r = call('F', 'select duel_find(true)'); ok('ranked F does not grab unranked E straight away', r.get('waiting') is True and r['searching'] == 1, r)
+age('E', 6); r = call('F', 'select duel_find(true)'); mx = r.get('match'); ok('after a few seconds ranked and unranked meet, as unranked', mx and r['ranked'] is False and r['opponent']['callsign'] == 'ECHO', r)
+r = call('E', 'select duel_find(false)'); ok('E hosts the cross-mode match', r.get('match') == mx and r['host'] is True, r)
+r = call('G', 'select duel_find(false)'); age('G', 25, 'seen_at')
+r = call('H', 'select duel_find(false)'); ok('a searcher who closed the game is not matched', r.get('waiting') is True, r)
+r = call('G', "select duel_find(false, 'pals')"); ok('G waits for a friend code', r.get('waiting') is True, r)
+r = call('H', 'select duel_find(false)'); ok('public search skips code searchers', r.get('waiting') is True, r)
+r = call('H', "select duel_find(false, 'p a l s')"); mf = r.get('match'); ok('same code (any case) matches friends, unranked', mf and r['ranked'] is False and r['opponent']['callsign'] == 'GOLF', r)
+r = call('G', "select duel_find(true, 'pals')"); ok('G gets the friend match', r.get('match') == mf, r)
+r = call('E', "select duel_find(false, 'x')"); ok('short codes refused', str(r).startswith('ERR'), r)
+# the other pilot never connects: each side settles as an AI match, no dispute
+c.execute('reset role'); c.execute("update public.duels set ranked = true where id = %s", (mx,))
+t0 = call('E', 'select my_arena()')['trophies']
+r = call('E', f"select duel_report('{mx}', true, true)"); ok('stand-in AI win pays like an AI match', r['done'] and r['trophy_change'] == 14, r)
+r = call('E', f"select duel_report('{mx}', true, true)"); ok('reporting again does not pay twice', r['done'] and r['trophy_change'] == 14 and call('E', 'select my_arena()')['trophies'] == t0 + 14, r)
+r = call('F', f"select duel_report('{mx}', true)"); ok('other side also settles vs AI', r['done'] and r['trophy_change'] == 14, r)
+# an old match nobody played does not trap a searcher
+r = call('G', 'select duel_find(false)'); r = call('H', 'select duel_find(false)'); mo = r.get('match')
+c.execute('reset role'); c.execute("update public.duels set created_at = now() - interval '2 minutes' where id = %s", (mo,))
+r = call('G', 'select duel_find(false)'); ok('stale match is dropped and search goes on', r.get('waiting') is True, r)
+call('G', 'select duel_cancel()')
 print('\nFAILURES:', fails); sys.exit(1 if fails else 0)

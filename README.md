@@ -28,5 +28,6 @@ An 8-bit space crate-opening game: open crates, gear up your astronaut and ship,
 
 - Arenas and duels use Supabase Realtime: broadcast plus presence.
 - The first player in a room also runs the AI pilots.
+- 1v1 matchmaking looks for a real pilot first. If other players are online it waits up to about 35 seconds, otherwise about 10, then brings in an AI pilot. Friends who type the same code on the 1V1 tab only get matched with each other.
 - A server holds 10 pilots: up to 5 real players, and AI pilots fill the empty seats, never more than 5 of them.
 - The free plan allows 100 realtime messages per second for the whole project, so that's the real limit on how many live matches can run at once.

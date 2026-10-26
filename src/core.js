@@ -290,6 +290,13 @@ function flash(v, c = '#fff') { FX.flash = Math.max(FX.flash, v); FX.flashCol = 
 
 // ---------- particles ----------
 const PAT_CACHE = {};
+// a muzzle flash pointing along the shot: hot white core, coloured petals, k goes 1 -> 0
+function drawMuzzle(x, y, a, s, c, c2, k) {
+  const ca = Math.cos(a), sa = Math.sin(a), L = Math.round((4 + 4 * s) * (0.5 + k * 0.5));
+  ctx.globalAlpha = 0.35 * k; circ(x + ca * 2, y + sa * 2, Math.round(3 + 3 * s * k), c); ctx.globalAlpha = 1;
+  line(x, y, x + ca * L, y + sa * L, c); line(x, y, x + Math.cos(a - 0.65) * L * 0.55, y + Math.sin(a - 0.65) * L * 0.55, c); line(x, y, x + Math.cos(a + 0.65) * L * 0.55, y + Math.sin(a + 0.65) * L * 0.55, c);
+  line(x, y, x + ca * L * 0.6, y + sa * L * 0.6, c2 || '#fff'); rect(x - 1, y - 1, 2 + (k > 0.5 ? 1 : 0), 2 + (k > 0.5 ? 1 : 0), '#ffffff');
+}
 class Particles {
   constructor(max = 1400) { this.a = []; this.max = max; }
   add(p) { if (this.a.length >= this.max) this.a.shift(); p.life = p.life ?? 0.6; p.max = p.life; p.drag = p.drag ?? 0; p.vx = p.vx || 0; p.vy = p.vy || 0; this.a.push(p); return p; }
@@ -301,7 +308,7 @@ class Particles {
       this.add({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: (opt.life ?? 0.5) * (0.6 + R0() * 0.8), c, s: opt.s ?? 1, g: opt.g ?? 0, drag: opt.drag ?? 2.5, t: opt.t || 'px', z: opt.z || 0 });
     }
   }
-  text(x, y, s, c, opt = {}) { this.add({ x, y, vx: opt.vx ?? 0, vy: opt.vy ?? -30, life: opt.life ?? 0.8, c, s: opt.sc || 1, txt: String(s), t: 'txt', drag: 3, f: opt.f || FS, oc: opt.oc || '#000' }); }
+  text(x, y, s, c, opt = {}) { return this.add({ x, y, vx: opt.vx ?? 0, vy: opt.vy ?? -30, life: opt.life ?? 0.8, c, s: opt.sc || 1, txt: String(s), t: 'txt', drag: 3, f: opt.f || FS, oc: opt.oc || '#000' }); }
   update(dt) {
     const a = this.a; let j = 0;
     for (let i = 0; i < a.length; i++) {
@@ -318,13 +325,16 @@ class Particles {
     for (const p of this.a) {
       const k = p.life / p.max, x = Math.floor(p.x - ox), y = Math.floor(p.y - oy);
       if (x < -20 || y < -20 || x > W + 20 || y > H + 20) continue;
-      if (p.t === 'txt') { textO(p.txt, x, y, p.c, p.oc, p.f, 1, p.s); continue; }
+      if (p.t === 'txt') { if (k < 0.3) ctx.globalAlpha = k / 0.3; let c = p.c; if (p.pop > 0) { p.pop -= 1 / 60; c = '#ffffff'; } textO(p.txt, x, y, c, p.oc, p.f, 1, p.s); ctx.globalAlpha = 1; continue; }
+      if (p.t === 'muzzle') { drawMuzzle(x, y, p.a, p.s, p.c, p.c2, k); continue; }
+      if (p.t === 'hitflash') { const r = Math.ceil(p.s * (0.6 + k * 0.6)); ctx.globalAlpha = Math.min(1, k * 2); rect(x - r, y, r * 2 + 1, 1, p.c); rect(x, y - r, 1, r * 2 + 1, p.c); rect(x - 1, y - 1, 3, 3, '#ffffff'); ctx.globalAlpha = 1; continue; }
+      if (p.t === 'casing') { ctx.fillStyle = p.c; ctx.fillRect(x, y, Math.abs(p.vy) > 60 ? 1 : 2, Math.abs(p.vy) > 60 ? 2 : 1); continue; }
       if (p.t === 'ring') { ctx.globalAlpha = k; ring(x, y, Math.floor((1 - k) * p.s + 2), p.c); ctx.globalAlpha = 1; continue; }
-      if (p.t === 'spark') { const L = 3; line(x, y, x - p.vx * 0.02 * L, y - p.vy * 0.02 * L, p.c); continue; }
+      if (p.t === 'spark') { const L = 3; if (k < 0.4) ctx.globalAlpha = k / 0.4; line(x, y, x - p.vx * 0.02 * L, y - p.vy * 0.02 * L, p.c); ctx.globalAlpha = 1; continue; }
       if (p.t === 'pat') { const rows = PAT_CACHE[p.pat] || (PAT_CACHE[p.pat] = p.pat.split('|')); ctx.globalAlpha = Math.min(1, k * 1.6); ctx.fillStyle = p.c; const x0 = x - (rows[0].length >> 1), y0 = y - (rows.length >> 1); for (let r = 0; r < rows.length; r++) for (let c2 = 0; c2 < rows[r].length; c2++) if (rows[r][c2] === '#') ctx.fillRect(x0 + c2, y0 + r, 1, 1); ctx.globalAlpha = 1; continue; }
       if (p.t === 'puff') { ctx.globalAlpha = k * 0.7; const rr = Math.floor(p.s + (1 - k) * 4); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; continue; }
       const s = p.t === 'shrink' ? Math.max(1, Math.ceil(p.s * k)) : p.s;
-      if (p.t === 'fade') ctx.globalAlpha = k;
+      if (p.t === 'fade') ctx.globalAlpha = k; else if (k < 0.35) ctx.globalAlpha = k / 0.35;   // ease out instead of blinking off
       ctx.fillStyle = p.c; ctx.fillRect(x - (s >> 1), y - (s >> 1), s, s);
       ctx.globalAlpha = 1;
     }

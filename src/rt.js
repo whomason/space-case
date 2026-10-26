@@ -19,7 +19,6 @@ async function rtJoin(topic, me, on) {
   if (NET.url !== NET_URL) return rtJoinLocal(topic, me, on);
   const lib = await rtLoadLib();
   if (!RT.client) RT.client = lib.createClient(NET_URL, NET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-  try { await RT.client.realtime.setAuth(await netToken()); } catch (e) { }
   const ch = RT.client.channel('sc-' + topic, { config: { broadcast: { self: false, ack: false }, presence: { key: me.id } } });
   ch.on('broadcast', { event: 'm' }, msg => { const p = msg && msg.payload; if (p && p.f !== me.id) on.msg(p.e, p.d, p.f); });
   ch.on('presence', { event: 'sync' }, () => {

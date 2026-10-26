@@ -50,6 +50,7 @@ function openStation(id) {
   if (id === 'launch') { if (SCENE === 'hub' && HUB.launch === null) { HUB.launch = 0; HUB.panel = null; SND.play('unlock'); } else setScene('map'); return; }
   if (S.unlockNew && S.unlockNew[id]) { delete S.unlockNew[id]; dirty(); }
   HUB.panel = id; HUB.ps[id] = HUB.ps[id] || { tab: 0, slot: id === 'hangar' ? 'engine' : 'weapon', scroll: 0 };
+  const ps = HUB.ps[id]; ps.sell = false; ps.sellSel = null; ps.bulk = 0;   // selling never carries over from the last visit
   if (id === 'mining') tickMiners();
 }
 // ---------- starfield ----------
@@ -636,22 +637,6 @@ function drawWarp(dt) {
     if (k > 1.2) text('CLICK TO LAND', tx, 196, Math.floor(T_NOW * 3) % 2 ? COL.gold : '#fff6c0', FB);
     if ((k > 1.2 && (IN.pr || kp('Enter') || kp('Space'))) || k > 6) { startRun(w.n); WARP = null; }
   }
-}
-// ---------- title ----------
-function drawTitle(dt) {
-  drawStarfield(dt, 0.4);
-  const t = T_NOW;
-  // floating crates
-  for (let i = 0; i < 5; i++) { const x = 40 + i * 100 + Math.sin(t * 0.7 + i) * 10, y = 200 + Math.sin(t + i * 1.7) * 8; ctx.globalAlpha = 0.85; ctx.drawImage(getCrate([0, 2, 3, 5, 6][i], ['weapon', 'armor', 'ship', 'cosmetic', 'galaxy'][i]), x, y, 32, 28); ctx.globalAlpha = 1; }
-  drawShip(S.eq, 300 + Math.sin(t * 0.8) * 6, 110 + Math.sin(t * 1.3) * 4, 2, t, { thrust: 0.4 });
-  ctx.drawImage(astroSprite(S.eq, 3, Math.floor(t * 4) % 2 ? 0 : 0), 120, 120 + Math.round(Math.sin(t * 1.5) * 3), 40, 52);
-  const title = 'SPACE CASE'; const sc = 5; const tw = textW(title, FB, sc); let x = W / 2 - tw / 2;
-  for (let i = 0; i < title.length; i++) { const ch = title[i]; const y = 30 + Math.round(Math.sin(t * 3 + i * 0.5) * 3); const c = hex(hsl((t * 60 + i * 24) % 360, 0.85, 0.62)); text(ch, x + sc, y + sc, '#000', FB, 0, sc); text(ch, x, y, c, FB, 0, sc); x += ch === ' ' ? (FB.spaceW + 1) * sc : ((FB.g[ch] || FB.g['?']).w + 1) * sc; }
-  text('CRACK CRATES. HAUL ORE. CONQUER 20 PLANETS.', W / 2, 76, COL.dim, FB, 1);
-  const b = Math.floor(t * 2) % 2;
-  textO(S.stats.crates || S.planet.landings ? 'CLICK TO CONTINUE' : 'CLICK TO START', W / 2, 176, b ? COL.gold : '#fff6c0', '#000', FB, 1, 2);
-  text('BEST WITH SOUND ON', W / 2, 196, COL.mute, FS, 1);
-  if (IN.pr || kp('Enter') || kp('Space')) { SND.unlock(); SND.setMute(S.settings.mute); SND.setMusic(S.settings.music); goHub(); }
 }
 function dreamsTab(st) {
   text('HANDCRAFTED WEAPONS WITH ONE-OF-A-KIND TRICKS. HOVER FOR DETAILS, CLICK TO TRACK ONE', W / 2, 30, COL.dim, FS, 1);

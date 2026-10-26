@@ -47,6 +47,14 @@ function tabs(x, y, names, cur, w = 70) {
   names.forEach((n, i) => { const sel = i === cur; const tx = x + i * (w + 3); const hov = inBox(tx, y, w, 13); panel(tx, y, w, 13, { bg: sel ? COL.void3 : COL.void2, bd: sel ? COL.blueL : hov ? COL.line : COL.steel, flat: true }); if (sel) rect(tx + 2, y + 11, w - 4, 1, COL.gold); text(n, tx + w / 2, y + 4, sel ? COL.ink : COL.dim, FS, 1); if (hov) IN.cursor = 'pointer'; if (clickIn(tx, y, w, 13)) { pick = i; SND.play('click'); } });
   return pick;
 }
+// a NEW badge goes away once you hover the item for a moment
+let FRESH_HOV = { id: null, t: 0 };
+function seeFresh(id) {
+  if (!S.fresh || !S.fresh[id]) return;
+  if (FRESH_HOV.id !== id || T_NOW - FRESH_HOV.t > 1) FRESH_HOV = { id, t: T_NOW, last: T_NOW };
+  else if (T_NOW - FRESH_HOV.last > 0.1) FRESH_HOV = { id, t: T_NOW, last: T_NOW };   // the mouse left and came back: start over
+  else { FRESH_HOV.last = T_NOW; if (T_NOW - FRESH_HOV.t > 0.3) { delete S.fresh[id]; dirty(); } }
+}
 // generic scrolling grid of item ids. returns clicked id
 function itemGrid(st, ids, x, y, w, h, o = {}) {
   const cw = o.cw || 28, ch = o.ch || 22, gap = 2, cols = Math.max(1, Math.floor((w - 4) / (cw + gap)));
@@ -65,7 +73,7 @@ function itemGrid(st, ids, x, y, w, h, o = {}) {
     if (own && S.inv[id] && S.inv[id].l > 1) text(S.inv[id].l + '', bx + cw - 2, by + ch - 6, S.inv[id].l >= 10 ? COL.gold : COL.cyan, FS, 2);
     if (o.eqd && o.eqd.includes(id)) { rect(bx + 1, by + 1, 4, 4, COL.mint); }
     if (S.fresh && S.fresh[id] && own) { if (Math.floor(T_NOW * 3) % 2) { ctx.strokeStyle = COL.pink; ctx.strokeRect(bx + 0.5, by + 0.5, cw - 1, ch - 1); } panel(bx + 1, by + 1, 15, 7, { bg: COL.pink, bd: COL.pink, flat: true }); text('NEW', bx + 2, by + 2, COL.navy, FS); }
-    if (hov) { IN.cursor = 'pointer'; TIP.set(own ? { item: id } : `??? ${RAR[d.r].n} ${roleHint(id)}. FIND: ${whereToFind(id)}`); if (clickIn(bx, by, cw, ch)) clicked = id; }
+    if (hov) { IN.cursor = 'pointer'; TIP.set(own ? { item: id } : `??? ${RAR[d.r].n} ${roleHint(id)}. FIND: ${whereToFind(id)}`); if (clickIn(bx, by, cw, ch)) clicked = id; if (own) seeFresh(id); }
   }
   ctx.restore();
   if (maxS > 0) { const sh = Math.max(10, h * h / total); rect(x + w - 2, y + (h - sh) * (st.scroll / maxS), 2, sh, COL.steel); }

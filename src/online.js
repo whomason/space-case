@@ -41,6 +41,13 @@ async function rpc(fn, args) {
   try { return await netFetch('/rest/v1/rpc/' + fn, args || {}, at); }
   catch (e) { if (e.status !== 401) throw e; at = await netToken(true); return netFetch('/rest/v1/rpc/' + fn, args || {}, at); }
 }
+// call a newer server function; if the server still has the old version (schema not re-run yet), call it the old way
+const RPC_OLD = {};
+async function rpcNew(fn, args, oldArgs) {
+  if (RPC_OLD[fn]) return rpc(fn, oldArgs);
+  try { return await rpc(fn, args); }
+  catch (e) { if (!(e.code === 'PGRST202' || /could not find the function/i.test(e.message || ''))) throw e; RPC_OLD[fn] = true; return rpc(fn, oldArgs); }
+}
 function netLostSession() { netSaveSess(null); NET.st = 'off'; NET.social = null; toast('SIGNED OUT. SIGN IN AGAIN TO KEEP SYNCING', COL.coral); }
 
 // ---------- save bookkeeping ----------
@@ -207,7 +214,7 @@ function netBadgeCount() {
 }
 function drawOnlinePill(x, y) {
   const on = NET.st === 'on', n = netBadgeCount();
-  const label = NET.st === 'off' ? 'PLAY ONLINE' : NET.st === 'connecting' ? 'CONNECTING' : NET.st === 'error' || NET.offline ? 'OFFLINE' : NET.counts ? fmt((NET.counts.online || 0) + (NET.counts.ai || 0)) + ' ONLINE' : 'ONLINE';
+  const label = NET.st === 'off' ? 'PLAY ONLINE' : NET.st === 'connecting' ? 'CONNECTING' : NET.st === 'error' || NET.offline ? 'OFFLINE' : NET.counts ? fmt(shownOnline(NET.counts)) + ' ONLINE' : 'ONLINE';
   const fo = on && NET.social ? (NET.social.friends || []).filter(f => f.online).length : 0;
   const w = textW(label, FS) + (on ? 22 : 12) + (fo ? textW(fo + '', FS) + 8 : 0);
   if (button(x, y, w, 14, '', { kind: NET.st === 'off' ? 'blue' : 'def', tip: NET.st === 'off' ? 'SIGN IN FOR CLOUD SAVES, FRIENDS, CREWS AND TRADING' : NET.err && (NET.st === 'error' || NET.offline) ? NET.err : 'FRIENDS, CREW AND TRADES' })) openStation('social');
@@ -218,6 +225,8 @@ function drawOnlinePill(x, y) {
   if (n) { const bw = textW(n + '', FS) + 6; panel(x + w - 4, y - 4, bw, 9, { bg: COL.pink, bd: '#fff', flat: true }); text(n + '', x + w - 4 + bw / 2, y - 2, COL.navy, FS, 1); }
 }
 
+// the number players see: (real pilots online + 200) x 3
+function shownOnline(c) { return ((c && c.online) || 0) * 3 + 600; }
 // ---------- the ONLINE panel ----------
 function panelSocial(st) {
   if (panelFrame('ONLINE', COL.cyan)) return;

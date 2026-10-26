@@ -19,7 +19,7 @@ def q(sql, a=()):
 async def boot(ctx, tag):
     pg = await ctx.new_page(); errs = []; pg.tag = tag
     pg.on('pageerror', lambda e: errs.append(tag + ' ' + str(e)[:300]))
-    await pg.goto(BASE + '&ns=' + tag.lower()); await pg.wait_for_timeout(900); await pg.mouse.click(480, 300); await pg.wait_for_timeout(300)
+    await pg.goto(BASE + '&ns=' + tag.lower()); await pg.wait_for_timeout(900); await pg.mouse.click(480, 300); await pg.wait_for_timeout(120); await pg.mouse.click(480, 300); await pg.wait_for_timeout(650); await pg.wait_for_timeout(300)
     await pg.evaluate("S.nameAsked = true; closeNameUI()")
     return pg, errs
 async def wait_for(pg, js, ms=10000):
@@ -106,9 +106,30 @@ async def main():
         ok('ranked result saved: A +30', await wait_for(A, "!!(AM.result.r && AM.result.r.trophy_change === 30)", 12000), await A.evaluate("JSON.stringify(AM.result)"))
         await A.screenshot(path=OUT + 'ar7_victory.png')
         await A.evaluate("arLeave(true)"); await B.evaluate("arLeave(true)")
-        # ---- ranked vs AI when nobody else is searching
-        await A.evaluate("duelSearch(true)")
-        ok('no opponent: matched with an AI pilot', await wait_for(A, "SCENE === 'arena' && AM && AM.mode === 'duel' && AM.vsAI", 22000), await A.evaluate("[SCENE, DQ.on, DQ.t]"))
+        # ---- ranked and unranked searchers still meet
+        await A.evaluate("duelSearch(true)"); await A.wait_for_timeout(1500); await B.evaluate("duelSearch(false)")
+        ok('ranked meets unranked after a few seconds', await wait_for(A, "SCENE === 'arena' && AM && AM.mode === 'duel' && !AM.vsAI", 15000) and await wait_for(B, "SCENE === 'arena' && AM && AM.mode === 'duel'", 15000), [await A.evaluate("[SCENE, DQ.on]"), await B.evaluate("[SCENE, DQ.on]")])
+        ok('cross-mode match is unranked', await A.evaluate("AM.ranked") is False and await A.evaluate("AM.matchId") == await B.evaluate("AM.matchId"))
+        await A.evaluate("arLeave(true)"); await B.evaluate("arLeave(true)"); await A.wait_for_timeout(400)
+        # ---- friends with a code; then one closes the game mid-match and an AI takes over
+        await B.evaluate("duelSearch(true)"); await A.evaluate("duelSearch(false, 'PALS')"); await A.wait_for_timeout(3000)
+        ok('a code search ignores public searchers', await A.evaluate("DQ.on && !DQ.found") and await B.evaluate("DQ.on && !DQ.found"), [await A.evaluate("[DQ.on, !!DQ.found]"), await B.evaluate("[DQ.on, !!DQ.found]")])
+        await B.evaluate("duelCancel()"); await B.wait_for_timeout(300)
+        await B.evaluate("openStation('arena'); HUB.ps.arena.tab = 1"); await B.wait_for_timeout(200); await B.screenshot(path=OUT + 'ar5b_duel_tab.png')
+        await B.evaluate("duelSearch(false, 'pals')")
+        ok('same code: friends matched', await wait_for(A, "SCENE === 'arena' && AM && AM.mode === 'duel' && !AM.vsAI", 12000) and await wait_for(B, "SCENE === 'arena' && AM && AM.mode === 'duel'", 12000))
+        await wait_for(A, "[...AM.fighters.values()].some(f => !f.local && f.human)")
+        await B.evaluate("AM.room.leave(); AM = null; goHub()")
+        ok('opponent vanished: an AI pilot steps in', await wait_for(A, "AM && AM.vsAI && AM.fellBack", 26000), await A.evaluate("[AM && AM.t, AM && AM.oppSeenT]"))
+        await A.evaluate("(() => { const bot = [...AM.fighters.values()].find(f => f.bot); for (let i = 0; i < 5; i++) { arDie(bot, AM.me.id, false); bot.alive = true; } })()")
+        ok('stand-in match settles without a dispute', await wait_for(A, "!!(AM.result && AM.result.r && AM.result.r.done && !AM.result.r.disputed)", 8000), await A.evaluate("JSON.stringify(AM && AM.result)"))
+        await A.evaluate("arLeave(true)"); await A.wait_for_timeout(300)
+        # ---- ranked vs AI: others are online, so it keeps looking for a real pilot until you ask for an AI
+        await A.evaluate("duelSearch(true)"); await A.wait_for_timeout(15000)
+        ok('other pilots online: keeps looking past 15s', await A.evaluate("DQ.on && !DQ.found && DQ.wait >= 30"), await A.evaluate("[DQ.on, DQ.wait, DQ.others]"))
+        await A.screenshot(path=OUT + 'ar5c_searching.png')
+        await A.evaluate("DQ.aiNow = true")
+        ok('FIGHT AN AI NOW: matched with an AI pilot', await wait_for(A, "SCENE === 'arena' && AM && AM.mode === 'duel' && AM.vsAI", 9000), await A.evaluate("[SCENE, DQ.on, DQ.t]"))
         ok('AI pilot looks like a player', await A.evaluate("(() => { const b = [...AM.fighters.values()].find(f => f.bot); return b && b.cs.length >= 3 && !/\\b(AI|BOT)\\b/.test(b.cs) && !!b.eq.weapon; })()"))
         await A.evaluate("(() => { const bot = [...AM.fighters.values()].find(f => f.bot); for (let i = 0; i < 5; i++) { arDie(bot, AM.me.id, false); bot.alive = true; } })()")
         ok('beat the AI: +14 trophies', await wait_for(A, "!!(AM.result && AM.result.r && AM.result.r.trophy_change === 14)", 8000), await A.evaluate("JSON.stringify(AM && AM.result)"))

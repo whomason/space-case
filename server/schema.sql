@@ -775,6 +775,10 @@ create table if not exists public.duels (
 );
 alter table public.duels add column if not exists a_change int;
 alter table public.duels add column if not exists b_change int;
+alter table public.duels add column if not exists a_ai boolean not null default false;   -- this side ended up fighting an AI pilot
+alter table public.duels add column if not exists b_ai boolean not null default false;
+alter table public.duel_queue add column if not exists seen_at timestamptz not null default now();   -- last poll: only live searchers get matched
+alter table public.duel_queue add column if not exists code text;                                      -- friends who type the same code only meet each other
 
 -- these tables are only reached through the functions below
 alter table public.arena_stats    enable row level security;
@@ -894,32 +898,51 @@ begin
 end $$;
 
 -- ------------------------------------------------------------ 1v1 duels
-create or replace function public.duel_find(p_ranked boolean) returns jsonb
+drop function if exists public.duel_find(boolean);
+create or replace function public.duel_find(p_ranked boolean, p_code text default null) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare uid uuid := sc_private.me(); q record; o record; st public.arena_stats; mid uuid; dl record; waited numeric;
+declare uid uuid := sc_private.me(); q record; o record; st public.arena_stats; mid uuid; dl record; has_dl boolean; waited numeric; cd text; rk boolean;
 begin
   if (select callsign from public.profiles where id = uid) is null then raise exception 'SET A CALLSIGN FIRST'; end if;
-  delete from public.duel_queue where created_at < now() - interval '3 minutes' and user_id <> uid;
+  cd := nullif(upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g')), '');
+  if cd is not null and length(cd) < 3 then raise exception 'USE A CODE OF 3 OR MORE LETTERS'; end if;
+  cd := left(cd, 12);
+  -- searchers who stopped asking are gone
+  delete from public.duel_queue where user_id <> uid and seen_at < now() - interval '20 seconds';
+  update public.profiles set last_seen = now() where id = uid;
   st := sc_private.astats(uid);
-  insert into public.duel_queue (user_id, ranked, trophies) values (uid, coalesce(p_ranked, false), st.trophies)
-    on conflict (user_id) do update set ranked = excluded.ranked, trophies = excluded.trophies,
-      created_at = case when public.duel_queue.match_id is null and public.duel_queue.ranked = excluded.ranked then public.duel_queue.created_at else now() end;
+  insert into public.duel_queue (user_id, ranked, trophies, code) values (uid, coalesce(p_ranked, false), st.trophies, cd)
+    on conflict (user_id) do update set ranked = excluded.ranked, trophies = excluded.trophies, code = excluded.code, seen_at = now(),
+      created_at = case when public.duel_queue.match_id is null and public.duel_queue.ranked = excluded.ranked and public.duel_queue.code is not distinct from excluded.code
+                        then public.duel_queue.created_at else now() end;
   select * into q from public.duel_queue where user_id = uid for update;
   if q.match_id is not null then
-    select * into dl from public.duels where id = q.match_id;
-    delete from public.duel_queue where user_id = uid;
-    return jsonb_build_object('match', dl.id, 'host', dl.a = uid, 'ranked', dl.ranked, 'opponent', sc_private.card(case when dl.a = uid then dl.b else dl.a end));
+    select * into dl from public.duels where id = q.match_id; has_dl := found;
+    if has_dl and not dl.done and dl.created_at > now() - interval '45 seconds' then
+      delete from public.duel_queue where user_id = uid;
+      return jsonb_build_object('match', dl.id, 'host', dl.a = uid, 'ranked', dl.ranked, 'opponent', sc_private.card(case when dl.a = uid then dl.b else dl.a end));
+    end if;
+    update public.duel_queue set match_id = null, created_at = now() where user_id = uid;   -- an old match nobody played: search again
+    q.created_at := now();
   end if;
   waited := extract(epoch from now() - q.created_at);
-  select * into o from public.duel_queue
-    where user_id <> uid and match_id is null and ranked = q.ranked and created_at > now() - interval '40 seconds'
-      and abs(trophies - q.trophies) <= 150 + 30 * waited
-    order by created_at limit 1 for update skip locked;
-  if not found then return jsonb_build_object('waiting', true, 'waited', floor(waited)); end if;
-  insert into public.duels (a, b, ranked) values (o.user_id, uid, q.ranked) returning id into mid;
+  -- anyone still searching right now. Same mode first; after a few seconds ranked and unranked meet (then it is unranked)
+  select * into o from public.duel_queue x
+    where x.user_id <> uid and x.match_id is null and x.seen_at > now() - interval '6 seconds'
+      and x.code is not distinct from cd
+      and (cd is not null or x.ranked = q.ranked or greatest(waited, extract(epoch from now() - x.created_at)) > 4)
+      and (cd is not null or abs(x.trophies - q.trophies) <= 200 + 40 * greatest(waited, extract(epoch from now() - x.created_at)))
+    order by (x.ranked = q.ranked) desc, x.created_at limit 1 for update skip locked;
+  if not found then
+    return jsonb_build_object('waiting', true, 'waited', floor(waited),
+      'others', (select count(*) from public.profiles where id <> uid and last_seen > now() - interval '90 seconds'),
+      'searching', (select count(*) from public.duel_queue where user_id <> uid and match_id is null and seen_at > now() - interval '6 seconds' and code is null));
+  end if;
+  rk := q.ranked and o.ranked and cd is null;
+  insert into public.duels (a, b, ranked) values (o.user_id, uid, rk) returning id into mid;
   update public.duel_queue set match_id = mid where user_id = o.user_id;
   delete from public.duel_queue where user_id = uid;
-  return jsonb_build_object('match', mid, 'host', false, 'ranked', q.ranked, 'opponent', sc_private.card(o.user_id));
+  return jsonb_build_object('match', mid, 'host', false, 'ranked', rk, 'opponent', sc_private.card(o.user_id));
 end $$;
 
 create or replace function public.duel_cancel() returns jsonb
@@ -962,35 +985,47 @@ begin
   return jsonb_build_object('won', won, 'trophy_change', dt, 'trophies', st.trophies + dt, 'rank', sc_private.rank_of(st.trophies + dt), 'coins', coins);
 end $$;
 
-create or replace function public.duel_report(p_match uuid, p_won boolean) returns jsonb
+drop function if exists public.duel_report(uuid, boolean);
+create or replace function public.duel_report(p_match uuid, p_won boolean, p_ai boolean default false) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare uid uuid := sc_private.me(); dl record; mine text := case when p_won then 'win' else 'loss' end; other text; res jsonb; oth jsonb;
+declare uid uuid := sc_private.me(); dl record; mine text := case when p_won then 'win' else 'loss' end; other text; res jsonb; oth jsonb; is_a boolean;
 begin
   select * into dl from public.duels where id = p_match for update;
   if not found or uid not in (dl.a, coalesce(dl.b, dl.a)) then raise exception 'NOT YOUR MATCH'; end if;
-  if dl.done then
-    return jsonb_build_object('done', true, 'won', dl.winner is not null and dl.winner = uid, 'disputed', dl.winner is null and dl.b is not null,
-      'trophy_change', coalesce(case when uid = dl.a then dl.a_change else dl.b_change end, 0),
+  is_a := uid = dl.a;
+  if dl.done or (dl.b is not null and (case when is_a then dl.a_change else dl.b_change end) is not null and (case when is_a then dl.a_ai else dl.b_ai end)) then
+    return jsonb_build_object('done', true, 'won', case when (case when is_a then dl.a_ai else dl.b_ai end) then (case when is_a then dl.a_result else dl.b_result end) = 'win' else dl.winner is not null and dl.winner = uid end,
+      'disputed', dl.winner is null and dl.b is not null and not dl.a_ai and not dl.b_ai,
+      'trophy_change', coalesce(case when is_a then dl.a_change else dl.b_change end, 0),
       'trophies', (select trophies from public.arena_stats where user_id = uid), 'rank', sc_private.rank_of(coalesce((select trophies from public.arena_stats where user_id = uid), 0)));
   end if;
   if dl.created_at < now() - interval '30 minutes' then raise exception 'THAT MATCH IS TOO OLD'; end if;
-  if uid = dl.a then update public.duels set a_result = mine where id = dl.id; other := dl.b_result;
-  else update public.duels set b_result = mine where id = dl.id; other := dl.a_result; end if;
   if dl.b is null then   -- against an AI pilot
+    update public.duels set a_result = mine where id = dl.id;
     res := sc_private.duel_settle(uid, p_won, dl.ranked, true);
     update public.duels set done = true, winner = case when p_won then uid else null end, a_change = (res ->> 'trophy_change')::int where id = dl.id;
     return jsonb_build_object('done', true) || res;
   end if;
+  -- the other pilot never connected (or dropped), so an AI pilot stood in: settle just this side, as an AI match
+  if p_ai or (is_a and dl.b_ai) or (not is_a and dl.a_ai) then
+    res := sc_private.duel_settle(uid, p_won, dl.ranked, true);
+    if is_a then update public.duels set a_result = mine, a_ai = true, a_change = (res ->> 'trophy_change')::int where id = dl.id;
+    else update public.duels set b_result = mine, b_ai = true, b_change = (res ->> 'trophy_change')::int where id = dl.id; end if;
+    update public.duels set done = (a_change is not null and b_change is not null) where id = dl.id;
+    return jsonb_build_object('done', true) || res;
+  end if;
+  if is_a then update public.duels set a_result = mine where id = dl.id; other := dl.b_result;
+  else update public.duels set b_result = mine where id = dl.id; other := dl.a_result; end if;
   if other is null and not (mine = 'loss' or dl.created_at < now() - interval '4 minutes') then
     return jsonb_build_object('done', false, 'pending', true);
   end if;
   update public.duels set done = true where id = dl.id;
   if other is not null and other = mine then return jsonb_build_object('done', true, 'disputed', true); end if;   -- both claim the same: nobody gains
-  if p_won then update public.duels set winner = uid where id = dl.id; else update public.duels set winner = case when uid = dl.a then dl.b else dl.a end where id = dl.id; end if;
+  if p_won then update public.duels set winner = uid where id = dl.id; else update public.duels set winner = case when is_a then dl.b else dl.a end where id = dl.id; end if;
   res := sc_private.duel_settle(uid, p_won, dl.ranked, false);
-  oth := sc_private.duel_settle(case when uid = dl.a then dl.b else dl.a end, not p_won, dl.ranked, false);
-  update public.duels set a_change = case when uid = dl.a then (res ->> 'trophy_change')::int else (oth ->> 'trophy_change')::int end,
-                          b_change = case when uid = dl.a then (oth ->> 'trophy_change')::int else (res ->> 'trophy_change')::int end where id = dl.id;
+  oth := sc_private.duel_settle(case when is_a then dl.b else dl.a end, not p_won, dl.ranked, false);
+  update public.duels set a_change = case when is_a then (res ->> 'trophy_change')::int else (oth ->> 'trophy_change')::int end,
+                          b_change = case when is_a then (oth ->> 'trophy_change')::int else (res ->> 'trophy_change')::int end where id = dl.id;
   return jsonb_build_object('done', true) || res;
 end $$;
 
