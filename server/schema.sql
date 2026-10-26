@@ -1,0 +1,719 @@
+-- =====================================================================
+-- SPACE CASE  ·  online backend, part 1
+-- Paste this whole file into Supabase → SQL Editor → New query → Run.
+-- Safe to run again later: it only creates what is missing and
+-- replaces the functions with their latest version.
+--
+-- What it sets up
+--   profiles        public card for every astronaut (callsign, level, loadout)
+--   saves           each player's save. Only the owner can read it, and
+--                   nobody can write it directly: every change goes
+--                   through the functions below, with a version number so
+--                   an old tab or device can never overwrite newer progress
+--   friendships     friend requests and friends
+--   crews           crews, members (leader / officer / member), invites
+--   trades          item + coin trades. Offered items are held in escrow,
+--                   so nothing can be traded twice or duplicated
+--   deliveries      a mailbox: items and coins sent to you by trades
+--
+-- Players can only READ through the API (and only what they are allowed
+-- to see). Every WRITE happens inside the functions at the bottom, which
+-- check who is calling and whether the move is allowed.
+-- =====================================================================
+
+create schema if not exists sc_private;
+revoke all on schema sc_private from public;
+
+-- ---------------------------------------------------------------- tables
+create table if not exists public.profiles (
+  id          uuid primary key references auth.users(id) on delete cascade,
+  callsign    text unique check (callsign ~ '^[A-Z0-9][A-Z0-9 -]{1,10}[A-Z0-9]$'),
+  level       int  not null default 1,
+  title       text,
+  planet      int  not null default 1,
+  loadout     jsonb not null default '{}'::jsonb,
+  showcase    jsonb not null default '[]'::jsonb,
+  stats       jsonb not null default '{}'::jsonb,
+  last_seen   timestamptz not null default now(),
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists public.saves (
+  user_id     uuid primary key references auth.users(id) on delete cascade,
+  data        jsonb  not null default '{}'::jsonb,
+  version     bigint not null default 1,
+  updated_at  timestamptz not null default now()
+);
+-- the save version of the last time items or coins moved between players (trades, mailbox).
+-- A device whose save is older than this can never overwrite the cloud, so nothing can be duplicated.
+alter table public.saves add column if not exists econ_ver bigint not null default 0;
+
+create table if not exists public.friendships (
+  a            uuid not null references public.profiles(id) on delete cascade,
+  b            uuid not null references public.profiles(id) on delete cascade,
+  status       text not null check (status in ('pending', 'accepted')),
+  requested_by uuid not null,
+  created_at   timestamptz not null default now(),
+  primary key (a, b),
+  check (a < b)
+);
+
+create table if not exists public.crews (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (char_length(name) between 3 and 16),
+  tag         text not null check (tag ~ '^[A-Z0-9]{2,4}$'),
+  motto       text not null default '' check (char_length(motto) <= 40),
+  leader      uuid not null references public.profiles(id),
+  open        boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+create unique index if not exists crews_name_key on public.crews (upper(name));
+
+create table if not exists public.crew_members (
+  user_id    uuid primary key references public.profiles(id) on delete cascade,
+  crew_id    uuid not null references public.crews(id) on delete cascade,
+  role       text not null check (role in ('leader', 'officer', 'member')),
+  joined_at  timestamptz not null default now()
+);
+create index if not exists crew_members_crew on public.crew_members (crew_id);
+
+create table if not exists public.crew_requests (
+  crew_id    uuid not null references public.crews(id) on delete cascade,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  kind       text not null check (kind in ('invite', 'request')),
+  created_at timestamptz not null default now(),
+  primary key (crew_id, user_id)
+);
+
+create table if not exists public.trades (
+  id           uuid primary key default gen_random_uuid(),
+  from_user    uuid not null references public.profiles(id) on delete cascade,
+  to_user      uuid not null references public.profiles(id) on delete cascade,
+  give_items   jsonb  not null default '{}'::jsonb,   -- escrow: item id -> {l, p}
+  want_items   jsonb  not null default '[]'::jsonb,   -- item ids asked for
+  give_coins   bigint not null default 0 check (give_coins >= 0),
+  want_coins   bigint not null default 0 check (want_coins >= 0),
+  note         text not null default '',
+  status       text not null default 'open' check (status in ('open', 'accepted', 'declined', 'cancelled', 'expired')),
+  created_at   timestamptz not null default now(),
+  resolved_at  timestamptz
+);
+create index if not exists trades_from on public.trades (from_user, status);
+create index if not exists trades_to on public.trades (to_user, status);
+
+create table if not exists public.deliveries (
+  id          bigint generated always as identity primary key,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  items       jsonb  not null default '{}'::jsonb,    -- item id -> {l, p}
+  coins       bigint not null default 0,
+  reason      text   not null,
+  from_user   uuid,
+  created_at  timestamptz not null default now(),
+  claimed_at  timestamptz
+);
+create index if not exists deliveries_open on public.deliveries (user_id) where claimed_at is null;
+
+-- ------------------------------------------------- read rules (RLS)
+alter table public.profiles      enable row level security;
+alter table public.saves         enable row level security;
+alter table public.friendships   enable row level security;
+alter table public.crews         enable row level security;
+alter table public.crew_members  enable row level security;
+alter table public.crew_requests enable row level security;
+alter table public.trades        enable row level security;
+alter table public.deliveries    enable row level security;
+
+-- nobody writes tables directly, signed in or not
+revoke insert, update, delete, truncate on public.profiles, public.saves, public.friendships, public.crews,
+  public.crew_members, public.crew_requests, public.trades, public.deliveries from anon, authenticated;
+revoke select on public.profiles, public.saves, public.friendships, public.crews,
+  public.crew_members, public.crew_requests, public.trades, public.deliveries from anon;
+grant select on public.profiles, public.saves, public.friendships, public.crews,
+  public.crew_members, public.crew_requests, public.trades, public.deliveries to authenticated;
+
+drop policy if exists "profiles are public to players" on public.profiles;
+create policy "profiles are public to players" on public.profiles for select to authenticated using (true);
+drop policy if exists "only you can read your save" on public.saves;
+create policy "only you can read your save" on public.saves for select to authenticated using (user_id = (select auth.uid()));
+drop policy if exists "see your own friendships" on public.friendships;
+create policy "see your own friendships" on public.friendships for select to authenticated using ((select auth.uid()) in (a, b));
+drop policy if exists "crews are public to players" on public.crews;
+create policy "crews are public to players" on public.crews for select to authenticated using (true);
+drop policy if exists "crew rosters are public to players" on public.crew_members;
+create policy "crew rosters are public to players" on public.crew_members for select to authenticated using (true);
+drop policy if exists "see your invites, or your crew's requests" on public.crew_requests;
+create policy "see your invites, or your crew's requests" on public.crew_requests for select to authenticated using (
+  user_id = (select auth.uid()) or exists (select 1 from public.crew_members m where m.crew_id = crew_requests.crew_id and m.user_id = (select auth.uid()) and m.role in ('leader', 'officer')));
+drop policy if exists "see your own trades" on public.trades;
+create policy "see your own trades" on public.trades for select to authenticated using ((select auth.uid()) in (from_user, to_user));
+drop policy if exists "see your own mailbox" on public.deliveries;
+create policy "see your own mailbox" on public.deliveries for select to authenticated using (user_id = (select auth.uid()));
+
+-- ------------------------------------------------------------ helpers
+create or replace function sc_private.me() returns uuid language plpgsql stable set search_path = '' as $$
+declare v uuid := auth.uid();
+begin
+  if v is null then raise exception 'SIGN IN FIRST'; end if;
+  return v;
+end $$;
+
+create or replace function sc_private.clean_name(p text) returns text language sql immutable set search_path = '' as $$
+  select btrim(regexp_replace(regexp_replace(upper(coalesce(p, '')), '[^A-Z0-9 -]', '', 'g'), '\s+', ' ', 'g'))
+$$;
+
+create or replace function sc_private.bad_name(p text) returns boolean language sql immutable set search_path = '' as $$
+  select exists (
+    select 1 from unnest(array['FUCK', 'SHIT', 'CUNT', 'NIGG', 'FAGG', 'NAZI', 'KKK', 'RETARD', 'WHORE', 'SLUT', 'BITCH', 'PENIS', 'PUSSY', 'RAPIST', 'HITLER']) as b(w)
+    where translate(regexp_replace(upper(coalesce(p, '')), '[^A-Z0-9]', '', 'g'), '013457', 'OIEAST') like '%' || b.w || '%')
+$$;
+
+create or replace function sc_private.check_callsign(p text) returns text language plpgsql immutable set search_path = '' as $$
+declare c text := sc_private.clean_name(p);
+begin
+  if c !~ '^[A-Z0-9][A-Z0-9 -]{1,10}[A-Z0-9]$' then raise exception 'CALLSIGNS ARE 3-12 LETTERS, NUMBERS, SPACES OR -'; end if;
+  if sc_private.bad_name(c) then raise exception 'PICK A FRIENDLIER CALLSIGN'; end if;
+  return c;
+end $$;
+
+create or replace function sc_private.num(j jsonb) returns numeric language sql immutable set search_path = '' as $$
+  select case when jsonb_typeof(j) = 'number' then (j #>> '{}')::numeric else null end
+$$;
+
+-- add items + coins to a save (duplicates level the item up, like opening a crate)
+create or replace function sc_private.grant_items(d jsonb, items jsonb, coins numeric) returns jsonb language plpgsql volatile set search_path = '' as $$
+declare k text; e jsonb; cur jsonb; l int; p int; t bigint := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+begin
+  if jsonb_typeof(d -> 'inv') is distinct from 'object' then d := jsonb_set(d, '{inv}', '{}'::jsonb); end if;
+  if jsonb_typeof(d -> 'fresh') is distinct from 'object' then d := jsonb_set(d, '{fresh}', '{}'::jsonb); end if;
+  for k, e in select * from jsonb_each(coalesce(items, '{}'::jsonb)) loop
+    cur := d -> 'inv' -> k;
+    if cur is null then
+      d := jsonb_set(d, array['inv', k], jsonb_build_object('l', greatest(1, least(10, coalesce(sc_private.num(e -> 'l'), 1)::int)), 'p', greatest(0, coalesce(sc_private.num(e -> 'p'), 0)::int), 't', t));
+      d := jsonb_set(d, array['fresh', k], '1'::jsonb);
+    else
+      l := coalesce(sc_private.num(cur -> 'l'), 1)::int; p := coalesce(sc_private.num(cur -> 'p'), 0)::int;
+      if l >= 10 then
+        d := jsonb_set(d, '{research}', to_jsonb(coalesce(sc_private.num(d -> 'research'), 0) + 100));
+      else
+        p := p + 1; if p >= l then p := p - l; l := l + 1; end if;
+        d := jsonb_set(d, array['inv', k], cur || jsonb_build_object('l', l, 'p', p));
+      end if;
+    end if;
+  end loop;
+  if coalesce(coins, 0) <> 0 then d := jsonb_set(d, '{coins}', to_jsonb(coalesce(sc_private.num(d -> 'coins'), 0) + coins)); end if;
+  return d;
+end $$;
+
+-- remove items + coins from a save; refuses items you do not own or have equipped
+create or replace function sc_private.take_items(d jsonb, ids text[], coins numeric, out d2 jsonb, out taken jsonb) language plpgsql volatile set search_path = '' as $$
+declare k text; eqd text[];
+begin
+  taken := '{}'::jsonb; d2 := d;
+  select coalesce(array_agg(v), '{}') into eqd from jsonb_each_text(case when jsonb_typeof(d -> 'eq') = 'object' then d -> 'eq' else '{}'::jsonb end) as x(s, v) where v is not null;
+  foreach k in array coalesce(ids, '{}') loop
+    if taken ? k then raise exception 'THE SAME ITEM IS LISTED TWICE'; end if;
+    if d2 -> 'inv' -> k is null then raise exception 'ITEM NOT OWNED: %', k; end if;
+    if k = any(eqd) then raise exception 'UNEQUIP IT BEFORE TRADING: %', k; end if;
+    taken := taken || jsonb_build_object(k, jsonb_build_object('l', d2 -> 'inv' -> k -> 'l', 'p', d2 -> 'inv' -> k -> 'p'));
+    d2 := d2 #- array['inv', k];
+    d2 := d2 #- array['fresh', k];
+  end loop;
+  if coalesce(coins, 0) > 0 then
+    if coalesce(sc_private.num(d2 -> 'coins'), 0) < coins then raise exception 'NOT ENOUGH COINS'; end if;
+    d2 := jsonb_set(d2, '{coins}', to_jsonb(sc_private.num(d2 -> 'coins') - coins));
+  end if;
+end $$;
+
+create or replace function sc_private.check_save(d jsonb) returns void language plpgsql immutable set search_path = '' as $$
+begin
+  if jsonb_typeof(d) is distinct from 'object' then raise exception 'BAD SAVE'; end if;
+  if octet_length(d::text) > 3000000 then raise exception 'SAVE TOO BIG'; end if;
+  if jsonb_typeof(d -> 'inv') is distinct from 'object' then raise exception 'BAD SAVE: NO INVENTORY'; end if;
+  if coalesce(sc_private.num(d -> 'coins'), -1) < 0 or sc_private.num(d -> 'coins') > 1e15 then raise exception 'BAD SAVE: COINS'; end if;
+end $$;
+
+-- refresh the public card from a save
+create or replace function sc_private.sync_profile(uid uuid, d jsonb) returns void language plpgsql volatile set search_path = '' as $$
+begin
+  update public.profiles set
+    level    = coalesce(sc_private.num(d -> 'lvl')::int, level),
+    title    = case when jsonb_typeof(d -> 'titles' -> 'eq') = 'string' then left(d -> 'titles' ->> 'eq', 40) else null end,
+    planet   = coalesce(sc_private.num(d -> 'planet' -> 'reached')::int, planet),
+    loadout  = case when jsonb_typeof(d -> 'eq') = 'object' then d -> 'eq' else '{}'::jsonb end,
+    showcase = case when jsonb_typeof(d -> '_pub' -> 'showcase') = 'array' then d -> '_pub' -> 'showcase' else '[]'::jsonb end,
+    stats    = jsonb_build_object(
+                 'kills', d -> 'stats' -> 'kills', 'crates', d -> 'stats' -> 'crates', 'bestCombo', d -> 'stats' -> 'bestCombo',
+                 'legendaries', d -> 'stats' -> 'legendaries', 'mythics', d -> 'stats' -> 'mythics', 'cosmics', d -> 'stats' -> 'cosmics',
+                 'power', d -> '_pub' -> 'power', 'items', (select count(*) from jsonb_object_keys(d -> 'inv'))),
+    last_seen = now()
+  where id = uid;
+end $$;
+
+create or replace function sc_private.card(uid uuid) returns jsonb language sql stable set search_path = '' as $$
+  select jsonb_build_object('id', p.id, 'callsign', p.callsign, 'level', p.level, 'title', p.title, 'planet', p.planet,
+    'online', p.last_seen > now() - interval '90 seconds', 'last_seen', p.last_seen,
+    'crew', (select jsonb_build_object('id', c.id, 'name', c.name, 'tag', c.tag) from public.crew_members m join public.crews c on c.id = m.crew_id where m.user_id = p.id))
+  from public.profiles p where p.id = uid
+$$;
+
+create or replace function sc_private.find_callsign(p text) returns uuid language plpgsql stable set search_path = '' as $$
+declare v uuid;
+begin
+  select id into v from public.profiles where callsign = sc_private.clean_name(p);
+  if v is null then raise exception 'NO ASTRONAUT CALLED %', sc_private.clean_name(p); end if;
+  return v;
+end $$;
+
+create or replace function sc_private.expire_trades() returns void language plpgsql volatile set search_path = '' as $$
+declare t record;
+begin
+  for t in select * from public.trades where status = 'open' and created_at < now() - interval '3 days' for update skip locked loop
+    update public.trades set status = 'expired', resolved_at = now() where id = t.id;
+    insert into public.deliveries (user_id, items, coins, reason, from_user) values (t.from_user, t.give_items, t.give_coins, 'trade expired', t.to_user);
+  end loop;
+end $$;
+
+create or replace function sc_private.can_trade(uid uuid, them uuid) returns boolean language sql stable set search_path = '' as $$
+  select exists (select 1 from public.friendships where a = least(uid, them) and b = greatest(uid, them) and status = 'accepted')
+      or exists (select 1 from public.crew_members m1 join public.crew_members m2 on m1.crew_id = m2.crew_id where m1.user_id = uid and m2.user_id = them)
+$$;
+
+create or replace function sc_private.my_crew_role(uid uuid, out crew uuid, out role text) language sql stable set search_path = '' as $$
+  select crew_id, role from public.crew_members where user_id = uid
+$$;
+
+-- --------------------------------------------------- player & save API
+create or replace function public.init_player(p_local jsonb default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); s record; created boolean := false; nm text;
+begin
+  insert into public.profiles (id) values (uid) on conflict (id) do nothing;
+  select * into s from public.saves where user_id = uid for update;
+  if not found then
+    if p_local is not null then perform sc_private.check_save(p_local); end if;
+    insert into public.saves (user_id, data, version) values (uid, coalesce(p_local, '{"inv":{},"coins":0}'::jsonb), 1)
+      returning * into s;
+    created := true;
+    -- keep the callsign from the local save if it is free and clean
+    if p_local is not null and jsonb_typeof(p_local -> 'name') = 'string' then
+      begin
+        nm := sc_private.check_callsign(p_local ->> 'name');
+        update public.profiles set callsign = nm where id = uid and callsign is null;
+      exception when others then null;
+      end;
+    end if;
+    perform sc_private.sync_profile(uid, s.data);
+  end if;
+  return jsonb_build_object('data', s.data, 'version', s.version, 'econ', s.econ_ver, 'created', created,
+    'callsign', (select callsign from public.profiles where id = uid),
+    'mail', (select count(*) from public.deliveries where user_id = uid and claimed_at is null));
+end $$;
+
+drop function if exists public.save_game(jsonb, bigint);
+create or replace function public.save_game(p_data jsonb, p_base bigint, p_force boolean default false) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); s record; cs text;
+begin
+  perform sc_private.check_save(p_data);
+  select * into s from public.saves where user_id = uid for update;
+  if not found then raise exception 'NO SAVE YET'; end if;
+  if s.version <> p_base and not (coalesce(p_force, false) and p_base >= s.econ_ver) then
+    -- another device or tab saved first: hand back the newer save instead of overwriting it.
+    -- can_force says whether this device may still choose to keep its own progress
+    -- (only if no trades or mail happened since this device last synced)
+    return jsonb_build_object('ok', false, 'conflict', true, 'data', s.data, 'version', s.version, 'can_force', p_base >= s.econ_ver);
+  end if;
+  select callsign into cs from public.profiles where id = uid;
+  if cs is not null then p_data := jsonb_set(p_data, '{name}', to_jsonb(cs)); end if;
+  update public.saves set data = p_data, version = s.version + 1, updated_at = now() where user_id = uid;
+  perform sc_private.sync_profile(uid, p_data);
+  return jsonb_build_object('ok', true, 'version', s.version + 1,
+    'mail', (select count(*) from public.deliveries where user_id = uid and claimed_at is null));
+end $$;
+
+create or replace function public.load_game() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); s record;
+begin
+  select * into s from public.saves where user_id = uid;
+  if not found then return null; end if;
+  return jsonb_build_object('data', s.data, 'version', s.version, 'callsign', (select callsign from public.profiles where id = uid));
+end $$;
+
+create or replace function public.touch() returns void
+language sql security definer set search_path = '' as $$
+  update public.profiles set last_seen = now() where id = auth.uid()
+$$;
+
+create or replace function public.set_callsign(p_name text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); nm text := sc_private.check_callsign(p_name); v bigint;
+begin
+  begin
+    update public.profiles set callsign = nm where id = uid;
+  exception when unique_violation then raise exception 'THAT CALLSIGN IS TAKEN';
+  end;
+  update public.saves set data = jsonb_set(data, '{name}', to_jsonb(nm)), version = version + 1, updated_at = now()
+    where user_id = uid returning version into v;
+  return jsonb_build_object('callsign', nm, 'version', v);
+end $$;
+
+create or replace function public.get_profile(p_callsign text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_callsign); p record; f record;
+begin
+  select * into p from public.profiles where id = them;
+  select * into f from public.friendships where a = least(uid, them) and b = greatest(uid, them);
+  return sc_private.card(them) || jsonb_build_object('loadout', p.loadout, 'showcase', p.showcase, 'stats', p.stats,
+    'friend', case when f is null then 'none' when f.status = 'accepted' then 'friends' when f.requested_by = uid then 'sent' else 'incoming' end,
+    'me', them = uid);
+end $$;
+
+create or replace function public.search_players(p_query text) returns jsonb
+language sql security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(sc_private.card(p.id) order by p.last_seen desc), '[]'::jsonb)
+  from (select id, last_seen from public.profiles
+        where callsign is not null and callsign like sc_private.clean_name(p_query) || '%' and id <> auth.uid()
+        order by last_seen desc limit 12) p
+$$;
+
+-- ------------------------------------------------------------- friends
+create or replace function public.friend_request(p_callsign text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_callsign); f record;
+begin
+  if them = uid then raise exception 'THAT IS YOU'; end if;
+  select * into f from public.friendships where a = least(uid, them) and b = greatest(uid, them) for update;
+  if found then
+    if f.status = 'accepted' then return 'already friends'; end if;
+    if f.requested_by = uid then return 'already sent'; end if;
+    update public.friendships set status = 'accepted' where a = f.a and b = f.b;
+    return 'accepted';
+  end if;
+  if (select count(*) from public.friendships where requested_by = uid and status = 'pending') >= 50 then raise exception 'TOO MANY REQUESTS WAITING'; end if;
+  if (select count(*) from public.friendships where uid in (a, b) and status = 'accepted') >= 200 then raise exception 'FRIEND LIST IS FULL'; end if;
+  insert into public.friendships (a, b, status, requested_by) values (least(uid, them), greatest(uid, them), 'pending', uid);
+  return 'sent';
+end $$;
+
+create or replace function public.friend_respond(p_other uuid, p_accept boolean) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me();
+begin
+  if p_accept then
+    update public.friendships set status = 'accepted' where a = least(uid, p_other) and b = greatest(uid, p_other) and status = 'pending' and requested_by = p_other;
+    if not found then raise exception 'NO REQUEST FROM THEM'; end if;
+    return 'accepted';
+  end if;
+  delete from public.friendships where a = least(uid, p_other) and b = greatest(uid, p_other) and status = 'pending';
+  return 'declined';
+end $$;
+
+create or replace function public.friend_remove(p_other uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me();
+begin
+  delete from public.friendships where a = least(uid, p_other) and b = greatest(uid, p_other);
+  return 'removed';
+end $$;
+
+-- --------------------------------------------------------------- crews
+create or replace function public.crew_create(p_name text, p_tag text, p_open boolean default true) returns uuid
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); nm text := sc_private.clean_name(p_name); tg text := sc_private.clean_name(p_tag); cid uuid;
+begin
+  if exists (select 1 from public.crew_members where user_id = uid) then raise exception 'LEAVE YOUR CREW FIRST'; end if;
+  if (select callsign from public.profiles where id = uid) is null then raise exception 'SET A CALLSIGN FIRST'; end if;
+  if char_length(nm) not between 3 and 16 then raise exception 'CREW NAMES ARE 3-16 CHARACTERS'; end if;
+  tg := replace(replace(tg, ' ', ''), '-', '');
+  if tg !~ '^[A-Z0-9]{2,4}$' then raise exception 'CREW TAGS ARE 2-4 LETTERS OR NUMBERS'; end if;
+  if sc_private.bad_name(nm) or sc_private.bad_name(tg) then raise exception 'PICK A FRIENDLIER NAME'; end if;
+  begin
+    insert into public.crews (name, tag, leader, open) values (nm, tg, uid, coalesce(p_open, true)) returning id into cid;
+  exception when unique_violation then raise exception 'THAT CREW NAME IS TAKEN';
+  end;
+  insert into public.crew_members (user_id, crew_id, role) values (uid, cid, 'leader');
+  delete from public.crew_requests where user_id = uid;
+  return cid;
+end $$;
+
+create or replace function public.crew_join(p_crew uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); c record; invited boolean;
+begin
+  if exists (select 1 from public.crew_members where user_id = uid) then raise exception 'LEAVE YOUR CREW FIRST'; end if;
+  if (select callsign from public.profiles where id = uid) is null then raise exception 'SET A CALLSIGN FIRST'; end if;
+  select * into c from public.crews where id = p_crew for update;
+  if not found then raise exception 'THAT CREW NO LONGER EXISTS'; end if;
+  invited := exists (select 1 from public.crew_requests where crew_id = p_crew and user_id = uid and kind = 'invite');
+  if not c.open and not invited then
+    insert into public.crew_requests (crew_id, user_id, kind) values (p_crew, uid, 'request') on conflict do nothing;
+    return 'requested';
+  end if;
+  if (select count(*) from public.crew_members where crew_id = p_crew) >= 20 then raise exception 'THAT CREW IS FULL (20)'; end if;
+  insert into public.crew_members (user_id, crew_id, role) values (uid, p_crew, 'member');
+  delete from public.crew_requests where user_id = uid;
+  return 'joined';
+end $$;
+
+create or replace function public.crew_decline_invite(p_crew uuid) returns text
+language sql security definer set search_path = '' as $$
+  delete from public.crew_requests where crew_id = p_crew and user_id = auth.uid() and kind = 'invite' returning 'declined'
+$$;
+
+create or replace function public.crew_leave() returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); m record; heir uuid;
+begin
+  select * into m from public.crew_members where user_id = uid for update;
+  if not found then return 'not in a crew'; end if;
+  perform 1 from public.crews where id = m.crew_id for update;
+  delete from public.crew_members where user_id = uid;
+  if m.role = 'leader' then
+    select user_id into heir from public.crew_members where crew_id = m.crew_id
+      order by (role = 'officer') desc, joined_at asc limit 1;
+    if heir is null then
+      delete from public.crews where id = m.crew_id;
+      return 'disbanded';
+    end if;
+    update public.crew_members set role = 'leader' where user_id = heir;
+    update public.crews set leader = heir where id = m.crew_id;
+  end if;
+  return 'left';
+end $$;
+
+create or replace function public.crew_kick(p_user uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); me_m record; t record;
+begin
+  select * into me_m from public.crew_members where user_id = uid;
+  select * into t from public.crew_members where user_id = p_user;
+  if me_m is null or t is null or me_m.crew_id <> t.crew_id then raise exception 'NOT IN YOUR CREW'; end if;
+  if p_user = uid then raise exception 'USE LEAVE CREW INSTEAD'; end if;
+  if not (me_m.role = 'leader' or (me_m.role = 'officer' and t.role = 'member')) then raise exception 'YOUR RANK CANNOT DO THAT'; end if;
+  delete from public.crew_members where user_id = p_user;
+  return 'kicked';
+end $$;
+
+create or replace function public.crew_set_role(p_user uuid, p_role text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); me_m record;
+begin
+  select * into me_m from public.crew_members where user_id = uid;
+  if me_m is null or me_m.role <> 'leader' then raise exception 'ONLY THE LEADER CAN CHANGE RANKS'; end if;
+  if p_role not in ('officer', 'member') then raise exception 'BAD RANK'; end if;
+  if p_user = uid then raise exception 'USE MAKE LEADER TO HAND OVER'; end if;
+  update public.crew_members set role = p_role where user_id = p_user and crew_id = me_m.crew_id;
+  if not found then raise exception 'NOT IN YOUR CREW'; end if;
+  return p_role;
+end $$;
+
+create or replace function public.crew_transfer(p_user uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); me_m record;
+begin
+  select * into me_m from public.crew_members where user_id = uid for update;
+  if me_m is null or me_m.role <> 'leader' then raise exception 'ONLY THE LEADER CAN HAND OVER'; end if;
+  update public.crew_members set role = 'leader' where user_id = p_user and crew_id = me_m.crew_id and user_id <> uid;
+  if not found then raise exception 'NOT IN YOUR CREW'; end if;
+  update public.crew_members set role = 'officer' where user_id = uid;
+  update public.crews set leader = p_user where id = me_m.crew_id;
+  return 'transferred';
+end $$;
+
+create or replace function public.crew_invite(p_callsign text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_callsign); me_m record;
+begin
+  select * into me_m from public.crew_members where user_id = uid;
+  if me_m is null or me_m.role not in ('leader', 'officer') then raise exception 'ONLY LEADERS AND OFFICERS CAN INVITE'; end if;
+  if exists (select 1 from public.crew_members where user_id = them) then raise exception 'THEY ARE ALREADY IN A CREW'; end if;
+  if exists (select 1 from public.crew_requests where crew_id = me_m.crew_id and user_id = them and kind = 'request') then
+    if (select count(*) from public.crew_members where crew_id = me_m.crew_id) >= 20 then raise exception 'YOUR CREW IS FULL (20)'; end if;
+    insert into public.crew_members (user_id, crew_id, role) values (them, me_m.crew_id, 'member');
+    delete from public.crew_requests where user_id = them;
+    return 'joined';
+  end if;
+  insert into public.crew_requests (crew_id, user_id, kind) values (me_m.crew_id, them, 'invite')
+    on conflict (crew_id, user_id) do update set kind = 'invite', created_at = now();
+  return 'invited';
+end $$;
+
+create or replace function public.crew_respond(p_user uuid, p_accept boolean) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); me_m record;
+begin
+  select * into me_m from public.crew_members where user_id = uid;
+  if me_m is null or me_m.role not in ('leader', 'officer') then raise exception 'ONLY LEADERS AND OFFICERS CAN DO THAT'; end if;
+  if not exists (select 1 from public.crew_requests where crew_id = me_m.crew_id and user_id = p_user and kind = 'request') then raise exception 'NO REQUEST FROM THEM'; end if;
+  if not p_accept then delete from public.crew_requests where crew_id = me_m.crew_id and user_id = p_user; return 'declined'; end if;
+  if exists (select 1 from public.crew_members where user_id = p_user) then delete from public.crew_requests where user_id = p_user; raise exception 'THEY JOINED ANOTHER CREW'; end if;
+  if (select count(*) from public.crew_members where crew_id = me_m.crew_id) >= 20 then raise exception 'YOUR CREW IS FULL (20)'; end if;
+  insert into public.crew_members (user_id, crew_id, role) values (p_user, me_m.crew_id, 'member');
+  delete from public.crew_requests where user_id = p_user;
+  return 'accepted';
+end $$;
+
+create or replace function public.crew_update(p_motto text, p_open boolean) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); me_m record; mt text := left(sc_private.clean_name(p_motto), 40);
+begin
+  select * into me_m from public.crew_members where user_id = uid;
+  if me_m is null or me_m.role <> 'leader' then raise exception 'ONLY THE LEADER CAN EDIT THE CREW'; end if;
+  if sc_private.bad_name(mt) then raise exception 'PICK A FRIENDLIER MOTTO'; end if;
+  update public.crews set motto = mt, open = coalesce(p_open, open) where id = me_m.crew_id;
+  return 'saved';
+end $$;
+
+create or replace function public.crew_list(p_query text default '') returns jsonb
+language sql security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(x order by (x ->> 'members')::int desc), '[]'::jsonb) from (
+    select jsonb_build_object('id', c.id, 'name', c.name, 'tag', c.tag, 'motto', c.motto, 'open', c.open,
+      'members', (select count(*) from public.crew_members m where m.crew_id = c.id),
+      'leader', (select callsign from public.profiles where id = c.leader)) as x
+    from public.crews c where upper(c.name) like '%' || sc_private.clean_name(p_query) || '%'
+    order by (select count(*) from public.crew_members m where m.crew_id = c.id) desc limit 30) q
+$$;
+
+create or replace function public.crew_view(p_crew uuid) returns jsonb
+language sql security definer set search_path = '' as $$
+  select jsonb_build_object('id', c.id, 'name', c.name, 'tag', c.tag, 'motto', c.motto, 'open', c.open, 'created_at', c.created_at,
+    'members', (select coalesce(jsonb_agg(sc_private.card(m.user_id) || jsonb_build_object('role', m.role) order by
+                 case m.role when 'leader' then 0 when 'officer' then 1 else 2 end, m.joined_at), '[]'::jsonb)
+                from public.crew_members m where m.crew_id = c.id))
+  from public.crews c where c.id = p_crew
+$$;
+
+-- -------------------------------------------------------------- trades
+create or replace function public.trade_propose(p_to text, p_give text[], p_want text[], p_give_coins bigint default 0, p_want_coins bigint default 0, p_note text default '')
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_to); s record; their jsonb; r record; tid uuid; k text;
+begin
+  perform sc_private.expire_trades();
+  if them = uid then raise exception 'YOU CANNOT TRADE WITH YOURSELF'; end if;
+  if not sc_private.can_trade(uid, them) then raise exception 'YOU CAN ONLY TRADE WITH FRIENDS OR CREWMATES'; end if;
+  if coalesce(array_length(p_give, 1), 0) > 6 or coalesce(array_length(p_want, 1), 0) > 6 then raise exception 'UP TO 6 ITEMS EACH WAY'; end if;
+  if coalesce(p_give_coins, 0) < 0 or coalesce(p_want_coins, 0) < 0 or p_give_coins > 1e12 or p_want_coins > 1e12 then raise exception 'BAD COIN AMOUNT'; end if;
+  if coalesce(array_length(p_give, 1), 0) + coalesce(array_length(p_want, 1), 0) = 0 and coalesce(p_give_coins, 0) + coalesce(p_want_coins, 0) = 0 then raise exception 'ADD AN ITEM OR SOME COINS'; end if;
+  if (select count(*) from public.trades where from_user = uid and status = 'open') >= 5 then raise exception 'YOU HAVE 5 OFFERS WAITING. CANCEL ONE FIRST'; end if;
+  select data into their from public.saves where user_id = them;
+  foreach k in array coalesce(p_want, '{}') loop
+    if their -> 'inv' -> k is null then raise exception 'THEY DO NOT OWN: %', k; end if;
+  end loop;
+  select * into s from public.saves where user_id = uid for update;
+  select * into r from sc_private.take_items(s.data, p_give, p_give_coins);
+  update public.saves set data = r.d2, version = s.version + 1, econ_ver = s.version + 1, updated_at = now() where user_id = uid;
+  insert into public.trades (from_user, to_user, give_items, want_items, give_coins, want_coins, note)
+    values (uid, them, r.taken, to_jsonb(coalesce(p_want, '{}')), coalesce(p_give_coins, 0), coalesce(p_want_coins, 0), left(sc_private.clean_name(p_note), 60))
+    returning id into tid;
+  return jsonb_build_object('trade', tid, 'data', r.d2, 'version', s.version + 1);
+end $$;
+
+create or replace function public.trade_accept(p_id uuid) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); t record; s record; r record; d jsonb; want text[];
+begin
+  select * into t from public.trades where id = p_id and to_user = uid for update;
+  if not found or t.status <> 'open' then raise exception 'THAT OFFER IS NO LONGER OPEN'; end if;
+  if t.created_at < now() - interval '3 days' then raise exception 'THAT OFFER EXPIRED'; end if;
+  select coalesce(array_agg(x), '{}') into want from jsonb_array_elements_text(t.want_items) as x;
+  select * into s from public.saves where user_id = uid for update;
+  select * into r from sc_private.take_items(s.data, want, t.want_coins);
+  d := sc_private.grant_items(r.d2, t.give_items, t.give_coins);
+  update public.saves set data = d, version = s.version + 1, econ_ver = s.version + 1, updated_at = now() where user_id = uid;
+  insert into public.deliveries (user_id, items, coins, reason, from_user) values (t.from_user, r.taken, t.want_coins, 'trade', uid);
+  update public.trades set status = 'accepted', resolved_at = now() where id = p_id;
+  return jsonb_build_object('data', d, 'version', s.version + 1);
+end $$;
+
+create or replace function public.trade_decline(p_id uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); t record;
+begin
+  select * into t from public.trades where id = p_id and uid in (from_user, to_user) for update;
+  if not found or t.status <> 'open' then raise exception 'THAT OFFER IS NO LONGER OPEN'; end if;
+  update public.trades set status = case when uid = t.from_user then 'cancelled' else 'declined' end, resolved_at = now() where id = p_id;
+  insert into public.deliveries (user_id, items, coins, reason, from_user)
+    values (t.from_user, t.give_items, t.give_coins, case when uid = t.from_user then 'trade cancelled' else 'trade declined' end, t.to_user);
+  return 'closed';
+end $$;
+
+-- what a friend or crewmate owns, so you can ask for something in a trade
+create or replace function public.trade_inventory(p_callsign text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_callsign); d jsonb;
+begin
+  if them = uid then raise exception 'THAT IS YOU'; end if;
+  if not sc_private.can_trade(uid, them) then raise exception 'YOU CAN ONLY TRADE WITH FRIENDS OR CREWMATES'; end if;
+  select data into d from public.saves where user_id = them;
+  return jsonb_build_object(
+    'inv', (select coalesce(jsonb_object_agg(e.k, coalesce(e.v -> 'l', '1'::jsonb)), '{}'::jsonb) from jsonb_each(coalesce(d -> 'inv', '{}'::jsonb)) as e(k, v)),
+    'eq', (select coalesce(jsonb_agg(x.v), '[]'::jsonb) from jsonb_each_text(case when jsonb_typeof(d -> 'eq') = 'object' then d -> 'eq' else '{}'::jsonb end) as x(s, v) where x.v is not null));
+end $$;
+
+-- collect everything in your mailbox into your save
+create or replace function public.claim_mail() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); s record; m record; d jsonb; got jsonb := '[]'::jsonb;
+begin
+  select * into s from public.saves where user_id = uid for update;
+  if not found then raise exception 'NO SAVE YET'; end if;
+  d := s.data;
+  for m in select * from public.deliveries where user_id = uid and claimed_at is null order by id for update skip locked loop
+    d := sc_private.grant_items(d, m.items, m.coins);
+    update public.deliveries set claimed_at = now() where id = m.id;
+    got := got || jsonb_build_array(jsonb_build_object('items', (select coalesce(jsonb_agg(k), '[]'::jsonb) from jsonb_object_keys(m.items) k),
+      'coins', m.coins, 'reason', m.reason, 'from', (select callsign from public.profiles where id = m.from_user)));
+  end loop;
+  if jsonb_array_length(got) = 0 then return jsonb_build_object('got', got, 'version', s.version); end if;
+  update public.saves set data = d, version = s.version + 1, econ_ver = s.version + 1, updated_at = now() where user_id = uid;
+  return jsonb_build_object('got', got, 'data', d, 'version', s.version + 1);
+end $$;
+
+-- ------------------------------------------- one call for the social screen
+create or replace function public.my_social() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); cm record;
+begin
+  perform sc_private.expire_trades();
+  update public.profiles set last_seen = now() where id = uid;
+  select * into cm from public.crew_members where user_id = uid;
+  return jsonb_build_object(
+    'me', sc_private.card(uid),
+    'friends', (select coalesce(jsonb_agg(sc_private.card(case when f.a = uid then f.b else f.a end) order by f.created_at), '[]'::jsonb)
+                from public.friendships f where uid in (f.a, f.b) and f.status = 'accepted'),
+    'incoming', (select coalesce(jsonb_agg(sc_private.card(f.requested_by)), '[]'::jsonb)
+                 from public.friendships f where uid in (f.a, f.b) and f.status = 'pending' and f.requested_by <> uid),
+    'outgoing', (select coalesce(jsonb_agg(sc_private.card(case when f.a = uid then f.b else f.a end)), '[]'::jsonb)
+                 from public.friendships f where uid in (f.a, f.b) and f.status = 'pending' and f.requested_by = uid),
+    'crew', case when cm is null then null else public.crew_view(cm.crew_id) || jsonb_build_object('my_role', cm.role,
+              'requests', case when cm.role in ('leader', 'officer') then (select coalesce(jsonb_agg(sc_private.card(r.user_id)), '[]'::jsonb)
+                from public.crew_requests r where r.crew_id = cm.crew_id and r.kind = 'request') else '[]'::jsonb end) end,
+    'invites', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'tag', c.tag)), '[]'::jsonb)
+                from public.crew_requests r join public.crews c on c.id = r.crew_id where r.user_id = uid and r.kind = 'invite'),
+    'trades', (select coalesce(jsonb_agg(jsonb_build_object('id', t.id, 'mine', t.from_user = uid,
+                 'other', sc_private.card(case when t.from_user = uid then t.to_user else t.from_user end),
+                 'give', (select coalesce(jsonb_agg(k), '[]'::jsonb) from jsonb_object_keys(t.give_items) k), 'want', t.want_items,
+                 'give_coins', t.give_coins, 'want_coins', t.want_coins, 'note', t.note, 'created_at', t.created_at) order by t.created_at desc), '[]'::jsonb)
+               from public.trades t where uid in (t.from_user, t.to_user) and t.status = 'open'),
+    'mail', (select count(*) from public.deliveries where user_id = uid and claimed_at is null));
+end $$;
+
+-- ------------------------------------------------- who may call what
+do $$
+declare f record;
+begin
+  -- internal helpers: nobody but the functions above
+  for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'sc_private' loop
+    execute format('revoke all on function %s from public, anon, authenticated', f.sig);
+  end loop;
+  -- the game API: signed-in players only
+  for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname in ('init_player', 'save_game', 'load_game', 'touch', 'set_callsign', 'get_profile', 'search_players',
+             'friend_request', 'friend_respond', 'friend_remove', 'crew_create', 'crew_join', 'crew_decline_invite', 'crew_leave', 'crew_kick',
+             'crew_set_role', 'crew_transfer', 'crew_invite', 'crew_respond', 'crew_update', 'crew_list', 'crew_view',
+             'trade_propose', 'trade_accept', 'trade_decline', 'trade_inventory', 'claim_mail', 'my_social') loop
+    execute format('revoke all on function %s from public, anon', f.sig);
+    execute format('grant execute on function %s to authenticated', f.sig);
+  end loop;
+end $$;
