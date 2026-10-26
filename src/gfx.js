@@ -15,8 +15,11 @@ function patOfSkin(skinId) { if (!skinId) return null; const k = getDef(skinId);
 // ---------- astronaut ----------
 const ASTRO = new Map();
 function astroLook(eq) { return [eq.helmet, eq.chest, eq.boots, eq.jetpack, eq.skin_armor, eq.eyewear, eq.headgear, eq.back].join(','); }
+// cosmetics animate: a 4-step loop shared by everything on screen
+const cosAF = eq => (eq.back || eq.headgear || eq.eyewear) ? Math.floor(T_NOW * 5) % 4 : 0;
 function astroSprite(eq, dir, fr) {
-  const key = astroLook(eq) + '|' + dir + '|' + fr;
+  const af = cosAF(eq);
+  const key = astroLook(eq) + '|' + dir + '|' + fr + '|' + af;
   let c = ASTRO.get(key); if (c) return c;
   const mirror = dir === 3; if (mirror) dir = 2;
   const sk = eq.skin_armor;
@@ -27,8 +30,8 @@ function astroSprite(eq, dir, fr) {
   const ox = 2, oy = 6, bob = (fr === 1 || fr === 3) ? 1 : 0;
   const L = [];
   // back item behind
-  if (eq.back && dir !== 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr); L.push([g, palOfItem(eq.back)]); }
-  else if (eq.back && dir === 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, 0, ox, oy + bob, fr); L.push([g, palOfItem(eq.back)]); }
+  if (eq.back && dir !== 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr, af); L.push([g, palOfItem(eq.back)]); }
+  else if (eq.back && dir === 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, 0, ox, oy + bob, fr, af); L.push([g, palOfItem(eq.back)]); }
   const g = new Spr(20, 26);
   const legA = fr === 1 ? -1 : fr === 3 ? 1 : 0;
   const by = oy + bob;
@@ -53,70 +56,74 @@ function astroSprite(eq, dir, fr) {
     g.rect(ox + 6, by + 11, 2, 4, M.P, 1); g.set(ox + 6, by + 14, M.W);
   }
   L.push([g, body, patOfSkin(sk)]);
-  if (eq.headgear) { const h = new Spr(20, 26); drawHeadOnChar(h, getDef(eq.headgear).style, dir, ox, by); L.push([h, palOfItem(eq.headgear)]); }
-  if (eq.eyewear && dir !== 1) { const e = new Spr(20, 26); drawEyesOnChar(e, getDef(eq.eyewear).style, dir, ox, by); L.push([e, palOfItem(eq.eyewear)]); }
+  if (eq.headgear) { const h = new Spr(20, 26); drawHeadOnChar(h, getDef(eq.headgear).style, dir, ox, by, af); L.push([h, palOfItem(eq.headgear)]); }
+  if (eq.eyewear && dir !== 1) { const e = new Spr(20, 26); drawEyesOnChar(e, getDef(eq.eyewear).style, dir, ox, by, af); L.push([e, palOfItem(eq.eyewear)]); }
   c = layerCanvas(20, 26, L);
   if (mirror) { const m = mkCanvas(20, 26); m.x.translate(20, 0); m.x.scale(-1, 1); m.x.drawImage(c, 0, 0); c = m; }
-  ASTRO.set(key, c); if (ASTRO.size > 300) ASTRO.delete(ASTRO.keys().next().value);
+  ASTRO.set(key, c); if (ASTRO.size > 700) ASTRO.delete(ASTRO.keys().next().value);
   return c;
 }
-function drawEyesOnChar(g, st, dir, ox, by) {
+function drawEyesOnChar(g, st, dir, ox, by, af = 0) {
   const y = by + 5;
   if (dir === 0) {
     switch (st) {
-      case 'PIXEL SHADES': g.rect(ox + 4, y, 8, 1, M.D); g.rect(ox + 4, y + 1, 3, 1, M.D); g.rect(ox + 9, y + 1, 3, 1, M.D); g.set(ox + 5, y + 1, M.W); break;
-      case 'MONOCLE': g.ring(ox + 10, y + 1, 1, 1.6, M.A); break;
-      case 'GOGGLES': g.rect(ox + 3, y, 10, 1, M.P); g.rect(ox + 5, y, 2, 2, M.G); g.rect(ox + 9, y, 2, 2, M.G); break;
-      case 'VISOR SHADES': case 'SPORT SHADES': g.rect(ox + 4, y, 8, 2, M.G); g.set(ox + 5, y, M.W); break;
-      case 'LASER EYES': g.set(ox + 6, y + 1, M.G); g.set(ox + 10, y + 1, M.G); g.rect(ox + 6, y + 2, 1, 2, M.G); g.rect(ox + 10, y + 2, 1, 2, M.G); break;
-      case '3D GLASSES': g.rect(ox + 5, y, 2, 2, M.P); g.rect(ox + 9, y, 2, 2, M.G); g.rect(ox + 7, y, 2, 1, M.W); break;
-      default: g.rect(ox + 5, y, 2, 2, M.G); g.rect(ox + 9, y, 2, 2, M.G); g.rect(ox + 7, y, 2, 1, M.A);
+      case 'PIXEL SHADES': g.rect(ox + 4, y, 8, 1, M.D); g.rect(ox + 4, y + 1, 3, 1, M.D); g.rect(ox + 9, y + 1, 3, 1, M.D); g.set(ox + 5 + (af % 2) * 4, y + 1, M.W); break;
+      case 'MONOCLE': g.ring(ox + 10, y + 1, 1, 1.6, M.A); if (af === 1) g.set(ox + 10, y, M.W); g.set(ox + 11, y + 3 + (af % 2), M.A); break;
+      case 'GOGGLES': g.rect(ox + 3, y, 10, 1, M.P); g.rect(ox + 5, y, 2, 2, M.G); g.rect(ox + 9, y, 2, 2, M.G); g.set([ox + 5, ox + 6, ox + 9, ox + 10][af], y, M.W); break;
+      case 'VISOR SHADES': case 'SPORT SHADES': g.rect(ox + 4, y, 8, 2, M.G); g.set(ox + 4 + af * 2, y, M.W); break;
+      case 'LASER EYES': { const n = 1 + af; g.set(ox + 6, y + 1, M.G); g.set(ox + 10, y + 1, M.G); g.rect(ox + 6, y + 2, 1, n, M.G); g.rect(ox + 10, y + 2, 1, n, M.G); if (af === 3) { g.set(ox + 5, y + 2 + n, M.W); g.set(ox + 11, y + 2 + n, M.W); } break; }
+      case '3D GLASSES': g.rect(ox + 5, y, 2, 2, af % 2 ? M.G : M.P); g.rect(ox + 9, y, 2, 2, af % 2 ? M.P : M.G); g.rect(ox + 7, y, 2, 1, M.W); break;
+      case 'HEART SHADES': case 'STAR SHADES': { const p = af === 1 ? 1 : 0; g.rect(ox + 5 - p, y - p, 2 + p, 2 + p, M.G); g.rect(ox + 9, y - p, 2 + p, 2 + p, M.G); g.rect(ox + 7, y, 2, 1, M.A); if (af === 2) g.set(ox + 5, y, M.W); break; }
+      default: g.rect(ox + 5, y, 2, 2, M.G); g.rect(ox + 9, y, 2, 2, M.G); g.rect(ox + 7, y, 2, 1, M.A); g.set([ox + 5, ox + 6, ox + 9, ox + 10][af], y, M.W);
     }
-  } else { const x = dir === 2 ? ox + 3 : ox + 11; g.rect(x, y, 2, 2, st === 'PIXEL SHADES' ? M.D : M.G); g.rect(dir === 2 ? x + 2 : x - 3, y, 3, 1, M.A); }
+  } else { const x = dir === 2 ? ox + 3 : ox + 11; g.rect(x, y, 2, 2, st === 'PIXEL SHADES' ? M.D : M.G); g.rect(dir === 2 ? x + 2 : x - 3, y, 3, 1, M.A); if (af % 2) g.set(x + (af === 1 ? 0 : 1), y, M.W); if (st === 'LASER EYES') g.rect(dir === 2 ? x - 1 - af : x + 2, y + 1, 1 + af, 1, M.G); }
 }
-function drawHeadOnChar(g, st, dir, ox, by) {
+function drawHeadOnChar(g, st, dir, ox, by, af = 0) {
   const cx = ox + (dir === 2 ? 7 : dir === 3 ? 8 : 8), top = by + 1;
+  const tw = [0, 1, 0, -1][af];
   switch (st) {
-    case 'CAP': g.ell(cx, top + 1, 4, 2, M.P); g.rect(cx - 4, top + 2, 9, 1, M.P); if (dir === 0) g.rect(cx - 3, top + 3, 7, 1, M.S); else if (dir >= 2) g.rect(dir === 2 ? cx - 6 : cx + 3, top + 2, 3, 1, M.S); break;
-    case 'CROWN': g.rect(cx - 3, top, 7, 2, M.A); g.set(cx - 3, top - 1, M.A); g.set(cx, top - 2, M.A); g.set(cx, top - 1, M.A); g.set(cx + 3, top - 1, M.A); g.set(cx, top, M.G); break;
-    case 'ANTENNA': g.line(cx + 2, top, cx + 3, top - 4, M.D); g.ell(cx + 3, top - 5, 1, 1, M.G); break;
-    case 'HALO': g.ring(cx, top - 4, 2, 3, M.G); g.rect(cx - 4, top - 5, 9, 1, 0); g.rect(cx - 4, top - 4, 9, 1, M.G); g.rect(cx - 3, top - 5, 7, 1, M.G); g.rect(cx - 2, top - 4, 5, 1, 0); break;
-    case 'HORNS': g.line(cx - 4, top + 2, cx - 6, top - 2, M.P, 0, 2); g.line(cx + 4, top + 2, cx + 6, top - 2, M.P, 0, 2); break;
-    case 'MOHAWK': for (let i = -2; i <= 2; i++) g.rect(cx + i, top - 2 + Math.abs(i), 1, 3 - Math.abs(i), i % 2 ? M.P : M.S); break;
-    case 'TOP HAT': g.rect(cx - 4, top + 1, 9, 1, M.D); g.rect(cx - 2, top - 5, 5, 6, M.D); g.rect(cx - 2, top - 1, 5, 1, M.P); break;
-    case 'PROPELLER CAP': g.ell(cx, top + 1, 3.5, 1.6, M.P); g.set(cx, top - 1, M.A); g.rect(cx - 3, top - 2, 7, 1, M.G); break;
-    case 'BUNNY EARS': g.rect(cx - 3, top - 6, 2, 7, M.P); g.rect(cx + 2, top - 6, 2, 7, M.P); g.rect(cx - 3, top - 5, 1, 4, M.S); g.rect(cx + 2, top - 5, 1, 4, M.S); break;
-    case 'CAT EARS': g.poly([[cx - 5, top + 1], [cx - 4, top - 3], [cx - 1, top]], M.P); g.poly([[cx + 1, top], [cx + 4, top - 3], [cx + 5, top + 1]], M.P); break;
-    case 'PARTY HAT': g.poly([[cx - 3, top + 1], [cx, top - 6], [cx + 3, top + 1]], M.P); g.set(cx, top - 6, M.G); g.set(cx - 1, top - 2, M.S); g.set(cx + 1, top - 1, M.S); break;
-    case 'WIZARD HAT': g.rect(cx - 5, top + 1, 11, 1, M.P); g.poly([[cx - 3, top + 1], [cx - 1, top - 5], [cx + 3, top - 7], [cx + 3, top + 1]], M.P); g.set(cx, top - 2, M.G); break;
-    case 'FLOWER': g.ell(cx + 4, top + 1, 2, 2, M.P); g.set(cx + 4, top + 1, M.G); break;
-    case 'BANDANA': g.rect(cx - 4, top + 1, 9, 2, M.P); g.set(cx - 2, top + 1, M.W); g.set(cx + 1, top + 1, M.W); if (dir !== 0) g.rect(dir === 2 ? cx + 4 : cx - 6, top + 2, 2, 2, M.P); break;
-    case 'BEANIE': g.ell(cx, top + 1, 4.5, 2.5, M.P); g.rect(cx - 4, top + 2, 9, 1, M.S); g.set(cx, top - 2, M.G); break;
-    default: g.ell(cx, top - 2, 4, 3, M.W); g.rect(cx - 3, top, 7, 2, M.W);
+    case 'CAP': g.ell(cx, top + 1, 4, 2, M.P); g.rect(cx - 4, top + 2, 9, 1, M.P); if (dir === 0) g.rect(cx - 3, top + 3, 7, 1, M.S); else if (dir >= 2) g.rect(dir === 2 ? cx - 6 : cx + 3, top + 2, 3, 1, M.S); g.set(cx - 3 + af * 2, top, M.W); break;
+    case 'CROWN': g.rect(cx - 3, top, 7, 2, M.A); g.set(cx - 3, top - 1, M.A); g.set(cx, top - 2, M.A); g.set(cx, top - 1, M.A); g.set(cx + 3, top - 1, M.A); g.set(cx, top, af === 0 ? M.W : M.G); if (af === 2) { g.set(cx + 4, top - 3, M.W); g.set(cx + 4, top - 4, M.G); } if (af === 3) g.set(cx - 4, top - 2, M.W); break;
+    case 'ANTENNA': { const sw = tw; g.line(cx + 2, top, cx + 3 + sw, top - 4, M.D); g.ell(cx + 3 + sw, top - 5, 1, 1, af % 2 ? M.W : M.G); if (af === 1) { g.set(cx + 1 + sw, top - 7, M.G); g.set(cx + 5 + sw, top - 7, M.G); } break; }
+    case 'HALO': { const hy = top - 4 - (af === 1 || af === 2 ? 1 : 0); g.rect(cx - 4, hy, 9, 1, M.G); g.rect(cx - 3, hy - 1, 7, 1, M.G); g.rect(cx - 2, hy, 5, 1, 0); if (af === 2) g.set(cx + 3, hy - 1, M.W); if (af === 0) g.set(cx - 3, hy - 1, M.W); break; }
+    case 'HORNS': g.line(cx - 4, top + 2, cx - 6, top - 2, M.P, 0, 2); g.line(cx + 4, top + 2, cx + 6, top - 2, M.P, 0, 2); if (af % 2) { g.set(cx - 6, top - 2, M.G); g.set(cx + 6, top - 2, M.G); } break;
+    case 'MOHAWK': for (let i = -2; i <= 2; i++) { const h = 3 - Math.abs(i) + ((i + 2 + af) % 4 === 0 ? 1 : 0); g.rect(cx + i, top + 1 - h, 1, h, i % 2 ? M.P : M.S); } break;
+    case 'TOP HAT': g.rect(cx - 4, top + 1, 9, 1, M.D); g.rect(cx - 2, top - 5, 5, 6, M.D); g.rect(cx - 2, top - 1, 5, 1, M.P); g.set(cx - 2 + af, top - 1, M.W); if (af === 3) g.set(cx + 1, top - 5, M.W); break;
+    case 'PROPELLER CAP': g.ell(cx, top + 1, 3.5, 1.6, M.P); g.set(cx, top - 1, M.A); if (af % 2) g.rect(cx - 3, top - 2, 7, 1, M.G); else { g.rect(cx - 1, top - 2, 3, 1, M.G); g.set(cx - 2, top - 3, M.G); g.set(cx + 2, top - 1, M.G); } break;
+    case 'BUNNY EARS': { const d = af === 2 ? 2 : 0; g.rect(cx - 3, top - 6, 2, 7, M.P); g.rect(cx + 2, top - 6 + d, 2, 7 - d, M.P); g.rect(cx - 3, top - 5, 1, 4, M.S); g.rect(cx + 2, top - 5 + d, 1, 4 - d, M.S); if (d) g.set(cx + 4, top - 4, M.P); break; }
+    case 'CAT EARS': { const tw2 = af === 3 ? 1 : 0; g.poly([[cx - 5, top + 1], [cx - 4, top - 3], [cx - 1, top]], M.P); g.poly([[cx + 1, top], [cx + 4 + tw2, top - 3 - tw2], [cx + 5, top + 1]], M.P); break; }
+    case 'PARTY HAT': g.poly([[cx - 3, top + 1], [cx, top - 6], [cx + 3, top + 1]], M.P); g.set(cx, top - 6, af % 2 ? M.W : M.G); g.set(cx - 1, top - 2 + (af === 2 ? 1 : 0), M.S); g.set(cx + 1, top - 1 - (af === 2 ? 1 : 0), M.S); if (af === 1) { g.set(cx - 2, top - 7, M.G); g.set(cx + 2, top - 8, M.S); } break;
+    case 'WIZARD HAT': g.rect(cx - 5, top + 1, 11, 1, M.P); g.poly([[cx - 3, top + 1], [cx - 1, top - 5], [cx + 3 + tw, top - 7], [cx + 3, top + 1]], M.P); g.set(cx, top - 2, af % 2 ? M.W : M.G); if (af === 2) { g.set(cx + 5, top - 6, M.G); g.set(cx - 4, top - 3, M.W); } break;
+    case 'FLOWER': g.ell(cx + 4 + tw, top + 1, 2, 2, M.P); g.set(cx + 4 + tw, top + 1, af === 0 ? M.W : M.G); break;
+    case 'BANDANA': g.rect(cx - 4, top + 1, 9, 2, M.P); g.set(cx - 2, top + 1, M.W); g.set(cx + 1, top + 1, M.W); if (dir !== 0) { const fx = dir === 2 ? cx + 4 : cx - 6; g.rect(fx, top + 2, 2, 2, M.P); g.set(dir === 2 ? fx + 2 : fx - 1, top + 2 + (af % 2), M.P); } break;
+    case 'BEANIE': { const b = af === 1 ? 1 : 0; g.ell(cx, top + 1, 4.5, 2.5, M.P); g.rect(cx - 4, top + 2, 9, 1, M.S); g.set(cx, top - 2 - b, M.G); g.set(cx, top - 1 - b, M.G); break; }
+    default: { const b = af === 2 ? 1 : 0; g.ell(cx, top - 2 - b, 4, 3, M.W); g.rect(cx - 3, top, 7, 2, M.W); if (af === 1) g.set(cx + 2, top - 4, M.S); }
   }
 }
-function drawBackOnChar(g, st, dir, ox, by, fr) {
-  const cx = ox + 8, y = by + 9, sw = fr === 1 || fr === 3 ? 1 : 0;
+function drawBackOnChar(g, st, dir, ox, by, fr, af = 0) {
+  const cx = ox + 8, y = by + 9, sw = (fr === 1 || fr === 3 ? 1 : 0), fl = [0, 1, 2, 1][af], wv = [0, 1, 0, -1][af];
   if (dir === 0) { // peeking out from behind
-    if (st === 'WINGS' || st === 'MECH WINGS' || st === 'BAT WINGS' || st === 'FAIRY WINGS' || st === 'SOLAR PANELS') { g.poly([[cx - 6, y + 1], [cx - 9, y - 4 - sw], [cx - 8, y + 4]], st === 'FAIRY WINGS' ? M.G : M.P); g.poly([[cx + 6, y + 1], [cx + 9, y - 4 - sw], [cx + 8, y + 4]], st === 'FAIRY WINGS' ? M.G : M.P); }
-    else if (st === 'CAPE') { g.rect(cx - 6, y + 2, 2, 7, M.P); g.rect(cx + 5, y + 2, 2, 7, M.P); }
-    else if (st === 'BANNER' || st === 'GUITAR') g.line(cx + 6, y + 6, cx + 8, y - 7, M.A);
+    if (st === 'WINGS' || st === 'MECH WINGS' || st === 'BAT WINGS' || st === 'FAIRY WINGS' || st === 'SOLAR PANELS') { const m = st === 'FAIRY WINGS' ? M.G : M.P; g.poly([[cx - 6, y + 1], [cx - 9 - (fl > 1 ? 1 : 0), y - 4 - sw - fl], [cx - 8, y + 4]], m); g.poly([[cx + 6, y + 1], [cx + 9 + (fl > 1 ? 1 : 0), y - 4 - sw - fl], [cx + 8, y + 4]], m); if (st === 'FAIRY WINGS' && af === 1) { g.set(cx - 10, y - 6, M.W); g.set(cx + 10, y - 6, M.W); } }
+    else if (st === 'CAPE') { g.rect(cx - 6 - (af === 2 ? 1 : 0), y + 2, 2, 7, M.P); g.rect(cx + 5 + (af === 2 ? 1 : 0), y + 2, 2, 7, M.P); }
+    else if (st === 'BANNER' || st === 'GUITAR') { g.line(cx + 6, y + 6, cx + 8, y - 7, M.A); if (st === 'BANNER') g.rect(cx + 8, y - 7 + wv, 3, 3, M.P); }
+    else if (st === 'ROCKET FINS' && af % 2) { g.set(cx - 5, y + 9, M.G); g.set(cx + 5, y + 9, M.G); }
     return;
   }
   switch (st) {
-    case 'CAPE': if (dir === 1) g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + sw, y + 10], [cx - 6 - sw, y + 10]], M.P); else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 1, y], [cx + s * 4, y], [cx + s * (8 + sw * 2), y + 9], [cx + s * 3, y + 10]], M.P); } break;
+    case 'CAPE': { const f2 = sw + fl; if (dir === 1) g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + f2, y + 10 - (af === 2 ? 1 : 0)], [cx - 6 - f2, y + 10 - (af === 0 ? 1 : 0)]], M.P); else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 1, y], [cx + s * 4, y], [cx + s * (8 + f2 * 2), y + 9 - fl], [cx + s * 3, y + 10]], M.P); } break; }
     case 'WINGS': case 'BAT WINGS': case 'FAIRY WINGS': case 'MECH WINGS': {
-      const m = st === 'FAIRY WINGS' ? M.G : st === 'MECH WINGS' ? M.A : M.P;
-      if (dir === 1) { g.poly([[cx - 2, y + 1], [cx - 10, y - 5 - sw], [cx - 9, y + 4], [cx - 3, y + 5]], m); g.poly([[cx + 2, y + 1], [cx + 10, y - 5 - sw], [cx + 9, y + 4], [cx + 3, y + 5]], m); }
-      else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 2, y + 1], [cx + s * 9, y - 6 - sw], [cx + s * 9, y + 4], [cx + s * 3, y + 6]], m); }
-      if (st === 'MECH WINGS') g.set(cx + (dir === 3 ? -6 : 6), y - 2, M.G);
+      const m = st === 'FAIRY WINGS' ? M.G : st === 'MECH WINGS' ? M.A : M.P; const up = sw + fl * 2;
+      if (dir === 1) { g.poly([[cx - 2, y + 1], [cx - 10, y - 4 - up], [cx - 9, y + 4 - fl], [cx - 3, y + 5]], m); g.poly([[cx + 2, y + 1], [cx + 10, y - 4 - up], [cx + 9, y + 4 - fl], [cx + 3, y + 5]], m); if (st === 'BAT WINGS') { g.set(cx - 7, y + 3 - fl, 0); g.set(cx + 7, y + 3 - fl, 0); } }
+      else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 2, y + 1], [cx + s * 9, y - 5 - up], [cx + s * 9, y + 4 - fl], [cx + s * 3, y + 6]], m); }
+      if (st === 'MECH WINGS') g.set(cx + (dir === 3 ? -6 : 6), y - 2 - fl, af % 2 ? M.W : M.G);
+      if (st === 'FAIRY WINGS' && af === 1) { g.set(cx - 8, y - 7, M.W); g.set(cx + 8, y - 7, M.W); }
       break;
     }
-    case 'BANNER': { const x = dir === 3 ? cx - 4 : cx + 3; g.line(x, y + 6, x, y - 9, M.A); g.poly([[x, y - 9], [x + (dir === 3 ? -6 : 6), y - 8 + sw], [x, y - 4]], M.P); break; }
-    case 'BACKPACK': g.rect(dir === 1 ? cx - 4 : dir === 2 ? cx + 2 : cx - 6, y, dir === 1 ? 8 : 4, 6, M.P); break;
-    case 'SOLAR PANELS': g.rect(cx - 10, y - 3, 6, 5, M.G); g.rect(cx + 5, y - 3, 6, 5, M.G); g.rect(cx - 4, y - 1, 9, 1, M.A); break;
-    case 'ROCKET FINS': g.poly([[cx - 3, y], [cx - 7, y + 8], [cx - 3, y + 6]], M.P); g.poly([[cx + 3, y], [cx + 7, y + 8], [cx + 3, y + 6]], M.P); break;
-    default: g.ell(dir === 3 ? cx - 4 : cx + 4, y + 3, 3, 3, M.P); g.line(cx, y + 2, dir === 3 ? cx + 4 : cx - 4, y - 7, M.D);
+    case 'BANNER': { const x = dir === 3 ? cx - 4 : cx + 3, s2 = dir === 3 ? -1 : 1; g.line(x, y + 6, x, y - 9, M.A); g.poly([[x, y - 9], [x + s2 * 4, y - 8 + wv], [x + s2 * 7, y - 7 + sw - wv], [x, y - 4]], M.P); break; }
+    case 'BACKPACK': g.rect(dir === 1 ? cx - 4 : dir === 2 ? cx + 2 : cx - 6, y, dir === 1 ? 8 : 4, 6, M.P); if (af < 2) g.set(dir === 1 ? cx + 2 : dir === 2 ? cx + 4 : cx - 5, y + 1, M.G); break;
+    case 'SOLAR PANELS': g.rect(cx - 10, y - 3 - (af === 1 ? 1 : 0), 6, 5, M.G); g.rect(cx + 5, y - 3 - (af === 1 ? 1 : 0), 6, 5, M.G); g.rect(cx - 4, y - 1, 9, 1, M.A); g.set(cx - 10 + af * 2, y - 3, M.W); g.set(cx + 5 + af * 2, y - 3, M.W); break;
+    case 'ROCKET FINS': g.poly([[cx - 3, y], [cx - 7, y + 8], [cx - 3, y + 6]], M.P); g.poly([[cx + 3, y], [cx + 7, y + 8], [cx + 3, y + 6]], M.P); g.rect(cx - 6, y + 9, 2, 1 + (af % 2), M.G); g.rect(cx + 5, y + 9, 2, 1 + ((af + 1) % 2), M.G); break;
+    default: g.ell(dir === 3 ? cx - 4 : cx + 4, y + 3, 3, 3, M.P); g.line(cx, y + 2, dir === 3 ? cx + 4 : cx - 4, y - 7, M.D); if (af === 1) g.set(dir === 3 ? cx - 4 : cx + 4, y + 3, M.W);
   }
 }
 
@@ -395,10 +402,11 @@ const ALIENS = new Map();
 function alienSprite(pi, arch, frame, flash) {
   const key = pi + arch + frame + (flash ? 'f' : ''); let c = ALIENS.get(key); if (c) return c;
   const p = planetDef(pi), R = RNG(hashStr(p.name + arch));
-  const sz = { crawler: [16, 13], swarm: [10, 9], dasher: [16, 15], spitter: [16, 15], brute: [24, 20] }[arch];
+  const F = FOES[arch]; const sz = F ? F.sz : ({ crawler: [16, 13], swarm: [10, 9], dasher: [16, 15], spitter: [16, 15], brute: [24, 20] }[arch] || [16, 13]);
   const [w, h] = sz; const g = new Spr(w, h); const cx = w / 2;
   const leg = frame ? 1 : 0;
-  if (arch === 'crawler') { g.ell(cx, h / 2, w / 2 - 3, h / 2 - 3, M.P); for (let i = -1; i <= 1; i++) { g.line(cx - 4, h / 2 + i * 2, 1, h / 2 + i * 3 + (i === 0 ? leg : -leg) * 2, M.D); g.line(cx + 4, h / 2 + i * 2, w - 2, h / 2 + i * 3 - (i === 0 ? leg : -leg) * 2, M.D); } g.rect(cx - 3, h / 2 - 1, 2, 2, M.G); g.rect(cx + 1, h / 2 - 1, 2, 2, M.G); g.rect(cx - 2, 2, 4, 1, M.S); }
+  if (F) F.draw(g, w, h, cx, leg);
+  else if (arch === 'crawler') { g.ell(cx, h / 2, w / 2 - 3, h / 2 - 3, M.P); for (let i = -1; i <= 1; i++) { g.line(cx - 4, h / 2 + i * 2, 1, h / 2 + i * 3 + (i === 0 ? leg : -leg) * 2, M.D); g.line(cx + 4, h / 2 + i * 2, w - 2, h / 2 + i * 3 - (i === 0 ? leg : -leg) * 2, M.D); } g.rect(cx - 3, h / 2 - 1, 2, 2, M.G); g.rect(cx + 1, h / 2 - 1, 2, 2, M.G); g.rect(cx - 2, 2, 4, 1, M.S); }
   else if (arch === 'swarm') { g.ell(cx, h / 2 + 1, 3, 2.5, M.P); g.ell(cx - 3, 2 + leg, 2, 1.5, M.S); g.ell(cx + 3, 2 + leg, 2, 1.5, M.S); g.set(cx - 1, h / 2, M.G); g.set(cx + 1, h / 2, M.G); }
   else if (arch === 'dasher') { g.poly([[cx, 1], [w - 3, h - 4], [cx, h - 2], [3, h - 4]], M.P); g.poly([[cx - 1, 1], [cx, -2], [cx + 1, 1]], M.A); g.rect(cx - 3, h / 2, 2, 2, M.G); g.rect(cx + 1, h / 2, 2, 2, M.G); g.line(3, h - 4, 1, h - 1 - leg, M.D); g.line(w - 3, h - 4, w - 1, h - 1 - leg, M.D); g.line(cx, 3, cx, h - 4, M.S); }
   else if (arch === 'spitter') { g.ell(cx, h / 2 + 1, w / 2 - 2, h / 2 - 2, M.P); g.ell(cx, h / 2 + 2 + leg * 0.5, 3, 2, M.D); g.ell(cx, h / 2 + 2, 1.5, 1, M.G); g.rect(cx - 4, 3, 2, 2, M.G); g.rect(cx + 2, 3, 2, 2, M.G); for (let i = 0; i < 4; i++) g.set(2 + i * 4, h - 2 - (i % 2) * leg, M.S); }

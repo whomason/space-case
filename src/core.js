@@ -287,9 +287,10 @@ function shake(v) { FX.shake = Math.max(FX.shake, v); }
 function flash(v, c = '#fff') { FX.flash = Math.max(FX.flash, v); FX.flashCol = c; }
 
 // ---------- particles ----------
+const PAT_CACHE = {};
 class Particles {
   constructor(max = 1400) { this.a = []; this.max = max; }
-  add(p) { if (this.a.length >= this.max) this.a.shift(); p.life = p.life ?? 0.6; p.max = p.life; this.a.push(p); return p; }
+  add(p) { if (this.a.length >= this.max) this.a.shift(); p.life = p.life ?? 0.6; p.max = p.life; p.drag = p.drag ?? 0; p.vx = p.vx || 0; p.vy = p.vy || 0; this.a.push(p); return p; }
   burst(x, y, n, opt) {
     for (let i = 0; i < n; i++) {
       const a = opt.ang !== undefined ? opt.ang + (R0() - 0.5) * (opt.spread ?? TAU) : R0() * TAU;
@@ -318,6 +319,8 @@ class Particles {
       if (p.t === 'txt') { textO(p.txt, x, y, p.c, p.oc, p.f, 1, p.s); continue; }
       if (p.t === 'ring') { ctx.globalAlpha = k; ring(x, y, Math.floor((1 - k) * p.s + 2), p.c); ctx.globalAlpha = 1; continue; }
       if (p.t === 'spark') { const L = 3; line(x, y, x - p.vx * 0.02 * L, y - p.vy * 0.02 * L, p.c); continue; }
+      if (p.t === 'pat') { const rows = PAT_CACHE[p.pat] || (PAT_CACHE[p.pat] = p.pat.split('|')); ctx.globalAlpha = Math.min(1, k * 1.6); ctx.fillStyle = p.c; const x0 = x - (rows[0].length >> 1), y0 = y - (rows.length >> 1); for (let r = 0; r < rows.length; r++) for (let c2 = 0; c2 < rows[r].length; c2++) if (rows[r][c2] === '#') ctx.fillRect(x0 + c2, y0 + r, 1, 1); ctx.globalAlpha = 1; continue; }
+      if (p.t === 'puff') { ctx.globalAlpha = k * 0.7; const rr = Math.floor(p.s + (1 - k) * 4); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(x, y, rr, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; continue; }
       const s = p.t === 'shrink' ? Math.max(1, Math.ceil(p.s * k)) : p.s;
       if (p.t === 'fade') ctx.globalAlpha = k;
       ctx.fillStyle = p.c; ctx.fillRect(x - (s >> 1), y - (s >> 1), s, s);
@@ -351,6 +354,7 @@ const BTN_KIND = {
   danger: { bg: '#3a1430', hov: '#521c42', pr: '#26091f', bd: '#f25f7a', tc: '#ff9fb2' },
   outline: { bg: '#14213d', hov: '#1e2749', pr: '#0e1630', bd: '#e0b1cb', tc: '#e0b1cb' },
   def: { bg: '#14213d', hov: '#1e2749', pr: '#0e1630', bd: '#273469', tc: '#fafaff' },
+  don: { bg: '#d63a8c', hov: '#f04fa3', pr: '#a8286a', bd: '#ffd1ea', tc: '#ffffff' },
 };
 function button(x, y, w, h, label, opt = {}) {
   x = Math.floor(x); y = Math.floor(y);

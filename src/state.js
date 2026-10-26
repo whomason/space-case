@@ -21,7 +21,8 @@ function newState() {
     firstOpen: true, choiceQueue: [], haulCrates: [], goal: null, reactions: {}, contracts: null, track: null, fresh: {}, name: '', nameAsked: false, settings: { mute: false, music: false, mv2: true }, tutorial: { crate: false, land: false }, created: Date.now(),
   };
   const kit = [firstOf('w', 'blaster'), firstOf('t', 'tool', n => n % 2 === 0), firstOf('a', 'helmet'), firstOf('a', 'chest'), firstOf('a', 'boots'), firstOf('a', 'jetpack'), firstOf('a', 'o2'),
-  firstOf('s', 'engine'), firstOf('s', 'hull'), firstOf('s', 'cargo'), firstOf('s', 'scanner'), firstOf('s', 'shield')];
+  firstOf('s', 'engine'), firstOf('s', 'hull'), firstOf('s', 'cargo'), firstOf('s', 'scanner'), firstOf('s', 'shield'), firstOf('g', 'blackhole'), firstOf('p', 'bot')];
+  st.gift2 = 1;
   for (const id of kit) { st.inv[id] = { l: 1, p: 0, t: Date.now() }; st.eq[slotOf(getDef(id))] = id; }
   for (const id of kit) markSeen(st, getDef(id));
   return st;
@@ -38,6 +39,8 @@ function normalizeSave(o) {
   if (st.keys) { st.coins += st.keys * CRATE_COIN; } delete st.keys; if (!Array.isArray(st.haulCrates)) st.haulCrates = []; if (!Array.isArray(st.choiceQueue)) st.choiceQueue = []; if (!st.reactions) st.reactions = {}; if (!st.planet.ev) st.planet.ev = {}; if (!st.stats.clsKills) st.stats.clsKills = {};
   if (!(o.settings && o.settings.mv2)) { st.settings.music = false; st.settings.mv2 = true; }
   delete st._pub;
+  if (st.eq.weapon2) delete st.eq.weapon2; // the 2nd weapon slot became the gadget slot
+  if (!st.gift2) { st.gift2 = 1; for (const id of [firstOf('g', 'blackhole'), firstOf('p', 'bot')]) { if (!st.inv[id]) { st.inv[id] = { l: 1, p: 0, t: Date.now(), g: 0 }; st.fresh[id] = 1; } const sl = slotOf(getDef(id)); if (sl && !st.eq[sl]) st.eq[sl] = id; } st.giftNote = 1; }
   return st;
 }
 function load() {
@@ -61,12 +64,20 @@ function slotOf(d) {
   if (d.cat === 'k') return 'skin_' + d.sub;
   if (d.cat === 'c') return d.sub;
   if (d.cat === 'b') return 'backdrop';
+  if (d.cat === 'g') return 'gadget';
+  if (d.cat === 'p') return 'pet';
   return null;
 }
-function addItem(id) {
-  const d = getDef(id); const inv = S.inv[id];
-  const res = { id, isNew: !inv, levelUp: false, from: inv ? inv.l : 0, to: 1, research: 0 };
-  if (!inv) { S.inv[id] = { l: 1, p: 0, t: Date.now() }; markSeen(S, d); if (slotOf(d)) S.fresh[id] = 1; }
+// ---------- grades: an item remembers the best crate tier it came out of. higher grade = stronger ----------
+const GRADEABLE = { w: 0.8, a: 0.8, t: 0.8, g: 0.8, p: 0.8, s: 0.5 };
+function gradeOf(id) { const v = S.inv[id]; return v && v.g ? v.g : 0; }
+function effL(id, L, g) { const d = getDef(id); const k = GRADEABLE[d.cat] || 0; return (L || lvl(id) || 1) + k * (g === undefined || g === null ? gradeOf(id) : g); }
+const gradeName = g => TIERS[clamp(g || 0, 0, 7)].n + ' GRADE';
+function addItem(id, g = 0) {
+  const d = getDef(id); const inv = S.inv[id]; g = clamp(Math.floor(g || 0), 0, 7);
+  const res = { id, isNew: !inv, levelUp: false, from: inv ? inv.l : 0, to: 1, research: 0, gradeUp: false };
+  if (inv && GRADEABLE[d.cat] && g > (inv.g || 0)) { inv.g = g; res.gradeUp = true; }
+  if (!inv) { S.inv[id] = { l: 1, p: 0, t: Date.now(), g }; markSeen(S, d); if (slotOf(d)) S.fresh[id] = 1; }
   else if (inv.l >= 10) { res.research = RES_VAL[d.r]; S.research += res.research; res.to = 10; }
   else { inv.p++; if (inv.p >= inv.l) { inv.p -= inv.l; inv.l++; res.levelUp = true; } res.to = inv.l; }
   if (d.r === 4) S.stats.legendaries++; if (d.r === 5) S.stats.mythics++; if (d.r === 6) S.stats.cosmics++;
@@ -74,21 +85,22 @@ function addItem(id) {
   const sl = slotOf(d); if (sl && !S.eq[sl]) S.eq[sl] = id;
   dirty(); return res;
 }
-function pullLabels(id) {
+function pullLabels(id, tier = 0) {
   const d = getDef(id), inv = S.inv[id], L = [];
   if (!inv) L.push('NEW');
   else if (inv.l >= 10) L.push('RESEARCH MATERIAL');
   else if (inv.p + 1 >= inv.l) L.push('LEVEL UP');
+  if (inv && GRADEABLE[d.cat] && tier > (inv.g || 0)) L.push('GRADE UP');
   const sl = slotOf(d);
   if (sl && (d.cat === 'w' || d.cat === 'a' || d.cat === 's' || (d.cat === 't' && d.sub === 'tool'))) {
     const cur = S.eq[sl]; const nl = inv ? (inv.p + 1 >= inv.l ? inv.l + 1 : inv.l) : 1;
-    if (cur !== id && (!cur || power(d, nl) > power(getDef(cur), lvl(cur)))) L.push('UPGRADE');
+    if (cur !== id && (!cur || power(d, effL(id, nl, Math.max(tier, inv ? inv.g || 0 : 0))) > power(getDef(cur), effL(cur)))) L.push('UPGRADE');
   }
   if (!inv) for (const pg of (PAGE_OF[id] || [])) if (!S.pages[pg.id] && pg.ids.every(x => x === id || owned(x))) { L.push('SET COMPLETE'); break; }
   if (d.cat === 'w' && interactionKeys(d).some(k => !S.seen[k])) L.push('NEW INTERACTION');
   return L;
 }
-const LABEL_COL = { 'NEW': COL.mint, 'LEVEL UP': COL.cyan, 'UPGRADE': COL.gold, 'SET COMPLETE': COL.magenta, 'NEW INTERACTION': COL.orange, 'RESEARCH MATERIAL': COL.dim };
+const LABEL_COL = { 'NEW': COL.mint, 'LEVEL UP': COL.cyan, 'GRADE UP': '#7dffb0', 'UPGRADE': COL.gold, 'SET COMPLETE': COL.magenta, 'NEW INTERACTION': COL.orange, 'RESEARCH MATERIAL': COL.dim };
 const PAGE_OF = {};
 function indexPages() { for (const pg of PAGES) for (const id of pg.ids) (PAGE_OF[id] = PAGE_OF[id] || []).push(pg); }
 const pageOwned = pg => pg.ids.filter(owned).length;
@@ -112,13 +124,13 @@ function bonuses() {
   return B;
 }
 function shipRating() {
-  let r = 0; for (const sl of SLOTS_SHIP) { const id = S.eq[sl]; if (id) r += aStats(getDef(id), lvl(id)).rating || 0; }
+  let r = 0; for (const sl of SLOTS_SHIP) { const id = S.eq[sl]; if (id) r += aStats(getDef(id), effL(id)).rating || 0; }
   return Math.round(r * (1 + bonuses().rating));
 }
 function frontierMul() { return Math.pow(1.15, Math.max(0, S.planet.reached - 1)); } // every planet you reach makes all your weapons stronger
 function luckPct() { return S.skills.luck * 3 + S.nova.perks.luck * 2 + bonuses().luck; }
 function loadout() {
-  const B = bonuses(), e = S.eq, st = id => id ? aStats(getDef(id), lvl(id)) : {};
+  const B = bonuses(), e = S.eq, st = id => id ? aStats(getDef(id), effL(id)) : {};
   const helm = st(e.helmet), chest = st(e.chest), boots = st(e.boots), jet = st(e.jetpack), o2 = st(e.o2), hull = st(e.hull), cargo = st(e.cargo), scan = st(e.scanner), shield = st(e.shield), tool = st(e.tool);
   const perks = {}; for (const sl of ['helmet', 'chest', 'boots', 'jetpack', 'o2', 'tool']) { const id = e[sl]; if (id && getDef(id).perk) perks[getDef(id).perk] = 1; }
   const L = {
@@ -130,10 +142,12 @@ function loadout() {
     extract: (tool.speed || 1) * (1 + S.skills.mining * 0.08 + B.extract), toolTier: tool.tier || 1, combo: 3 + B.combo, perks,
   };
   L.frontier = frontierMul(); L.dmgMul *= L.frontier; L.hp *= Math.pow(1.1, Math.max(0, S.planet.reached - 1));
-  const wid = e.weapon; L.weapon = wid ? Object.assign(wStats(getDef(wid), lvl(wid)), { id: wid }) : null;
+  const wid = e.weapon; L.weapon = wid ? Object.assign(wStats(getDef(wid), effL(wid)), { id: wid }) : null;
   if (L.weapon) L.weapon.dmg *= L.dmgMul;
-  const w2 = e.weapon2 && e.weapon2 !== wid && S.inv[e.weapon2] ? e.weapon2 : null; L.weapon2 = w2 ? Object.assign(wStats(getDef(w2), lvl(w2)), { id: w2 }) : null;
-  if (L.weapon2) L.weapon2.dmg *= L.dmgMul;
+  L.weapon2 = null;
+  const gid = e.gadget && S.inv[e.gadget] ? e.gadget : null; L.gadget = gid ? Object.assign(gStats(getDef(gid), effL(gid)), { id: gid }) : null; if (L.gadget) L.gadget.dmg *= L.dmgMul;
+  const pid = e.pet && S.inv[e.pet] ? e.pet : null; L.pet = pid ? Object.assign(pStats(getDef(pid), effL(pid)), { id: pid }) : null; L.coinMul = 1; L.petMagnet = false;
+  if (L.pet) { L.pet.dmg *= L.dmgMul; const k = L.pet.k; if (k === 'ufo') { L.oreMul += L.pet.ore; L.petMagnet = true; } if (k === 'fox') L.coinMul += L.pet.coin; if (k === 'owl') { L.crit += L.pet.crit; L.perks.scan = true; } }
   L.setAb = {}; const sc = setCounts(); for (const k in sc.a) if (sc.a[k] >= 3) L.setAb[k] = sc.a[k] >= 5 ? 2 : 1;
   return L;
 }
@@ -141,7 +155,7 @@ function loadout() {
 // ---------- crates ----------
 const KIND_INFO = {
   weapon: { n: 'WEAPON', mul: 1, em: 'weapon' }, armor: { n: 'ARMOR', mul: 1, em: 'armor' }, ship: { n: 'SHIP', mul: 3, em: 'ship' }, mining: { n: 'MINING', mul: 1, em: 'mining' },
-  skin: { n: 'SKIN', mul: 1, em: 'skin' }, cosmetic: { n: 'COSMETIC', mul: 1, em: 'cosmetic' }, backdrop: { n: 'BACKDROP', mul: 1, em: 'backdrop' }, galaxy: { n: 'GALAXY', mul: 2, em: 'galaxy' },
+  skin: { n: 'SKIN', mul: 1, em: 'skin' }, cosmetic: { n: 'COSMETIC', mul: 1, em: 'cosmetic' }, backdrop: { n: 'BACKDROP', mul: 1, em: 'backdrop' }, gadget: { n: 'GADGET', mul: 1.2, em: 'gadget' }, pet: { n: 'PET', mul: 1.2, em: 'pet' }, galaxy: { n: 'GALAXY', mul: 2, em: 'galaxy' },
 };
 function kindInfo(kind) {
   if (KIND_INFO[kind]) return KIND_INFO[kind];
@@ -154,7 +168,7 @@ function kindInfo(kind) {
 }
 function crateCost(kind, tier) { return Math.max(1, Math.ceil(TIERS[tier].cost * kindInfo(kind).mul)) * CRATE_COIN; }
 function poolFor(kind) {
-  const map = { weapon: 'w', armor: 'a', ship: 's', mining: 't', skin: 'k', cosmetic: 'c', backdrop: 'b', galaxy: 'galaxy' };
+  const map = { weapon: 'w', armor: 'a', ship: 's', mining: 't', skin: 'k', cosmetic: 'c', backdrop: 'b', gadget: 'g', pet: 'p', galaxy: 'galaxy' };
   if (map[kind]) return POOLS[map[kind]];
   if (kind.startsWith('class:')) return POOLS[kind];
   if (kind.startsWith('salvage:')) { ensureSalvagePool(+kind.split(':')[1]); return POOLS[kind]; }
@@ -197,7 +211,7 @@ function rollUp(kind, r) { // double or nothing: one rarity higher in same pool
 function poolSize(kind) { return poolFor(kind).reduce((a, b) => a + b.length, 0); }
 function poolOwned(kind) { return poolFor(kind).reduce((a, b) => a + b.filter(owned).length, 0); }
 function crateKinds() {
-  const k = ['weapon', 'armor', 'ship', 'mining', 'skin', 'cosmetic', 'backdrop', 'galaxy'];
+  const k = ['weapon', 'gadget', 'pet', 'armor', 'ship', 'mining', 'skin', 'cosmetic', 'backdrop', 'galaxy'];
   for (const p in S.planet.visited) k.push('salvage:' + p);
   for (const b in S.planet.bosses) k.push('boss:' + b);
   for (const pg of PAGES) if (finisherOk(pg)) k.push('finisher:' + pg.id);
@@ -209,7 +223,7 @@ const xpNeed = L => Math.floor(80 * Math.pow(1.22, L - 1));
 function addXP(n) { S.xp += n; let up = 0; while (S.xp >= xpNeed(S.lvl)) { S.xp -= xpNeed(S.lvl); S.lvl++; S.sp++; up++; } if (up) { toast(`LEVEL ${S.lvl}! +${up} SKILL POINT${up > 1 ? 'S' : ''}`, COL.cyan); SND.play('levelup'); } return up; }
 function checkTitles() { for (const t of TITLES) if (!S.titles.earned[t.id] && t.chk(S)) { S.titles.earned[t.id] = 1; toast('TITLE EARNED: ' + t.n, COL.gold); if (!S.titles.eq) S.titles.eq = t.id; dirty(); } }
 function minerSlots() { return Object.keys(S.planet.bosses).map(Number).sort((a, b) => a - b).slice(0, 10); }
-function minerRate(id, p) { return aStats(getDef(id), lvl(id)).rate * ORE_VALUE(planetDef(p).ore[1]) / 5; }
+function minerRate(id, p) { return aStats(getDef(id), effL(id)).rate * ORE_VALUE(planetDef(p).ore[1]) / 5; }
 function tickMiners() {
   const now = Date.now(); const mins = Math.min(8 * 60, (now - S.miners.last) / 60000); S.miners.last = now;
   for (const p in S.miners.slots) { const id = S.miners.slots[p]; if (id && owned(id)) S.miners.acc[p] = Math.min((S.miners.acc[p] || 0) + minerRate(id, +p) * mins, minerRate(id, +p) * 480); }
@@ -254,11 +268,11 @@ function goals() {
 // ---------- selling ----------
 // NEW markers: set when an item first arrives, cleared the moment you equip it
 const HANGAR_SLOTS = ['engine', 'hull', 'cargo', 'scanner', 'shield', 'skin_ship'];
-function freshIn(slot) { const want = slot === 'weapon2' ? 'weapon' : slot; let n = 0; for (const id in S.fresh) { if (!S.inv[id]) { delete S.fresh[id]; continue; } if (slotOf(getDef(id)) === want) n++; } return n; }
+function freshIn(slot) { const want = slot; let n = 0; for (const id in S.fresh) { if (!S.inv[id]) { delete S.fresh[id]; continue; } if (slotOf(getDef(id)) === want) n++; } return n; }
 function freshCount(where) { let n = 0; for (const id in S.fresh) { if (!S.inv[id]) continue; const sl = slotOf(getDef(id)); if (!sl) continue; if ((where === 'hangar') === HANGAR_SLOTS.includes(sl)) n++; } return n; }
 function equipped(id) { if (S.fresh[id]) { delete S.fresh[id]; dirty(); } }
 function isEquipped(id) { for (const k in S.eq) if (S.eq[k] === id) return true; return false; }
-function sellValue(id) { const d = getDef(id); const L = lvl(id) || 1; return Math.round(SELL_VAL[d.r] * (1 + 0.2 * (L - 1))); }
+function sellValue(id) { const d = getDef(id); const L = lvl(id) || 1; return Math.round(SELL_VAL[d.r] * (1 + 0.2 * (L - 1)) * (1 + 0.1 * gradeOf(id))); }
 function sellItem(id) { if (!S.inv[id] || isEquipped(id)) return 0; const v = sellValue(id); delete S.inv[id]; delete S.fresh[id]; S.stats.sold++; earn(v); return v; }
 
 // ---------- goal chain: one clear next step, a reward, then a slightly bigger one ----------
@@ -274,7 +288,7 @@ const GOAL_CHAIN = [
   { t: () => `BEAT ${bossOf(1)} ON ${pName(1)}`, go: 'launch', f: () => [S.planet.bosses[1] ? 1 : 0, 1], rw: 400 },
   { t: () => 'STAGGER AN ALIEN WHILE A ! FLASHES OVER IT', go: 'launch', f: () => [S.stats.staggers, 1], rw: 250 },
   { t: () => 'PULL OFF A PERFECT DODGE: BOOST THROUGH AN ATTACK', go: 'launch', f: () => [S.stats.perfects, 1], rw: 250 },
-  { t: () => 'EQUIP A 2ND WEAPON IN THE LOCKER', go: 'locker', f: () => [S.eq.weapon2 ? 1 : 0, 1], rw: 200 },
+  { t: () => 'USE YOUR GADGET 3 TIMES (F OR 2)', go: 'launch', f: () => [Math.min(3, S.stats.kills2 || 0), 3], rw: 200 },
   { t: () => 'COMPLETE A PLANET EVENT. CHECK THE STAR MAP', go: 'launch', f: () => [S.stats.events, 1], rw: 'choice' },
   { t: () => 'SELL AN ITEM YOU DO NOT NEED', go: 'locker', f: () => [S.stats.sold, 1], rw: 150 },
   { t: () => `RAISE YOUR SHIP RATING TO ${PLANET_REQ(2)}`, go: 'hangar', f: () => [shipRating(), PLANET_REQ(2)], rw: 300 },
@@ -341,7 +355,7 @@ function ensureContracts() {
     const t = pool.splice(R.int(pool.length), 1)[0];
     if (t.k === 'cls' && !ownedCls.length) continue;
     if (t.k === 'parries' && !ownedWeaponIds().some(id => getDef(id).sub === 'blade')) continue;
-    if (t.k === 'kills2' && ownedWeaponIds().length < 2) continue;
+    if (t.k === 'kills2' && !S.eq.gadget) continue;
     if (t.k === 'elites' && S.planet.landings < 2) continue;
     const n = t.n[0] + R.int(t.n[1] - t.n[0] + 1); const c = { k: t.k, n, cls: t.k === 'cls' ? R.pick(ownedCls) : null, done: false, claimed: false };
     c.base = t.k === 'cls' ? (S.stats.clsKills[c.cls] || 0) : (S.stats[t.k] || 0);
@@ -373,9 +387,9 @@ function impactLines(id) {
     if (after > before) out.push(after >= req && before < req ? [`EQUIP IT: PUTS ${planetDef(next).name} IN RANGE!`, COL.gold] : [`+${after - before} SHIP RATING IF EQUIPPED (${after}/${req})`, COL.blueL]);
   }
   if ((d.cat === 'w' || d.cat === 'a' || (d.cat === 't' && d.sub === 'tool')) && sl && S.eq[sl] && S.eq[sl] !== id) {
-    const cur = getDef(S.eq[sl]); const a = power(d, L), b = power(cur, lvl(S.eq[sl])); const pct = Math.round((a / b - 1) * 100);
+    const cur = getDef(S.eq[sl]); const a = power(d, effL(id, L, Math.max(gradeOf(id), (typeof OPEN !== 'undefined' && OPEN && OPEN.tier) || 0))), b = power(cur, effL(S.eq[sl])); const pct = Math.round((a / b - 1) * 100);
     if (pct > 0) out.push([`${pct}% STRONGER THAN YOUR EQUIPPED ${SUB_LABEL[cur.sub] || ''}`, COL.mint]);
-    else if (d.cat === 'w' && (d.sig || d.quirk || d.el || d.verbs.length)) out.push(['A NEW PLAYSTYLE. TRY IT AS YOUR 2ND WEAPON', COL.lilac]);
+    else if (d.cat === 'w' && (d.sig || d.quirk || d.el || d.verbs.length)) out.push(['A NEW PLAYSTYLE. TRY IT IN THE TEST RANGE', COL.lilac]);
   }
   if (d.cat === 't' && d.sub === 'tool' && d.tier > loadout().toolTier) out.push([`TIER ${d.tier} TOOL: BETTER ORE AND TIER ${d.tier} CRYSTAL SEALS`, COL.gold]);
   if (d.cat === 's' && d.sub === 'scanner' && d.r >= 2) out.push([d.r >= 4 ? 'SHOWS BURIED CACHES ON THE GROUND' : 'SHOWS BURIED CACHES ON YOUR MINIMAP', COL.blueL]);

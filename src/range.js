@@ -2,17 +2,19 @@
 let RANGE = null;
 const RANGE_B = [26, 44, 454, 234];
 function startRange(id, back) {
-  const d = getDef(id); if (d.cat !== 'w') return;
-  const L = loadout();
+  let d = getDef(id); if (d.cat !== 'w' && d.cat !== 'g') return;
+  const L = loadout(); const gid = d.cat === 'g' ? id : null; if (gid) { id = S.eq.weapon; if (!id) return; d = getDef(id); }
   const w = makeWorld({ pi: Math.max(1, S.planet.cur || 1), practice: true, noHurt: true });
   w.hpMul = Math.pow(1.21, Math.max(0, S.planet.reached - 1)); w.dmgMul = 1; w.crit = L.crit; w.comboMax = L.combo;
   const B = RANGE_B; w.bounds = B;
   w.solid = (x, y) => x < B[0] - 8 || x > B[2] + 8 || y < B[1] - 10 || y > B[3] + 8;
   w.collide = ent => { ent.x = clamp(ent.x, B[0], B[2]); ent.y = clamp(ent.y, B[1], B[3]); };
   const pl = makePlayer(80, 140, L); w.player = pl;
-  const Wst = Object.assign(wStats(d, Math.max(1, lvl(id) || 1)), { id }); Wst.dmg *= L.dmgMul; Wst.col = weaponColor(id);
+  const Wst = Object.assign(wStats(d, effL(id, Math.max(1, lvl(id) || 1), Math.max(gradeOf(id), back === 'open' && OPEN ? OPEN.tier : 0))), { id }); Wst.dmg *= L.dmgMul; Wst.col = weaponColor(id);
   pl.Ws = [Wst]; pl.W = Wst; pl.wi = 0;
-  RANGE = { id, w, L, back: back || 'hub', t: 0, cam: { x: 0, y: 0 }, respawn: [], podT: 0, eq: Object.assign({}, S.eq, { weapon: id }) };
+  const gg = gid || S.eq.gadget; if (gg && (owned(gg) || gid)) { const gs = gStats(getDef(gg), effL(gg, Math.max(1, lvl(gg) || 1), Math.max(gradeOf(gg), back === 'open' && OPEN ? OPEN.tier : 0))); gs.dmg *= L.dmgMul; pl.G = Object.assign(gs, { id: gg, max: gs.cd, cd: 0 }); }
+  if (L.pet) pl.pet = Object.assign({}, L.pet, { t: 1 });
+  RANGE = { id, gid, w, L, back: back || 'hub', t: 0, cam: { x: 0, y: 0 }, respawn: [], podT: 0, eq: Object.assign({}, S.eq, { weapon: id }) };
   w.onKill = e => { if (e.slot) RANGE.respawn.push({ slot: e.slot, t: 1.6 }); };
   for (const sl of ['group', 'group', 'group', 'group', 'group', 'mover', 'mover', 'mover', 'brute', 'spitter']) spawnRangeTarget(sl);
   const dm = spawnEnemy(w, 'brute', 400, 140); dm.dummy = true; dm.hp = dm.maxHp = 1e6; dm.r = 8; dm.face = -1; dm.armored = false;
@@ -34,7 +36,10 @@ function updateRange(dt) {
   const inp = { mx: (key('KeyD') || key('ArrowRight') ? 1 : 0) - (key('KeyA') || key('ArrowLeft') ? 1 : 0), my: (key('KeyS') || key('ArrowDown') ? 1 : 0) - (key('KeyW') || key('ArrowUp') ? 1 : 0), ax: IN.mx, ay: IN.my, fire: IN.down && IN.my > 30 && IN.my < 240, boost: kp('Space') || kp('ShiftLeft') };
   if (IN.touch || TOUCH.size) { const t = touchInput(pl, { x: 0, y: 0 }, w); Object.assign(inp, { mx: t.mx, my: t.my, ax: t.ax, ay: t.ay, fire: t.fire, boost: t.boost }); }
   updatePlayer(w, pl, inp, dt, G.L);
+  if (S.eq.trail && S.inv[S.eq.trail] && pl.moving && R0() < 0.6) trailFx(w, pl, getDef(S.eq.trail));
   fireWeapon(w, pl, pl.W, inp, dt); updateDrones(w, pl, pl.W, dt);
+  if ((kp('KeyF') || kp('Digit2')) && pl.G) { if (pl.G.cd <= 0) useGadget(w, pl, inp.ax, inp.ay); else SND.play('deny'); }
+  w.zaps.forEach(z => z.t += dt); w.zaps = w.zaps.filter(z => z.t < 0.15);
   updateShots(w, dt); updateMines(w, dt); updateEnemies(w, dt); updateEShots(w, dt); updateTele(w, dt); w.fx.update(dt);
   if (w.comboT > 0) { w.comboT -= dt; if (w.comboT <= 0) w.combo = 0; }
   for (const r of G.respawn) { r.t -= dt; if (r.t <= 0) { r.done = true; spawnRangeTarget(r.slot); } } G.respawn = G.respawn.filter(r => !r.done);
@@ -48,7 +53,7 @@ function leaveRange() {
   setScene('hub'); SND.playSong('hub'); if (G.back === 'locker') openStation('locker');
 }
 function drawRange(dt) {
-  const G = RANGE, w = G.w, pl = w.player, d = getDef(G.id);
+  const G = RANGE, w = G.w, pl = w.player, d = getDef(G.gid || G.id);
   rect(0, 0, W, H, '#05060d');
   const B = RANGE_B;
   ctx.globalAlpha = 0.5; for (let x = B[0]; x <= B[2]; x += 16) rect(x, B[1] - 8, 1, B[3] - B[1] + 16, '#14213d'); for (let y = B[1] - 8; y <= B[3] + 8; y += 12) rect(B[0] - 8, y, B[2] - B[0] + 16, 1, '#14213d'); ctx.globalAlpha = 1;
@@ -66,14 +71,14 @@ function drawRange(dt) {
   text('TEST RANGE', 68, 4, COL.gold, FS); let nm = d.name; while (textW(nm, FB) > 200 && nm.length > 6) nm = nm.slice(0, -1); text(nm, 68, 11, d.r === 6 ? 'RAINBOW' : rcol(d.r), FB);
   const dps = (w.dmgLog || []).reduce((a, x) => a + x[1], 0) / 3;
   text('DUMMY DPS', W - 150, 4, COL.mute, FS); textO(fmt(dps), W - 150, 11, COL.gold, '#000', FB);
-  const eqd = S.eq.weapon === G.id || S.eq.weapon2 === G.id;
-  if (owned(G.id) && !eqd) {
-    if (button(W - 96, 3, 44, 16, 'EQUIP', { kind: 'primary', font: FS })) { equipped(G.id); S.eq.weapon = G.id; S.stats.equips++; dirty(); SND.play('pickup'); G.eq.weapon = G.id; }
-    if (button(W - 50, 3, 46, 16, 'AS 2ND', { kind: 'blue', font: FS })) { equipped(G.id); S.eq.weapon2 = G.id; S.stats.equips++; dirty(); SND.play('pickup'); }
+  const tid = G.gid || G.id, tsl = G.gid ? 'gadget' : 'weapon'; const eqd = S.eq[tsl] === tid;
+  if (owned(tid) && !eqd) {
+    if (button(W - 96, 3, 88, 16, G.gid ? 'EQUIP GADGET' : 'EQUIP', { kind: 'primary', font: FS })) { equipped(tid); S.eq[tsl] = tid; S.stats.equips++; dirty(); SND.play('pickup'); if (!G.gid) G.eq.weapon = tid; }
   } else if (eqd) text('EQUIPPED', W - 8, 9, COL.mint, FS, 2);
   // bottom tips
   rect(0, H - 26, W, 26, COL.void1); rect(0, H - 26, W, 1, COL.steel);
-  const tips = [d.sig ? 'SIGNATURE: ' + d.lore : itemHeadline(d), TECH[d.sub] ? 'TECHNIQUE: ' + TECH[d.sub] : '', 'BOOST THROUGH ATTACKS FOR A PERFECT DODGE. HIT ALIENS FROM BEHIND. HIT A FLASHING ! TO STAGGER. ESC TO LEAVE'];
+  if (pl.G) { const ready = pl.G.cd <= 0; text('GADGET', 220, 4, COL.mute, FS); text(ready ? 'F: READY' : 'RECHARGING ' + pl.G.cd.toFixed(1), 220, 11, ready ? COL.gold : COL.dim, FS); }
+  const tips = G.gid ? [itemHeadline(d), 'PRESS F OR 2 TO USE IT ON THE TARGETS. YOUR EQUIPPED WEAPON STILL FIRES', 'ESC TO LEAVE'] : [d.sig ? 'SIGNATURE: ' + d.lore : itemHeadline(d), TECH[d.sub] ? 'TECHNIQUE: ' + TECH[d.sub] : '', 'BOOST THROUGH ATTACKS FOR A PERFECT DODGE. HIT ALIENS FROM BEHIND. HIT A FLASHING ! TO STAGGER. ESC TO LEAVE'];
   tips.filter(Boolean).slice(0, 3).forEach((t, i) => { let s = t; while (textW(s, FS) > W - 16 && s.length > 8) s = s.slice(0, -1); text(s, 8, H - 22 + i * 7, i === 0 ? COL.cream : i === 1 ? COL.lilac : COL.mute, FS); });
   if (!IN.touch) { const x = Math.floor(IN.mx), y = Math.floor(IN.my); rect(x - 4, y, 3, 1, COL.ink); rect(x + 2, y, 3, 1, COL.ink); rect(x, y - 4, 1, 3, COL.ink); rect(x, y + 2, 1, 3, COL.ink); }
 }

@@ -2,10 +2,10 @@
 function itemCardH(id, w) {
   const d = getDef(id); let h = 34 + wrap(d.name, w - 36, FB).length * 9;
   h += wrap(itemHeadline(d), w - 12, FS).length * 7 + 4; for (const l of itemExtraLines(d)) h += wrap(l, w - 12, FS).length * 7;
-  h += 20 + 10; if (d.set !== undefined) h += 16; return h;
+  h += 20 + 10; if (d.set !== undefined) h += 16; if (GRADEABLE[d.cat]) h += 8; return h;
 }
 function drawItemCard(id, x, y, w, o = {}) {
-  const d = getDef(id); const L = o.level || lvl(id) || 1; const h = itemCardH(id, w) + (o.compare ? 9 : 0);
+  const d = getDef(id); const L0 = o.level || lvl(id) || 1; const gr = o.grade ?? gradeOf(id); const L = effL(id, L0, gr); const h = itemCardH(id, w) + (o.compare ? 9 : 0);
   x = clamp(Math.floor(x), 2, W - w - 2); y = clamp(Math.floor(y), 2, H - h - 2);
   const c = rcol(d.r);
   panel(x, y, w, h, { bg: '#0e1630', bd: c === 'RAINBOW' ? rainbow(T_NOW) : c });
@@ -15,6 +15,7 @@ function drawItemCard(id, x, y, w, o = {}) {
   text(`${RAR[d.r].n} ${SUB_LABEL[d.sub]}`, x + 34, yy, d.r === 6 ? 'RAINBOW' : c, FS); yy += 8;
   if (owned(id)) { const inv = S.inv[id]; text(`LEVEL ${inv.l}${inv.l >= 10 ? ' MAX' : `  ${inv.p}/${inv.l} TO NEXT`}`, x + 34, yy, COL.cyan, FS); }
   else text(o.sil ? 'NOT FOUND YET' : 'NOT OWNED', x + 34, yy, COL.mute, FS);
+  if (GRADEABLE[d.cat]) { yy += 8; text(gradeName(gr), x + 34, yy, tierColor(gr), FS); }
   yy = Math.max(yy + 10, y + 32);
   wrap(itemHeadline(d), w - 12, FS).forEach(l => { text(l, x + 6, yy, d.r === 6 ? COL.gold : (c === 'RAINBOW' ? COL.gold : c), FS); yy += 7; }); yy += 2;
   for (const l of itemExtraLines(d)) wrap(l, w - 12, FS).forEach(ll => { text(ll, x + 6, yy, COL.ink, FS); yy += 7; });
@@ -23,7 +24,7 @@ function drawItemCard(id, x, y, w, o = {}) {
   if (d.set !== undefined) { const bon = d.cat === 'a' ? ARMOR_SET_BONUS[d.set] : SHIP_SET_BONUS[d.set]; text(`${SET_NAMES[d.set]} SET 3: ${bonusLine(bon[0])}`, x + 6, yy, COL.magenta, FS); text(`5: ${bonusLine(bon[1])}`, x + 6, yy + 7, COL.magenta, FS); yy += 16; }
   if (o.compare) {
     const sl2 = slotOf(d); const cur = sl2 && S.eq[sl2];
-    if (cur && cur !== id && (d.cat === 'w' || d.cat === 'a' || d.cat === 's' || d.sub === 'tool')) { const a = power(d, L), b = power(getDef(cur), lvl(cur)); const df = a - b; text(df > 0 ? `+${df} POWER VS EQUIPPED` : df < 0 ? `${df} POWER VS EQUIPPED` : 'SAME POWER AS EQUIPPED', x + 6, yy, df > 0 ? COL.mint : df < 0 ? COL.coral : COL.dim, FS); }
+    if (cur && cur !== id && (d.cat === 'w' || d.cat === 'a' || d.cat === 's' || d.sub === 'tool')) { const a = power(d, L), b = power(getDef(cur), effL(cur)); const df = a - b; text(df > 0 ? `+${df} POWER VS EQUIPPED` : df < 0 ? `${df} POWER VS EQUIPPED` : 'SAME POWER AS EQUIPPED', x + 6, yy, df > 0 ? COL.mint : df < 0 ? COL.coral : COL.dim, FS); }
     else if (cur === id) text('EQUIPPED', x + 6, yy, COL.mint, FS);
     if (owned(id)) text(`SELLS FOR ${fmt(sellValue(id))}`, x + w - 6, yy, COL.gold, FS, 2);
     yy += 9;

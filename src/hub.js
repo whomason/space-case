@@ -119,7 +119,7 @@ function drawHub(dt) {
   for (let x = 6; x < W; x += 12) px(x, 212, (Math.floor(T_NOW * 6) + x / 12) % 9 === 0 ? '#fafaff' : (fc || '#b79ced'));
   // astronaut on deck, looking out at the planet, turning around now and then
   HUB.turnT += dt; const look = (HUB.turnT % 9) > 7.2 ? 0 : 1;
-  if (LT === null) { shadow(286, 252, 14, 3, 0.5); ctx.drawImage(astroSprite(S.eq, look, 0), 266, 200, 40, 52); cosmeticAura(HUB_FX, 286, 252 - 22, S.eq); if (S.name && !HUB.panel) { const nw = textW(S.name, FS) + 6; ctx.globalAlpha = 0.7; rect(286 - nw / 2, 190, nw, 9, '#000'); ctx.globalAlpha = 1; text(S.name, 286, 192, COL.cream, FS, 1); } }
+  if (LT === null) { shadow(286, 252, 14, 3, 0.5); ctx.drawImage(astroSprite(S.eq, look, 0), 266, 200, 40, 52); cosmeticAura(HUB_FX, 286, 252 - 22, S.eq); if (S.eq.pet && S.inv[S.eq.pet]) drawPetAt(S.eq.pet, 316, 252, 2, true); if (S.name && !HUB.panel) { const nw = textW(S.name, FS) + 6; ctx.globalAlpha = 0.7; rect(286 - nw / 2, 190, nw, 9, '#000'); ctx.globalAlpha = 1; text(S.name, 286, 192, COL.cream, FS, 1); } }
   else if (LT < 0.42) { const k = LT / 0.4; for (let y = sy + 40; y < 252; y += 2) { ctx.globalAlpha = 0.35 * (1 - k * 0.5); rect(274, y, 24, 1, y % 4 ? COL.blueL : COL.lilac); } ctx.globalAlpha = 1 - k; ctx.drawImage(astroSprite(S.eq, 1, 0), 266, Math.round(200 - k * 90), 40, 52); ctx.globalAlpha = 1; if (R0() < 0.6) HUB_FX.add({ x: 270 + R0() * 32, y: 250 - R0() * 50, vx: 0, vy: -80, life: 0.4, c: COL.lilac, s: 1 }); }
   HUB_FX.update(dt); HUB_FX.draw();
   // top shade
@@ -248,18 +248,18 @@ function drawPanel() {
   if (p === 'social') return panelSocial(st);
 }
 function ownedFor(slot) {
-  const want = slot === 'weapon2' ? 'weapon' : slot; const ids = Object.keys(S.inv).filter(id => { const d = getDef(id); return slotOf(d) === want; });
-  ids.sort((a, b) => power(getDef(b), lvl(b)) - power(getDef(a), lvl(a)) || getDef(b).r - getDef(a).r);
+  const want = slot; const ids = Object.keys(S.inv).filter(id => { const d = getDef(id); return slotOf(d) === want; });
+  ids.sort((a, b) => power(getDef(b), effL(b)) - power(getDef(a), effL(a)) || getDef(b).r - getDef(a).r);
   return ids;
 }
-const SLOT_LABEL = { weapon: 'WEAPON', weapon2: '2ND WPN', tool: 'TOOL', helmet: 'HELMET', chest: 'CHEST', boots: 'BOOTS', jetpack: 'JETPACK', o2: 'O2 TANK', eyewear: 'EYEWEAR', headgear: 'HEADGEAR', back: 'BACK', trail: 'TRAIL', killfx: 'KILL FX', skin_weapon: 'WPN SKIN', skin_armor: 'SUIT SKIN', skin_tool: 'TOOL SKIN', skin_ship: 'SHIP SKIN', backdrop: 'BACKDROP', engine: 'ENGINE', hull: 'HULL', cargo: 'CARGO', scanner: 'SCANNER', shield: 'SHIELD' };
+const SLOT_LABEL = { weapon: 'WEAPON', weapon2: '2ND WPN', tool: 'TOOL', helmet: 'HELMET', chest: 'CHEST', boots: 'BOOTS', jetpack: 'JETPACK', o2: 'O2 TANK', eyewear: 'EYEWEAR', headgear: 'HEADGEAR', back: 'BACK', trail: 'TRAIL', killfx: 'KILL FX', skin_weapon: 'WPN SKIN', skin_armor: 'SUIT SKIN', skin_tool: 'TOOL SKIN', skin_ship: 'SHIP SKIN', backdrop: 'BACKDROP', gadget: 'GADGET', pet: 'PET', engine: 'ENGINE', hull: 'HULL', cargo: 'CARGO', scanner: 'SCANNER', shield: 'SHIELD' };
 function equipSlotGrid(st, x, y, w, h) {
   const slot = st.slot; const ids = ownedFor(slot); const optional = !SLOTS_GEAR.includes(slot) && !SLOTS_SHIP.includes(slot);
   const list = optional ? [null].concat(ids) : ids;
   text(`${SLOT_LABEL[slot]}: ${ids.length} OWNED`, x, y - 10, COL.ink, FS);
   const big = slot === 'weapon' || slot === 'skin_weapon';
   // sell mode
-  if ((slot === 'weapon' || slot === 'weapon2') && S.eq[slot] && !st.sell && button(x + w - 112, y - 14, 44, 12, 'TEST IT', { font: FS, kind: 'blue', tip: 'TRY THIS WEAPON IN THE TEST RANGE' })) { startRange(S.eq[slot], 'locker'); return; }
+  if ((slot === 'weapon' || slot === 'gadget') && S.eq[slot] && !st.sell && button(x + w - 112, y - 14, 44, 12, 'TEST IT', { font: FS, kind: 'blue', tip: 'TRY IT IN THE TEST RANGE' })) { startRange(S.eq[slot], 'locker'); return; }
   if (button(x + w - 64, y - 14, 64, 12, st.sell ? 'DONE SELLING' : 'SELL ITEMS', { font: FS, kind: st.sell ? 'cream' : 'def', tip: 'SELL GEAR YOU DO NOT NEED FOR COINS' })) { st.sell = !st.sell; st.sellSel = null; st.bulk = 0; SND.play('click'); }
   const gh = st.sell ? h - 26 : h;
   const c = itemGrid(st, list, x, y, w, gh, { cw: big ? 40 : 30, ch: big ? 22 : 26, sel: st.sell ? st.sellSel : S.eq[slot], empty: 'OPEN CRATES TO FIND MORE', eqd: st.sell ? Object.values(S.eq) : null });
@@ -280,7 +280,7 @@ function equipSlotGrid(st, x, y, w, h) {
     return;
   }
   if (c === 'NONE') { delete S.eq[slot]; SND.play('click'); dirty(); }
-  else if (c) { equipped(c); if (S.eq[slot] !== c) S.stats.equips++; const other = slot === 'weapon' ? 'weapon2' : slot === 'weapon2' ? 'weapon' : null; if (other && S.eq[other] === c) S.eq[other] = S.eq[slot] || null; S.eq[slot] = c; if (!S.eq.weapon && S.eq.weapon2) { S.eq.weapon = S.eq.weapon2; S.eq.weapon2 = null; } SND.play('pickup'); dirty(); }
+  else if (c) { equipped(c); if (S.eq[slot] !== c) S.stats.equips++; S.eq[slot] = c; SND.play('pickup'); dirty(); }
 }
 function panelLocker(st) {
   if (panelFrame('LOCKER', COL.gold, true)) return;
@@ -288,7 +288,7 @@ function panelLocker(st) {
   panel(14, 30, 80, 100, { bg: '#05070f', bd: COL.steel });
   ctx.globalAlpha = 0.35; for (let gx = 14; gx < 94; gx += 10) rect(gx, 31, 1, 98, COL.steel); for (let gy = 34; gy < 130; gy += 10) rect(15, gy, 78, 1, COL.steel); ctx.globalAlpha = 1;
   const dirs = [0, 3, 1, 2]; const dir = dirs[Math.floor(T_NOW / 1.5) % 4];
-  shadow(54, 120, 18, 4, 0.5); ctx.drawImage(astroSprite(S.eq, dir, 0), 24, 42, 60, 78);
+  shadow(54, 120, 18, 4, 0.5); ctx.drawImage(astroSprite(S.eq, dir, 0), 24, 42, 60, 78); if (S.eq.pet && S.inv[S.eq.pet]) drawPetAt(S.eq.pet, 82, 122, 1, true);
   // stats
   const L = loadout(); let yy = 136;
   const row = (k, v, c = COL.ink) => { text(k, 16, yy, COL.mute, FS); text(v, 92, yy, c, FS, 2); yy += 8; };
@@ -299,7 +299,7 @@ function panelLocker(st) {
   const sc = setCounts(); for (const s in sc.a) if (sc.a[s] >= 3) { text(`${SET_NAMES[s]} ${sc.a[s] >= 5 ? '5' : '3'}PC`, 16, yy, COL.magenta, FS); yy += 7; }
   // slots
   const col = (arr, x, y0, sp = 26) => arr.forEach((s, i) => { const y = y0 + i * sp; const id = S.eq[s]; const skin = s === 'weapon' ? S.eq.skin_weapon : s === 'tool' ? S.eq.skin_tool : null; if (slotBox(x, y, 42, sp - 1, id, SLOT_LABEL[s], st.slot === s, { skin, fresh: freshIn(s) > 0 })) { st.slot = s; st.scroll = 0; SND.play('click'); } });
-  text('GEAR', 120, 28, COL.mute, FS); col(['weapon', 'weapon2'].concat(SLOTS_GEAR.slice(1)), 99, 36);
+  text('GEAR', 120, 28, COL.mute, FS); col(['weapon', 'gadget', 'tool', 'pet'].concat(SLOTS_GEAR.slice(2)), 99, 36, 24);
   text('STYLE', 166, 28, COL.mute, FS); col(SLOTS_COS.concat(['skin_weapon', 'skin_armor', 'skin_tool', 'backdrop']), 145, 36, 24);
   // grid
   rect(192, 30, 1, H - 44, COL.void3);
@@ -372,14 +372,14 @@ function claimPage(pg) {
   SND.play('fanfare'); toast(`${pg.n} COMPLETE: ${REWARD_TXT(rw)}`, COL.gold); HUB.flashT = 3; HUB.flashCol = COL.magenta; checkTitles(); dirty();
   if (rw.t === 'choice') { HUB.panel = null; nextQueuedChoice(); }
 }
-const CODEX_CATS = [['w', 'WEAPONS'], ['a', 'ARMOR'], ['s', 'SHIP'], ['t', 'MINING'], ['k', 'SKINS'], ['c', 'COSMETICS'], ['b', 'BACKDROPS']];
+const CODEX_CATS = [['w', 'WEAPONS'], ['g', 'GADGETS'], ['p', 'PETS'], ['a', 'ARMOR'], ['s', 'SHIP'], ['t', 'MINING'], ['k', 'SKINS'], ['c', 'COSMETICS'], ['b', 'BACKDROPS']];
 function codexTab(st) {
   st.cc = st.cc || 0; st.sub = st.sub || 0;
   CODEX_CATS.forEach(([c, n], i) => {
-    const x = 12 + i * 66, y = 30; const ids = ALL_BASE[c]; const own = ids.filter(owned).length; const sel = st.cc === i; const hov = inBox(x, y, 62, 26);
-    panel(x, y, 62, 26, { bg: sel ? COL.void3 : COL.void1, bd: sel ? COL.magenta : hov ? COL.line : COL.void3 });
-    text(n, x + 31, y + 4, sel ? COL.ink : COL.dim, FS, 1); text(`${fmt(own)}/${fmt(ids.length)}`, x + 31, y + 12, COL.mute, FS, 1); bar(x + 4, y + 20, 54, 2, own / ids.length, COL.magenta, COL.void0);
-    if (clickIn(x, y, 62, 26)) { st.cc = i; st.sub = 0; st.scroll = 0; SND.play('click'); }
+    const x = 12 + i * 51, y = 30; const ids = ALL_BASE[c]; const own = ids.filter(owned).length; const sel = st.cc === i; const hov = inBox(x, y, 48, 26);
+    panel(x, y, 48, 26, { bg: sel ? COL.void3 : COL.void1, bd: sel ? COL.magenta : hov ? COL.line : COL.void3 });
+    text(n, x + 24, y + 4, sel ? COL.ink : COL.dim, FS, 1); text(`${fmt(own)}/${fmt(ids.length)}`, x + 24, y + 12, COL.mute, FS, 1); bar(x + 4, y + 20, 40, 2, own / ids.length, COL.magenta, COL.void0);
+    if (clickIn(x, y, 48, 26)) { st.cc = i; st.sub = 0; st.scroll = 0; SND.play('click'); }
   });
   const cat = CODEX_CATS[st.cc][0]; const subs = CATS[cat].subs;
   const sub = subs[st.sub % subs.length];
@@ -417,7 +417,7 @@ function panelWorkshop(st) {
       text(d.name, x + 34, yy + 3, RAR[d.r].c, FS); text(`QUEST: DEFEAT ${need} ALIENS WITH IT`, x + 34, yy + 11, COL.mute, FS);
       bar(x + 220, yy + 8, 120, 3, k / need, COL.mint, COL.void0); text(`${Math.min(k, need)}/${need}`, x + 346, yy + 6, COL.dim, FS);
       if (has) text('EVOLVED', x + 400, yy + 6, COL.mint, FS);
-      else if (k >= need) { if (button(x + 384, yy + 3, 64, 13, 'EVOLVE', { font: FS, col: '#1d4a3a', tc: COL.mint })) { addItem(eid); S.eq.weapon = eid; SND.play('reveal', getDef(eid).r); HUB.flashT = 3; HUB.flashCol = RAR[getDef(eid).r].c; toast(`EVOLVED INTO ${getDef(eid).name}!`, COL.mint); dirty(); } }
+      else if (k >= need) { if (button(x + 384, yy + 3, 64, 13, 'EVOLVE', { font: FS, col: '#1d4a3a', tc: COL.mint })) { addItem(eid, gradeOf(id)); S.eq.weapon = eid; SND.play('reveal', getDef(eid).r); HUB.flashT = 3; HUB.flashCol = RAR[getDef(eid).r].c; toast(`EVOLVED INTO ${getDef(eid).name}!`, COL.mint); dirty(); } }
       if (inBox(x + 2, yy + 1, 28, 17)) TIP.set({ item: id });
       if (inBox(x + 384, yy + 3, 64, 13) && !has) TIP.set({ item: eid });
     });
@@ -429,7 +429,7 @@ function panelWorkshop(st) {
       drawItemIn(aid, x + 3, yy + 3, 40, 26, { sil: !done, maxSc: 1 }); text(A.n, x + 48, yy + 4, done ? 'RAINBOW' : COL.ink, FB); text(A.txt, x + 48, yy + 14, COL.dim, FS);
       ing.forEach((id, j) => { const bx = x + 260 + j * 46; const known = cl[j]; panel(bx, yy + 3, 42, 26, { bg: COL.void0, bd: known ? (owned(id) ? COL.mint : COL.gold) : COL.void3, flat: true }); if (known) { drawItemIn(id, bx + 1, yy + 4, 40, 18, { sil: !owned(id), maxSc: 1 }); text(owned(id) ? 'OWNED' : 'NEEDED', bx + 21, yy + 22, owned(id) ? COL.mint : COL.gold, FS, 1); if (inBox(bx, yy + 3, 42, 26)) TIP.set(owned(id) ? { item: id } : `NEEDED: ${getDef(id).name}. FIND: ${whereToFind(id)}`); } else { text('?', bx + 21, yy + 10, COL.mute, FB, 1); if (inBox(bx, yy + 3, 42, 26)) TIP.set('FIND A CLUE IN A PLANET WRECK'); } });
       const ready = !done && cl.every(Boolean) && ing.every(owned);
-      if (ready && button(x + 400, yy + 9, 48, 14, 'FORGE', { font: FS, col: '#4a3010', tc: COL.gold })) { addItem(aid); S.forged[k] = 1; SND.play('reveal', 6); HUB.flashT = 4; HUB.flashCol = 'RAINBOW'; toast(`FORGED ${A.n}!`, COL.gold); checkTitles(); dirty(); }
+      if (ready && button(x + 400, yy + 9, 48, 14, 'FORGE', { font: FS, col: '#4a3010', tc: COL.gold })) { addItem(aid, 5); S.forged[k] = 1; SND.play('reveal', 6); HUB.flashT = 4; HUB.flashCol = 'RAINBOW'; toast(`FORGED ${A.n}!`, COL.gold); checkTitles(); dirty(); }
     });
   } else {
     text('MAXED ITEMS TURN EXTRA COPIES INTO RESEARCH MATERIAL', x, y, COL.dim, FS);
@@ -451,7 +451,7 @@ function blueprintPicker(st) {
   }
   text('MISSING PIECES FROM YOUR COLLECTION PAGES COME FIRST. HOVER TO PREVIEW', x, y + 10, COL.dim, FS);
   const c = itemGrid(st, P.cands, x, y + 20, W - 28, H - 80, { cw: 40, ch: 24, allOwned: true });
-  if (c && c !== 'NONE') { addItem(c); S.bp[P.cls] = 0; st.pick = null; SND.play('reveal', getDef(c).r); toast(`BUILT ${getDef(c).name}`, COL.orange); dirty(); }
+  if (c && c !== 'NONE') { addItem(c, Math.min(7, Math.max(0, ...[0, 1, 2, 3, 4, 5, 6].filter(tierUnlocked)))); S.bp[P.cls] = 0; st.pick = null; SND.play('reveal', getDef(c).r); toast(`BUILT ${getDef(c).name}`, COL.orange); dirty(); }
   if (button(x, H - 34, 100, 18, 'CANCEL', { font: FS })) st.pick = null;
 }
 function panelProfile(st) {
@@ -574,7 +574,7 @@ function goSupernova() {
   S.nova.count++; S.nova.stars += 3; S.coins = 0;
   S.planet = { reached: 1, cur: 1, visited: {}, bosses: {}, bossCd: {}, stars: S.planet.stars, landings: S.planet.landings, ev: {} };
   S.miners.slots = {}; S.miners.acc = {};
-  const id = novaItem(S.nova.count); addItem(id); checkTitles(); dirty(); save();
+  const id = novaItem(S.nova.count); addItem(id, 6); checkTitles(); dirty(); save();
   flash(1, '#fff'); SND.play('bigboom'); SND.play('reveal', 6); toast(`SUPERNOVA ${S.nova.count}! ${getDef(id).name} UNLOCKED`, COL.magenta); HUB.flashT = 5; HUB.flashCol = 'RAINBOW';
   MAP.init = false; MAP.spheres = {}; goHub();
 }

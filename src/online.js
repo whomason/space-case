@@ -296,7 +296,7 @@ function drawProfileCard(p, x, y, w, h, acts, cs) {
   if (!p) { const c = NET.prof[cs]; text(c && c.err ? c.err : 'LOADING...', x + w / 2, y + h / 2, c && c.err ? COL.coral : COL.dim, FS, 1); return; }
   const eq = netCleanEq(p.loadout);
   ctx.globalAlpha = 0.3; for (let gx = x + 4; gx < x + 74; gx += 10) rect(gx, y + 4, 1, 92, COL.steel); ctx.globalAlpha = 1;
-  shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78);
+  shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78); if (eq.pet) drawPetAt(eq.pet, x + 66, y + 94, 1, true);
   const tx = x + 80;
   textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2);
   const tt = p.title && TITLES.find(t => t.id === p.title);
@@ -310,7 +310,7 @@ function drawProfileCard(p, x, y, w, h, acts, cs) {
   sh.forEach((id, i) => { const bx = x + 8 + i * 56, by = y + 112; const d = getDef(id); panel(bx, by, 52, 30, { bg: COL.void0, bd: d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c, flat: true }); drawItemIn(id, bx + 1, by + 1, 50, 28, { maxSc: 1 }); if (inBox(bx, by, 52, 30)) TIP.set({ item: id }); });
   if (!sh.length) text('NOTHING TO SHOW YET', x + 8, y + 116, COL.mute, FS);
   text('LOADOUT', x + 8, y + 148, COL.gold, FS);
-  const slots = ['weapon', 'weapon2', 'tool', 'helmet', 'chest', 'boots', 'jetpack', 'o2'];
+  const slots = ['weapon', 'gadget', 'tool', 'pet', 'helmet', 'chest', 'boots', 'jetpack'];
   slots.forEach((sl, i) => { const id = eq[sl]; const bx = x + 8 + i * 28, by = y + 156; panel(bx, by, 26, 20, { bg: COL.void0, bd: id ? (getDef(id).r === 6 ? rainbow(T_NOW) : RAR[getDef(id).r].c) : COL.void3, flat: true }); if (id) { drawItemIn(id, bx + 1, by + 1, 24, 18, { maxSc: 1, noFx: true }); if (inBox(bx, by, 26, 20)) TIP.set({ item: id }); } });
   let bx = x + 8; const by = y + h - 22;
   for (const [label, kind, fn] of acts || []) { const bw = textW(label, FS) + 14; if (button(bx, by, bw, 16, label, { kind, font: FS, disabled: NET.act })) fn(); bx += bw + 4; }

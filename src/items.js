@@ -107,6 +107,11 @@ function buildDef(id) {
     const styles = COS_STYLES[sub]; d.style = styles[(n * 7 + (hashStr(sub) % 5)) % styles.length];
     if (o.t === 'mastery' || o.t === 'nova' || o.t === 'boss') d.style = styles[R.int(styles.length)];
     d.name = pname + ' ' + d.style; d.w = 16; d.h = 16;
+  } else if (cat === 'g') {
+    d.name = (r <= 1 ? R.pick(PREFIX_LOW.concat([pname])) : r <= 3 ? R.pick(PREFIX_MID.concat([pname])) : R.pick(PREFIX_HIGH.concat([pname]))) + ' ' + GADGETS[sub].n + (r >= 4 && R.chance(0.5) ? ' ' + R.pick(SUFFIX_HIGH) : '');
+    d.w = 16; d.h = 16;
+  } else if (cat === 'p') {
+    d.name = pname + ' ' + PETS[sub].n; d.w = 16; d.h = 16;
   } else if (cat === 'b') {
     const WOW = ['GALAXY', 'BLACK HOLE', 'STARGATE', 'AURORA', 'RINGED GIANT'];
     d.style = r >= 4 ? R.pick(WOW) : BD_STYLES[(n * 5 + Math.floor(n / 12)) % BD_STYLES.length];
@@ -166,6 +171,8 @@ function itemHeadline(d) {
   if (d.perk) return PERK_TXT[d.perk];
   if (d.cat === 'k') return `${d.pat} PATTERN FOR YOUR ${d.sub === 'tool' ? 'MINING TOOL' : d.sub.toUpperCase()}`;
   if (d.cat === 'b') return 'A NEW BACKGROUND FOR YOUR STATION MENUS';
+  if (d.cat === 'g') return GADGETS[d.sub].txt + '. PRESS F OR 2';
+  if (d.cat === 'p') return PETS[d.sub].txt;
   if (d.cat === 'c') return { eyewear: 'WEAR IT OVER YOUR VISOR', headgear: 'SITS ON TOP OF YOUR HELMET', back: 'WORN ON YOUR BACK', trail: 'LEAVES A TRAIL AS YOU MOVE', killfx: 'PLAYS WHEN ALIENS DIE' }[d.sub];
   const s = aStats(d, 1);
   switch (d.sub) {
@@ -193,6 +200,8 @@ function statLines(d, L = 1) {
   }
   if (d.cat === 'k') return [['PATTERN', d.pat], ['FOR', d.sub === 'tool' ? 'MINING TOOL' : d.sub.toUpperCase()]];
   if (d.cat === 'c') return [['STYLE', d.style], ['LEVEL FX', L >= 10 ? 'ANIMATED' : L >= 6 ? 'PARTICLES' : L >= 3 ? 'GLOW' : 'LV 3']];
+  if (d.cat === 'g') return gadgetStatLines(d, L);
+  if (d.cat === 'p') return petStatLines(d, L);
   if (d.cat === 'b') return [['SCENE', d.style], ['MOTION', ['STILL', 'STILL', 'STILL', 'TWINKLES', 'SHOOTING STARS', 'PULSING GLOW', 'PRISM SHIMMER'][d.r]]];
   const s = aStats(d, L);
   switch (d.sub) {
@@ -225,6 +234,8 @@ function buildItemGrid(d) {
   if (d.cat === 'a' || d.cat === 's' || d.cat === 't') { const g = new Spr(16, 16); AGEN[d.sub](g, d.r, R); return g.fin(); }
   if (d.cat === 'k') { const ref = SKIN_REF[d.sub]; const g = new Spr(ref[2], ref[3]); const RR = RNG(7); if (ref[0] === 'w') WGEN.blaster(g, 2, RR); else AGEN[ref[1]](g, 2, RR); return g.fin(); }
   if (d.cat === 'c') { const g = new Spr(16, 16); CGEN[d.sub](g, d.style, R); return g.fin(); }
+  if (d.cat === 'g') { const g = new Spr(16, 16); GGEN[d.sub](g, d.r, R); return g.fin(); }
+  if (d.cat === 'p') { const g = new Spr(16, 16); petBody(g, d.sub, 0); return g.fin(); }
 }
 function sprFrames(d) { return (d.r === 6 || d.pat === 'HOLO' || d.pat === 'FLAME') ? 8 : 1; }
 function getItemSpr(id) {
@@ -315,7 +326,7 @@ function drawItemIn(id, bx, by, bw, bh, o = {}) {
 
 // ---------- catalog & pools ----------
 const POOLS = {};
-const ALL_BASE = { w: [], a: [], s: [], t: [], k: [], c: [], b: [] };
+const ALL_BASE = { w: [], a: [], s: [], t: [], k: [], c: [], b: [], g: [], p: [] };
 function poolAdd(key, id, r) { (POOLS[key] = POOLS[key] || [[], [], [], [], [], [], []])[r].push(id); }
 function buildCatalog() {
   for (const cat in CATS) {
@@ -378,6 +389,8 @@ function buildPages() {
   for (const [sub, nm] of skinP) { const ids = []; for (let n = 0; n < 300 && ids.length < 6; n++) { if (rarityOf('k', sub, n) <= 2) ids.push(`k|${sub}|${n}`); } PAGES.push({ id: 'ks:' + sub, n: nm, kind: 'SKIN', ids, rw: rw(), hint: 'FROM SKIN CRATES' }); }
   { const ids = []; for (let n = 0; n < 400 && ids.length < 6; n++) if (rarityOf('t', 'tool', n) <= 2) ids.push(`t|tool|${n}`); PAGES.push({ id: 'tl', n: 'PROSPECTOR', kind: 'MINING', ids, rw: rw(), hint: 'FROM MINING CRATES' }); }
   for (let b = 1; b <= 20; b++) PAGES.push({ id: 'b:' + b, n: PLANETS[b - 1].boss[0] + ' ARSENAL', kind: 'BOSS', ids: bossItems(b), rw: { t: 'choice', v: Math.min(6, 1 + Math.floor(b / 3)) }, boss: b, hint: `BEAT ${PLANETS[b - 1].boss[0]}, THEN OPEN ITS ARSENAL CRATE` });
+  { const ids = GADGET_KEYS.slice(0, 6).map(k => { for (let n = 0; n < 40; n++) if (rarityOf('g', k, n) <= 1) return `g|${k}|${n}`; return `g|${k}|0`; }); PAGES.push({ id: 'gd:starter', n: 'GADGET KIT', kind: 'GADGET', ids, rw: rw(), hint: 'FROM GADGET CRATES' }); }
+  { const ids = PET_KEYS.slice(0, 6).map(k => { for (let n = 0; n < 40; n++) if (rarityOf('p', k, n) <= 1) return `p|${k}|${n}`; return `p|${k}|0`; }); PAGES.push({ id: 'pt:pals', n: 'PET PALS', kind: 'PET', ids, rw: rw(), hint: 'FROM PET CRATES' }); }
   const bdP = [['bd:space', 'DEEP SPACE VIEWS', ['NEBULA', 'GALAXY', 'METEOR STORM', 'STARGATE', 'BLACK HOLE', 'RINGED GIANT']], ['bd:world', 'POSTCARDS', ['AURORA', 'SYNTHWAVE', 'TWIN SUNS', 'CRYSTAL FIELD', 'DEEP SEA', 'PIXEL CITY']]];
   for (const [pid, nm, styles] of bdP) { const ids = []; for (const sty of styles) for (let n = 0; n < 300; n++) { const id = `b|backdrop|${n}`; const d = getDef(id); if (d.style === sty && d.r <= 2) { ids.push(id); break; } } PAGES.push({ id: pid, n: nm, kind: 'BACKDROP', ids, rw: rw(), hint: 'FROM BACKDROP CRATES' }); }
 }
@@ -390,7 +403,7 @@ function whereToFind(id) {
   if (o.t === 'art') return 'FORGE IT IN THE WORKSHOP';
   if (o.t === 'dream') return 'WEAPON OR GALAXY CRATE';
   if (o.t === 'evo') return 'EVOLVE ITS BASE WEAPON';
-  const k = { w: 'WEAPON CRATE', a: 'ARMOR CRATE', s: 'SHIP CRATE', t: 'MINING CRATE', k: 'SKIN CRATE', c: 'COSMETIC CRATE', b: 'BACKDROP OR GALAXY CRATE' }[d.cat];
+  const k = { w: 'WEAPON CRATE', a: 'ARMOR CRATE', s: 'SHIP CRATE', t: 'MINING CRATE', k: 'SKIN CRATE', c: 'COSMETIC CRATE', b: 'BACKDROP OR GALAXY CRATE', g: 'GADGET OR GALAXY CRATE', p: 'PET OR GALAXY CRATE' }[d.cat];
   return (o.t === 'set' ? 'SET FINISHER OR ' : '') + k;
 }
 function roleHint(id) {

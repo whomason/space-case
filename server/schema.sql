@@ -188,10 +188,16 @@ begin
   for k, e in select * from jsonb_each(coalesce(items, '{}'::jsonb)) loop
     cur := d -> 'inv' -> k;
     if cur is null then
-      d := jsonb_set(d, array['inv', k], jsonb_build_object('l', greatest(1, least(10, coalesce(sc_private.num(e -> 'l'), 1)::int)), 'p', greatest(0, coalesce(sc_private.num(e -> 'p'), 0)::int), 't', t));
+      d := jsonb_set(d, array['inv', k], jsonb_build_object('l', greatest(1, least(10, coalesce(sc_private.num(e -> 'l'), 1)::int)), 'p', greatest(0, coalesce(sc_private.num(e -> 'p'), 0)::int), 't', t,
+        'g', greatest(0, least(7, coalesce(sc_private.num(e -> 'g'), 0)::int))));
       d := jsonb_set(d, array['fresh', k], '1'::jsonb);
     else
       l := coalesce(sc_private.num(cur -> 'l'), 1)::int; p := coalesce(sc_private.num(cur -> 'p'), 0)::int;
+      -- a traded copy from a higher crate tier upgrades your grade
+      if coalesce(sc_private.num(e -> 'g'), 0) > coalesce(sc_private.num(cur -> 'g'), 0) then
+        cur := cur || jsonb_build_object('g', least(7, sc_private.num(e -> 'g')::int));
+        d := jsonb_set(d, array['inv', k], cur);
+      end if;
       if l >= 10 then
         d := jsonb_set(d, '{research}', to_jsonb(coalesce(sc_private.num(d -> 'research'), 0) + 100));
       else
@@ -214,7 +220,7 @@ begin
     if taken ? k then raise exception 'THE SAME ITEM IS LISTED TWICE'; end if;
     if d2 -> 'inv' -> k is null then raise exception 'ITEM NOT OWNED: %', k; end if;
     if k = any(eqd) then raise exception 'UNEQUIP IT BEFORE TRADING: %', k; end if;
-    taken := taken || jsonb_build_object(k, jsonb_build_object('l', d2 -> 'inv' -> k -> 'l', 'p', d2 -> 'inv' -> k -> 'p'));
+    taken := taken || jsonb_build_object(k, jsonb_build_object('l', d2 -> 'inv' -> k -> 'l', 'p', d2 -> 'inv' -> k -> 'p', 'g', coalesce(d2 -> 'inv' -> k -> 'g', '0'::jsonb)));
     d2 := d2 #- array['inv', k];
     d2 := d2 #- array['fresh', k];
   end loop;

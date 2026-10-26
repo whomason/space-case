@@ -24,7 +24,7 @@ function miniCrate(x, y, t, ok = true) {
 // ---------- crate bay ----------
 function crateListRows() {
   const rows = [];
-  rows.push({ h: 'CATEGORY' }); for (const k of ['weapon', 'armor', 'ship', 'mining', 'skin', 'cosmetic', 'backdrop', 'galaxy']) rows.push({ k });
+  rows.push({ h: 'CATEGORY' }); for (const k of ['weapon', 'gadget', 'pet', 'armor', 'ship', 'mining', 'skin', 'cosmetic', 'backdrop', 'galaxy']) rows.push({ k });
   const sal = Object.keys(S.planet.visited).map(Number).sort((a, b) => a - b); rows.push({ h: 'PLANET SALVAGE' }); if (!sal.length) rows.push({ note: 'LAND ON A PLANET FIRST' }); for (const p of sal) rows.push({ k: 'salvage:' + p });
   const bs = Object.keys(S.planet.bosses).map(Number).sort((a, b) => a - b); rows.push({ h: 'BOSS ARSENAL' }); if (!bs.length) rows.push({ note: 'BEAT A BOSS FIRST' }); for (const b of bs) rows.push({ k: 'boss:' + b });
   const fin = PAGES.filter(finisherOk); rows.push({ h: 'SET FINISHERS' }); if (!fin.length) rows.push({ note: 'OWN 60% OF A PAGE' }); for (const pg of fin) rows.push({ k: 'finisher:' + pg.id });
@@ -188,24 +188,24 @@ function rollResults() {
     const kd = O.list ? O.list[i].kind : O.kind, tr = O.list ? O.list[i].tier : O.tier;
     const id = rollCrate(kd, tr, O.list ? { noFirst: true } : {}); const r = getDef(id).r; let first = false;
     if (r >= 3 && !firstR[r] && !Object.keys(S.inv).some(x => getDef(x).r === r)) { first = true; firstR[r] = 1; }
-    O.results.push({ id, labels: labelsSim(id, O.shadow), lost: false, first, kind: kd, tier: tr });
+    O.results.push({ id, labels: labelsSim(id, O.shadow, tr), lost: false, first, kind: kd, tier: tr });
   }
   O.best = Math.max(...O.results.map(r => getDef(r.id).r));
   O.hint = O.best; O.fake = O.best >= 3 && R0() < 0.55 ? Math.max(1, O.best - 1 - R0.int(2)) : null;
   O.keysFly = []; if (!O.haul) for (let i = 0; i < Math.min(8, 2 + O.n); i++) O.keysFly.push({ d: i * 0.07 });
 }
-function labelsSim(id, sh) {
+function labelsSim(id, sh, tier = 0) {
   const real = S.inv[id]; const sim = sh[id] ? Object.assign({}, sh[id]) : (real ? Object.assign({}, real) : null);
   const save = S.inv[id]; if (sim) S.inv[id] = sim; else delete S.inv[id];
-  const L = pullLabels(id);
+  const L = pullLabels(id, tier);
   if (save) S.inv[id] = save; else delete S.inv[id];
   // advance shadow
-  if (!sim) sh[id] = { l: 1, p: 0 }; else { if (sim.l < 10) { sim.p++; if (sim.p >= sim.l) { sim.p -= sim.l; sim.l++; } } sh[id] = sim; }
+  if (!sim) sh[id] = { l: 1, p: 0, g: tier }; else { if (sim.l < 10) { sim.p++; if (sim.p >= sim.l) { sim.p -= sim.l; sim.l++; } } sim.g = Math.max(sim.g || 0, tier); sh[id] = sim; }
   return L;
 }
 function collectOpen() {
   const O = OPEN; if (!O || O.collected) return; O.collected = true; const got = [];
-  for (const r of O.results) if (!r.lost) { const res = addItem(r.id); got.push(res); }
+  for (const r of O.results) if (!r.lost) { const res = addItem(r.id, r.tier ?? O.tier); got.push(res); }
   const ups = got.filter(g => g.levelUp).length, news = got.filter(g => g.isNew).length, rs = got.reduce((a, g) => a + g.research, 0);
   if (news) toast(`${news} NEW DISCOVER${news > 1 ? 'IES' : 'Y'} ADDED`, COL.mint);
   if (ups) toast(`${ups} ITEM${ups > 1 ? 'S' : ''} LEVELED UP`, COL.cyan);
@@ -216,13 +216,13 @@ function collectOpen() {
 }
 function updateOpen(dt) {
   const O = OPEN; O.t += dt; O.st_t += dt; O.parts.update(dt);
-  const fast = IN.pr && !['show', 'summary', 'burned', 'reel', 'upgrade', 'detail'].includes(O.st);
+  const fast = IN.pr && !['show', 'summary', 'burned', 'reel', 'upgrade', 'detail', 'don'].includes(O.st);
   if (fast) O.st_t += 0.5;
   switch (O.st) {
     case 'upgrade': {
       const u = O.upg;
       if (!u.done) {
-        u.a += u.v * dt; u.v *= Math.pow(0.48, dt); if (u.v < 0.5 + (IN.pr ? 99 : 0)) { u.done = true; u.doneT = O.st_t; u.v = 0; const k = ((u.a % TAU) + TAU) % TAU; u.win = k < TAU * u.p; if (u.win) { SND.play('upgradeHint'); flash(0.6, tierColor(Math.min(7, O.tier + 1))); } else { SND.play('lose'); flash(0.4, '#ff4020'); } }
+        u.a += u.v * dt; u.v *= Math.pow(0.48, dt); if (u.v < 0.5) { u.done = true; u.doneT = O.st_t; u.v = 0; const k = ((u.a % TAU) + TAU) % TAU; u.win = k < TAU * u.p; if (u.win) { SND.play('upgradeHint'); flash(0.6, tierColor(Math.min(7, O.tier + 1))); } else { SND.play('lose'); flash(0.4, '#ff4020'); } }
         if (Math.floor(u.a * 3) !== Math.floor((u.a - u.v * dt) * 3)) SND.play('spin', u.v);
       } else if (O.st_t - u.doneT > 1.4) {
         if (u.win && O.tier < 7 && (O.tier + 1 < 7 || S.nova.count > 0)) { O.tier++; rollResults(); O.st = 'insert'; O.st_t = 0; toast(`UPGRADED TO ${TIERS[O.tier].n}!`, COL.magenta); }
@@ -314,6 +314,21 @@ function updateCards(dt) {
   if (O.flipIdx >= O.cards.length && O.cards.every(c => c.ft >= 0.2)) { O.st = 'summary'; O.st_t = 0; }
 }
 // ---------- double or nothing ----------
+// big, pulsing, impossible to miss
+function donButton(x, y, w, h, r, can) {
+  if (r.lost) return button(x, y, w, h, 'THE PULL IS GONE', { disabled: true, font: FS });
+  if (!can) return button(x, y, w, h, 'ALREADY COSMIC: CAN\'T DOUBLE', { disabled: true, font: FS });
+  const pulse = 0.5 + 0.5 * Math.sin(T_NOW * 5);
+  ctx.globalAlpha = 0.25 + 0.3 * pulse; rect(x - 3, y - 3, w + 6, h + 6, '#ff5cb0'); ctx.globalAlpha = 1;
+  const hit = button(x, y, w, h, '', { kind: 'don', tip: 'WIN: SWAP FOR AN ITEM ONE RARITY HIGHER (SAME KIND). LOSE: THIS PULL IS GONE' });
+  // dice icon
+  const dx = x + 6, dy = y + 4; rect(dx, dy, 12, 12, '#fff'); rect(dx + 1, dy + 1, 10, 10, '#ffe3f2');
+  for (const [a, b] of [[3, 3], [8, 8], [3, 8], [8, 3], [5.5, 5.5]]) rect(dx + a, dy + b, 2, 2, '#a8286a');
+  text('DOUBLE OR NOTHING', x + 24, y + 3, '#ffffff', FB);
+  text(`${donChance(r.dons || 0)}% TO WIN`, x + 24, y + 12, '#ffe3f2', FS);
+  text('X2', x + w - 8, y + 6, Math.floor(T_NOW * 4) % 2 ? '#fff25a' : '#ffffff', FB, 2);
+  return hit;
+}
 function startDoN(i) {
   const O = OPEN; const r = O.results[i]; const d = getDef(r.id); if (d.r >= 6 || r.lost) return;
   const kd = r.kind || O.kind; const up = rollUpSame(r.id, d.r) || rollUp(kd.startsWith('finisher') ? 'galaxy' : kd, d.r); if (!up) { toast('NOTHING HIGHER IN THIS POOL', COL.dim); return; }
@@ -327,7 +342,7 @@ function updateDoN(dt) {
     if (Math.floor(dn.a * 3) !== Math.floor((dn.a - dn.v * dt) * 3)) SND.play('spin', dn.v);
     if (dn.v < 0.45) { const k = ((dn.a % TAU) + TAU) % TAU; const p = dn.p; dn.win = k < TAU * p; dn.t2 = 0;
       const r = O.results[dn.i];
-      if (dn.win) { S.stats.donWins++; r.dons = (r.dons || 0) + 1; r.id = dn.up; r.labels = labelsSim(dn.up, O.shadow); r.labels.unshift('DOUBLED'); SND.play('win'); }
+      if (dn.win) { S.stats.donWins++; r.dons = (r.dons || 0) + 1; r.id = dn.up; r.labels = labelsSim(dn.up, O.shadow, r.tier || O.tier); r.labels.unshift('DOUBLED'); SND.play('win'); }
       else { r.lost = true; SND.play('lose'); O.parts.burst(150, 110, 60, { c: [rcol(getDef(dn.from).r), '#fff', '#555'], sp: 200, life: 1, s: 2, g: 200 }); shake(5); }
     }
   } else {
@@ -344,7 +359,7 @@ function makeDemo(id) {
   const d = getDef(id); const D = { id, d, t: 0, kind: 'astro' };
   if (d.cat === 'w' || (d.cat === 'k' && d.sub === 'weapon')) {
     const wid = d.cat === 'w' ? id : S.eq.weapon; const L = lvl(id) || 1;
-    const Wd = getDef(wid); const Wst = Object.assign(wStats(Wd, d.cat === 'w' ? Math.max(1, L) : lvl(wid)), { col: weaponColor(d.cat === 'k' ? id : wid) });
+    const Wd = getDef(wid); const Wst = Object.assign(wStats(Wd, d.cat === 'w' ? effL(id, Math.max(1, L), Math.max(gradeOf(id), (OPEN && OPEN.tier) || 0)) : effL(wid)), { col: weaponColor(d.cat === 'k' ? id : wid) });
     if (d.cat === 'k') { const p = itemPal(d); Wst.col = { core: hex(p.G[4]), mid: hex(p.G[3]), edge: hex(p.G[2]), dark: hex(p.G[1]) }; }
     const w = makeWorld({ demo: true, pi: Math.max(1, S.planet.cur || 1), bounds: [8, 20, 60, 100] });
     w.hpMul = 1; w.dmgMul = 1; w.sndOn = false;
@@ -355,10 +370,21 @@ function makeDemo(id) {
   else if (d.cat === 'c' && d.sub === 'killfx') { D.kind = 'killfx'; D.fx = new Particles(300); }
   else if (d.cat === 'c' && d.sub === 'trail') { D.kind = 'trail'; D.fx = new Particles(300); }
   else if (d.cat === 'b') D.kind = 'backdrop';
+  else if (d.cat === 'g') { D.kind = 'gadget'; D.w = makeGadgetDemo(id); }
+  else if (d.cat === 'p') D.kind = 'pet';
   return D;
 }
 function updateDemo(D, dt) {
   D.t += dt;
+  if (D.kind === 'gadget') {
+    const w = D.w, pl = w.player; w.t += dt; pl.G.cd -= dt;
+    while (w.ents.filter(e => !e.dead).length < 4) { const e = spawnEnemy(w, R0() < 0.5 ? 'crawler' : 'swarm', 100 + R0() * 50, 35 + R0() * 60); e.hp = e.maxHp = pl.G.dmg * (2 + R0() * 3) + 20; e.spd = 10; }
+    const tg = nearestEnemy(w, pl.x, pl.y, 999); pl.aim = tg ? Math.atan2(tg.y - pl.y, tg.x - pl.x) : 0; pl.dir = 3;
+    if (pl.G.cd <= 0 && tg) useGadget(w, pl, tg.x, tg.y);
+    updateShots(w, dt); updateEnemies(w, dt); updateEShots(w, dt); updateTele(w, dt); w.fx.update(dt); w.zaps.forEach(z => z.t += dt); w.zaps = w.zaps.filter(z => z.t < 0.15);
+    if (pl.x !== 40 && pl.G.k === 'blink' && pl.G.cd < pl.G.max - 0.6) { pl.x = 40; pl.y = 70; }
+    return;
+  }
   if (D.kind === 'weapon') {
     const w = D.w, pl = w.player, W = D.W; w.t += dt;
     const near = W.cls === 'blade' ? [58, 66] : [110, 150];
@@ -390,6 +416,17 @@ function drawDemo(D, x, y, w, h) {
     const eq2 = Object.assign({}, eq, { weapon: D.wid, skin_weapon: D.skin });
     drawPlayer(wd, wd.player, ox, oy, eq2);
     drawShots(wd, ox, oy); wd.fx.draw(ox, oy);
+  } else if (D.kind === 'gadget') {
+    const wd = D.w; const ox = -x, oy = -y;
+    drawHazards(wd, ox, oy);
+    for (const e of wd.ents) drawEnemy(wd, e, ox, oy);
+    drawPlayer(wd, wd.player, ox, oy, eq); drawShots(wd, ox, oy); wd.fx.draw(ox, oy);
+    for (const z of wd.zaps) line(z.x0 + x, z.y0 + y, z.x1 + x, z.y1 + y, z.col || '#fff25a');
+    const G = wd.player.G; text(G.cd > 0 ? 'RECHARGING ' + Math.max(0, G.cd).toFixed(1) + 'S' : 'READY', x + w - 4, y + h - 9, G.cd > 0 ? COL.mute : COL.gold, FS, 2);
+  } else if (D.kind === 'pet') {
+    shadow(x + 60, y + h - 18, 14, 3, 0.4); ctx.drawImage(astroSprite(eq, 3, 0), x + 44, y + h - 18 - 52, 40, 52);
+    drawPetAt(D.id, x + 104, y + h - 16, 2, true);
+    text(PETS[d.sub].n, x + w - 4, y + h - 9, COL.cream, FS, 2);
   } else if (D.kind === 'backdrop') {
     drawBackdropPreview(D.id, x + 1, y + 1, w - 2, h - 2, { noFrame: true });
     const sp = astroSprite(eq, 3, 0); shadow(x + 40, y + h - 10, 12, 3, 0.4); ctx.drawImage(sp, x + 26, y + h - 10 - 39, 30, 39);
@@ -490,14 +527,11 @@ function drawAfterCollect(O, r, d, bx) {
   const id = r.id; O.afterT = (O.afterT || 0) + 1 / 60;
   textO('ADDED TO YOUR LOCKER', bx + 88, 144, COL.mint, '#000', FS, 1);
   const sl = slotOf(d); const isW = d.cat === 'w';
-  const eqd = S.eq[sl] === id || (isW && S.eq.weapon2 === id);
+  const eqd = S.eq[sl] === id; const isG = d.cat === 'g';
   if (eqd) button(bx, 150, 176, 20, 'EQUIPPED', { disabled: true });
-  else if (isW) {
-    if (button(bx, 150, 86, 20, 'EQUIP', { kind: 'primary' })) { equipped(id); if (S.eq.weapon2 === id) S.eq.weapon2 = S.eq.weapon; S.eq.weapon = id; S.stats.equips++; dirty(); SND.play('pickup'); toast('EQUIPPED AS YOUR MAIN WEAPON', COL.mint); }
-    if (button(bx + 90, 150, 86, 20, 'AS 2ND', { kind: 'blue', tip: 'PRESS 2 OR Q ON A PLANET TO SWITCH TO IT' })) { equipped(id); S.eq.weapon2 = id; S.stats.equips++; dirty(); SND.play('pickup'); toast('EQUIPPED AS YOUR 2ND WEAPON', COL.mint); }
-  } else if (button(bx, 150, 176, 20, 'EQUIP', { kind: 'primary' })) { equipped(id); S.eq[sl] = id; S.stats.equips++; dirty(); SND.play('pickup'); toast('EQUIPPED', COL.mint); }
+  else if (button(bx, 150, 176, 20, 'EQUIP', { kind: 'primary' })) { equipped(id); S.eq[sl] = id; S.stats.equips++; dirty(); SND.play('pickup'); toast(isW ? 'EQUIPPED AS YOUR WEAPON' : isG ? 'GADGET EQUIPPED. PRESS F OR 2 ON A PLANET' : 'EQUIPPED', COL.mint); }
   let y = 174;
-  if (isW) { if (button(bx, y, 176, 20, 'TEST IT', { kind: 'blue', tip: 'GROUPED ALIENS, MOVING TARGETS AND A DUMMY THAT SHOWS YOUR DPS' })) { startRange(id, 'open'); return; } y += 24; }
+  if (isW || isG) { if (button(bx, y, 176, 20, 'TEST IT', { kind: 'blue', tip: 'GROUPED ALIENS, MOVING TARGETS AND A DUMMY THAT SHOWS YOUR DPS' })) { startRange(id, 'open'); return; } y += 24; }
   const opts = trackOptionsFor(id);
   if (opts.length) { const o = opts[0]; const on = S.track && S.track.k === o.k && (S.track.pg === o.pg && S.track.s === o.s && S.track.id === o.id && S.track.dk === o.dk); if (button(bx, y, 176, 20, on ? 'TRACKING IT' : 'TRACK: ' + o.n, { kind: on ? 'def' : 'outline', font: FS, disabled: on, tip: 'SHOWS ITS PROGRESS ON YOUR STATION AND HUD' })) setTrack(o); y += 24; }
   if (!O.haul) { const tr = Math.min(BAY.tier, 7), cost = crateCost(O.kind, tr), ok = S.coins >= cost; if (button(bx, y, 176, 18, `OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'def', font: FS })) { startOpen(O.kind, tr, 1); return; } y += 22; }
@@ -549,7 +583,8 @@ function drawShow(O, i, single) {
   nl2.forEach((l, k) => textO(l, cxl, (big ? 10 : 14) + k * (big ? 17 : 10), COL.ink, '#000', FB, 1, big ? 2 : 1));
   const ry = (big ? 12 : 16) + nl2.length * (big ? 17 : 10);
   const catN = d.o.t === 'art' ? 'ARTIFACT' : d.o.t === 'evo' ? 'EVOLVED' : `#${String(d.n).padStart(4, '0')}`;
-  textO(`${RAR[d.r].n} ${SUB_LABEL[d.sub]}`, cxl, ry, d.r === 6 ? 'RAINBOW' : c, '#000', FB, 1); text(catN, cxl, ry + 10, COL.mute, FS, 1);
+  textO(`${RAR[d.r].n} ${SUB_LABEL[d.sub]}`, cxl, ry, d.r === 6 ? 'RAINBOW' : c, '#000', FB, 1);
+  if (GRADEABLE[d.cat]) { const gg = Math.max(gradeOf(id), r.tier ?? O.tier ?? 0); const tx = text(catN + '  ', cxl - textW(catN + '  ' + gradeName(gg), FS) / 2, ry + 10, COL.mute, FS); text(gradeName(gg), tx, ry + 10, tierColor(gg), FS); } else text(catN, cxl, ry + 10, COL.mute, FS, 1);
   const sc = d.w > 16 ? 5 : 6; const bob = Math.round(Math.sin(T_NOW * 2.5) * 2);
   const ix = Math.floor(cxl - d.w * sc / 2), iy = Math.floor(108 - d.h * sc / 2) + bob;
   if (d.cat === 'b') drawBackdropPreview(id, cxl - 64, 108 - 36 + bob, 128, 72); else drawItem(id, ix, iy, sc, { skin: null });
@@ -572,7 +607,7 @@ function drawShow(O, i, single) {
   let yy = 162; const head = itemHeadline(d);
   wrap(head, 280, FB).slice(0, 2).forEach(l => { textO(l, 10, yy, d.r === 6 ? 'RAINBOW' : c, '#000', FB); yy += 10; });
   let nx = 0; for (const l of itemExtraLines(d)) { for (const ll of wrap(l, 280, FS)) { if (nx >= 3) break; text(ll, 10, yy, l.startsWith('QUIRK') ? COL.pink : l.startsWith('TECHNIQUE') ? COL.lilac : COL.ink, FS); yy += 8; nx++; } }
-  yy += 2; const sl = statLines(d, Math.max(1, (O.shadow[id] || {}).l || 1));
+  yy += 2; const sl = statLines(d, effL(id, Math.max(1, (O.shadow[id] || {}).l || 1), Math.max(gradeOf(id), r.tier ?? O.tier ?? 0)));
   sl.forEach((s, k) => { const sx = 10 + k * 70; text(s[0], sx, yy, COL.mute, FS); text(String(s[1]), sx, yy + 7, COL.ink, FS); });
   yy += 17;
   if (r.impId !== id) { r.impId = id; r.impact = O.after ? [] : impactLines(id); }
@@ -586,17 +621,17 @@ function drawShow(O, i, single) {
     if (r.lost) { if (button(bx, 150, 176, 20, 'CONTINUE', { kind: 'def' }) || kp('Space') || kp('Enter')) { collectOpen(); finishOpen(); return; } }
     else if (button(bx, 150, 176, 20, 'COLLECT', { kind: 'primary' }) || kp('Space') || kp('Enter')) { collectOpen(); if (slotOf(d)) { O.after = true; O.afterT = 0; SND.play('pickup'); } else finishOpen(); return; }
     const canD = d.r < 6 && !r.lost;
-    if (button(bx, 174, 176, 20, r.lost ? 'THE PULL IS GONE' : `DOUBLE OR NOTHING  ${donChance(r.dons || 0)}%`, { disabled: !canD, kind: 'outline', tip: 'WIN: SWAP FOR A RANDOM ITEM ONE RARITY HIGHER. LOSE: THIS PULL IS GONE' })) startDoN(i);
+    if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
     if (!O.haul) {
       const tr = Math.min(BAY.tier, 7), cost = crateCost(O.kind, tr), ok = S.coins >= cost && (!O.kind.startsWith('finisher') || poolSize(O.kind) > 1);
       if (button(bx, 198, 176, 20, `${r.lost ? '' : 'COLLECT + '}OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'blue', font: FS, tip: ok ? '' : 'NOT ENOUGH COINS' })) { collectOpen(); const k = O.kind; startOpen(k, tr, 1); return; }
     }
-    if (d.cat === 'w' && !r.lost && button(bx, 222, 176, 18, 'TEST IT IN THE RANGE FIRST', { font: FS, tip: 'TRY IT ON TARGETS, THEN COME BACK' })) { startRange(id, 'open'); return; }
+    if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 222, 176, 18, 'TEST IT IN THE RANGE FIRST', { font: FS, tip: 'TRY IT ON TARGETS, THEN COME BACK' })) { startRange(id, 'open'); return; }
   } else {
     if (button(bx, 150, 176, 20, 'BACK TO ALL PULLS') || kp('Escape')) { O.st = 'summary'; O.demo = null; return; }
     const canD = d.r < 6 && !r.lost;
-    if (button(bx, 174, 176, 20, r.lost ? 'THE PULL IS GONE' : `DOUBLE OR NOTHING  ${donChance(r.dons || 0)}%`, { disabled: !canD, kind: 'outline', tip: 'WIN: SWAP FOR A RANDOM ITEM ONE RARITY HIGHER. LOSE: THIS PULL IS GONE' })) startDoN(i);
-    if (d.cat === 'w' && !r.lost && button(bx, 198, 176, 20, 'TEST IT IN THE RANGE', { kind: 'blue', font: FS })) { startRange(id, 'open'); return; }
+    if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
+    if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 198, 176, 20, 'TEST IT IN THE RANGE', { kind: 'blue', font: FS })) { startRange(id, 'open'); return; }
   }
 }
 function drawCards(O) {
@@ -639,7 +674,7 @@ function backToBay() { OPEN = null; setScene('crates'); SND.playSong('hub'); }
 function finishOpen() { const h = OPEN && OPEN.haul; if (h) { OPEN = null; goHub(); SND.playSong('hub'); } else backToBay(); }
 
 // ---------- choice crates (wrecks, rewards) ----------
-function makeChoice(ids, title, tier, clue) { return { ids, title, tier, t: 0, picked: -1, clue, hover: -1, labels: ids.map(id => pullLabels(id)), demo: null }; }
+function makeChoice(ids, title, tier, clue) { return { ids, title, tier, t: 0, picked: -1, clue, hover: -1, labels: ids.map(id => pullLabels(id, tier)), demo: null }; }
 function updateChoiceOverlay(dt) { const C = RUN && RUN.choice ? RUN.choice : HUB.choice; if (!C) return; C.t += dt; if (C.demo) updateDemo(C.demo, dt); if (C.picked >= 0) { C.pt = (C.pt || 0) + dt; } }
 function drawChoiceOverlay() {
   const inRun = RUN && RUN.choice && SCENE === 'planet'; const C = inRun ? RUN.choice : HUB.choice; if (!C) return;
@@ -659,7 +694,7 @@ function drawChoiceOverlay() {
     wrap(itemHeadline(d), cw - 8, FS).slice(0, 3).forEach((l, k) => text(l, x + cw / 2, y0 + 82 + k * 7, d.r === 6 ? COL.gold : RAR[d.r].c === 'RAINBOW' ? COL.gold : RAR[d.r].c, FS, 1));
     const lab = C.labels[i][0]; if (lab) text(lab === 'NEW' ? 'NEW DISCOVERY' : lab, x + cw / 2, y0 + chh - 12, LABEL_COL[lab] || COL.gold, FS, 1);
     ctx.globalAlpha = 1;
-    if (hov) { IN.cursor = 'pointer'; if (!C.demo || C.demo.id !== id) C.demo = makeDemo(id); if (clickIn(x, y0, cw, chh)) { C.picked = i; C.pt = 0; const res = addItem(id); SND.play('win'); toast(res.isNew ? `KEPT: ${d.name}` : `KEPT: ${d.name} (LEVEL ${res.to})`, COL.mint); if (d.r >= 4) { HUB.flashT = 4; HUB.flashCol = RAR[d.r].c; } checkTitles(); dirty(); } }
+    if (hov) { IN.cursor = 'pointer'; if (!C.demo || C.demo.id !== id) C.demo = makeDemo(id); if (clickIn(x, y0, cw, chh)) { C.picked = i; C.pt = 0; const res = addItem(id, C.tier); SND.play('win'); toast(res.isNew ? `KEPT: ${d.name}` : `KEPT: ${d.name} (LEVEL ${res.to})`, COL.mint); if (d.r >= 4) { HUB.flashT = 4; HUB.flashCol = RAR[d.r].c; } checkTitles(); dirty(); } }
   });
   if (C.demo && C.picked < 0) drawDemo(C.demo, W / 2 - 88, 172, 176, 76);
   if (C.clue) text(C.clue, W / 2, H - 14, COL.orange, FS, 1);
