@@ -9,8 +9,28 @@ const NAV = [
   { id: 'workshop', n: 'WORKSHOP', sub: 'BLUEPRINTS, EVOLUTIONS AND ARTIFACTS', icon: 'wrench' },
   { id: 'profile', n: 'PROFILE', sub: 'SKILLS, TITLES AND STATS', icon: 'star' },
   { id: 'mining', n: 'MINING', sub: 'AUTO-MINERS EARN COINS WHILE YOU ARE AWAY', icon: 'pick' },
-  { id: 'arena', n: 'ARENA', sub: 'FFA SERVERS, 1V1 DUELS, TROPHIES AND RANKS', icon: 'swords' },
 ];
+NAV.splice(1, 0, { id: 'arena', n: 'ARENA', sub: 'FFA SERVERS, 1V1 DUELS, TROPHIES AND RANKS', icon: 'swords' });
+// stations open up as you play, so a new pilot isn't handed everything at once
+const UNLOCKS = {
+  arena: [() => S.planet.landings >= 1, 'FIGHT OTHER PILOTS FOR COINS, CRATES AND TROPHIES'],
+  hangar: [() => S.planet.landings >= 1, 'SHIP PARTS RAISE YOUR RATING SO YOU CAN REACH NEW PLANETS'],
+  profile: [() => S.lvl >= 2, 'SPEND SKILL POINTS AND WEAR TITLES'],
+  contracts: [() => S.lvl >= 3 || S.planet.landings >= 2, 'DAILY CONTRACTS ON THE RIGHT PAY EXTRA'],
+  collection: [() => Object.keys(S.inv).length >= 15 || S.planet.landings >= 3, 'FINISH COLLECTION PAGES FOR BIG REWARDS'],
+  mining: [() => S.planet.reached >= 2, 'AUTO-MINERS EARN COINS WHILE YOU ARE AWAY'],
+  workshop: [() => Object.keys(S.planet.bosses || {}).length >= 1 || S.lvl >= 6, 'BUILD, EVOLVE AND FORGE WEAPONS'],
+};
+function uiOpen(id) { const u = UNLOCKS[id]; return !u || !!(S.unlocked && S.unlocked[id]) || u[0](); }
+function visNav() { return NAV.filter(n => uiOpen(n.id)); }
+function checkUnlocks() {
+  S.unlocked = S.unlocked || {}; S.unlockNew = S.unlockNew || {}; const quiet = !S.unlockInit;
+  for (const id in UNLOCKS) if (!S.unlocked[id] && UNLOCKS[id][0]()) {
+    S.unlocked[id] = 1; dirty();
+    if (!quiet) { if (id !== 'contracts') S.unlockNew[id] = 1; toast(`NEW: ${id === 'contracts' ? 'DAILY CONTRACTS' : id.toUpperCase()} UNLOCKED`, COL.pink); toast(UNLOCKS[id][1], COL.lilac); SND.play('unlock'); }
+  }
+  if (quiet) { S.unlockInit = true; dirty(); }
+}
 const ICONS = {
   rocket: '.....#.....|....###....|....#.#....|...#####...|...##.##...|...#####...|...#####...|..#######..|.##.###.##.|.#..#.#..#.|....#.#....',
   crate: '###########|#.........#|###########|#..#...#..#|#..#.#.#..#|#..#...#..#|#..#...#..#|#.........#|###########',
@@ -28,6 +48,7 @@ function openStation(id) {
   if (id === 'crates' || id === 'vendor') { BAY.auto = true; setScene('crates'); return; }
   if (id === 'map') { setScene('map'); return; }
   if (id === 'launch') { if (SCENE === 'hub' && HUB.launch === null) { HUB.launch = 0; HUB.panel = null; SND.play('unlock'); } else setScene('map'); return; }
+  if (S.unlockNew && S.unlockNew[id]) { delete S.unlockNew[id]; dirty(); }
   HUB.panel = id; HUB.ps[id] = HUB.ps[id] || { tab: 0, slot: id === 'hangar' ? 'engine' : 'weapon', scroll: 0 };
   if (id === 'mining') tickMiners();
 }
@@ -58,6 +79,7 @@ function drawNebula(ox = 0) {
 }
 // ---------- hub update ----------
 function navBadge(id) {
+  if (S.unlockNew && S.unlockNew[id]) return { t: 'NEW!', c: COL.pink, pulse: true };
   switch (id) {
     case 'launch': { const n = S.planet.reached + 1; return shipRating() >= PLANET_REQ(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
     case 'crates': { const n = Math.floor(S.coins / CRATE_COIN); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
@@ -80,13 +102,15 @@ function updateHub(dt) {
     return;
   }
   if (HUB.choice) { updateChoiceOverlay(dt); return; }
+  checkUnlocks();
   if (S.haulCrates && S.haulCrates.length) { startHaulOpen(S.haulCrates.splice(0)); return; }
   if (!HUB.choice && S.choiceQueue.length) nextQueuedChoice();
   if (HUB.panel) { if (kp('Escape')) { HUB.panel = null; SND.play('click'); } return; }
-  if (kp('ArrowDown') || kp('KeyS')) { HUB.sel = (HUB.sel + 1) % NAV.length; SND.play('hover'); }
-  if (kp('ArrowUp') || kp('KeyW')) { HUB.sel = (HUB.sel + NAV.length - 1) % NAV.length; SND.play('hover'); }
-  if (kp('Enter') || kp('KeyE') || kp('Space')) openStation(NAV[HUB.sel].id);
-  for (let i = 0; i < NAV.length; i++) if (kp('Digit' + (i + 1))) openStation(NAV[i].id);
+  const VN = visNav(); if (HUB.sel >= VN.length) HUB.sel = 0;
+  if (kp('ArrowDown') || kp('KeyS')) { HUB.sel = (HUB.sel + 1) % VN.length; SND.play('hover'); }
+  if (kp('ArrowUp') || kp('KeyW')) { HUB.sel = (HUB.sel + VN.length - 1) % VN.length; SND.play('hover'); }
+  if (kp('Enter') || kp('KeyE') || kp('Space')) openStation(VN[HUB.sel].id);
+  for (let i = 0; i < VN.length; i++) if (kp('Digit' + (i + 1))) openStation(VN[i].id);
   if (kp('KeyC')) openStation('crates'); if (kp('KeyM') || kp('KeyL')) openStation('launch');
   tickMinersLite();
 }
@@ -153,7 +177,7 @@ function drawHubTop() {
   tog(W - 54, !SND.muted, (x, y, w, h, c) => { rect(x + 4, y + 6, 2, 4, c); ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + 10, y + 3); ctx.lineTo(x + 10, y + 13); ctx.lineTo(x + 6, y + 10); ctx.fill(); }, SND.muted ? 'SOUND IS OFF' : 'SOUND IS ON', () => { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); });
   tog(W - 36, SND.musicOn, (x, y, w, h, c) => { rect(x + 5, y + 4, 1, 7, c); rect(x + 10, y + 3, 1, 7, c); rect(x + 5, y + 3, 6, 2, c); rect(x + 3, y + 10, 3, 2, c); rect(x + 8, y + 9, 3, 2, c); }, SND.musicOn ? 'MUSIC IS ON' : 'MUSIC IS OFF. CLICK TO TURN IT ON', () => { SND.setMusic(!SND.musicOn); S.settings.music = SND.musicOn; if (SND.musicOn) SND.playSong('hub'); dirty(); });
   drawOnlinePill(Math.max(168, 60 + textW((S.name ? S.name + ' ' : '') + (t ? t.n : 'ASTRONAUT'), FS) + 14), 5);
-  if (button(W - 18, 4, 14, 16, '?', { font: FS, tip: 'W/S OR ARROWS TO PICK, ENTER TO OPEN. 1-8 JUMP STRAIGHT TO A ROOM' })) { }
+  if (button(W - 18, 4, 14, 16, '?', { font: FS, tip: 'W/S OR ARROWS TO PICK, ENTER TO OPEN. NUMBER KEYS JUMP STRAIGHT TO A ROOM' })) { }
 }
 function drawNav(dimmed) {
   const x = 10, w = 162;
@@ -171,9 +195,10 @@ function drawNav(dimmed) {
   const lb = navBadge('launch'); if (lb) { const bw = textW(lb.t, FS) + 6; panel(x + w - bw - 4, ly - 5, bw, 10, { bg: COL.pink, bd: '#fff', flat: true }); text(lb.t, x + w - bw / 2 - 4, ly - 3, COL.navy, FS, 1); }
   if (lhov) { IN.cursor = 'pointer'; if (clickIn(x, ly, w, lh)) openStation('launch'); }
   // rows
-  const ry0 = 80, rh = NAV.length > 8 ? 19 : 21;
-  for (let i = 1; i < NAV.length; i++) {
-    const n = NAV[i], y = ry0 + (i - 1) * (rh + 2); const hov = !dimmed && inBox(x, y, w, rh); if (hov && HUB.sel !== i) { HUB.sel = i; SND.play('hover'); }
+  const VN = visNav(); if (HUB.sel >= VN.length) HUB.sel = 0;
+  const ry0 = 80, rh = VN.length > 8 ? 19 : 21;
+  for (let i = 1; i < VN.length; i++) {
+    const n = VN[i], y = ry0 + (i - 1) * (rh + 2); const hov = !dimmed && inBox(x, y, w, rh); if (hov && HUB.sel !== i) { HUB.sel = i; SND.play('hover'); }
     const sel = HUB.sel === i;
     if (sel) { panel(x, y, w, rh, { bg: COL.void3, bd: COL.steel }); rect(x, y + 2, 2, rh - 4, COL.pink); }
     const off = sel ? 3 : 0;
@@ -183,11 +208,12 @@ function drawNav(dimmed) {
     if (b) { const bw = textW(b.t, FS) + 6; if (b.quiet) text(b.t, x + w - 5, y + 8, b.c, FS, 2); else { if (b.pulse) { ctx.globalAlpha = 0.3 + 0.25 * Math.sin(T_NOW * 6); rect(x + w - bw - 5, y + 3, bw + 4, 14, b.c); ctx.globalAlpha = 1; } panel(x + w - bw - 3, y + 5, bw, 10, { bg: b.c, bd: b.pulse ? '#fff' : b.c, flat: true }); text(b.t, x + w - bw / 2 - 3, y + 7, COL.navy, FS, 1); } }
     if (hov) { IN.cursor = 'pointer'; if (clickIn(x, y, w, rh)) openStation(n.id); }
   }
-  if (!dimmed) { const s = NAV[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, ry0 + (NAV.length - 1) * (rh + 2) + 2 + k * 7, COL.dim, FS)); }
+  if (!dimmed) { const s = VN[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, ry0 + (VN.length - 1) * (rh + 2) + 2 + k * 7, COL.dim, FS)); }
   // first-time guidance
   if (!dimmed) {
     const tip = S.stats.crates === 0 ? [1, 'START HERE: OPEN A CRATE'] : S.planet.landings === 0 ? [0, 'NEXT: LAUNCH TO DUSTMOOR'] : null;
-    if (tip) { const yy = tip[0] === 0 ? ly + 16 : ry0 + 5; const bx = x + w + 8 + Math.round(Math.sin(T_NOW * 6) * 3); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(bx, yy + 4); ctx.lineTo(bx + 6, yy); ctx.lineTo(bx + 6, yy + 8); ctx.fill(); const tw = textW(tip[1], FS) + 8; panel(bx + 7, yy - 2, tw, 12, { bg: COL.pink, bd: '#fff', flat: true }); text(tip[1], bx + 7 + tw / 2, yy + 1, COL.navy, FS, 1); }
+    const ci = VN.findIndex(n => n.id === 'crates');
+    if (tip) { const yy = tip[0] === 0 ? ly + 16 : ry0 + (ci - 1) * (rh + 2) + 5; const bx = x + w + 8 + Math.round(Math.sin(T_NOW * 6) * 3); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(bx, yy + 4); ctx.lineTo(bx + 6, yy); ctx.lineTo(bx + 6, yy + 8); ctx.fill(); const tw = textW(tip[1], FS) + 8; panel(bx + 7, yy - 2, tw, 12, { bg: COL.pink, bd: '#fff', flat: true }); text(tip[1], bx + 7 + tw / 2, yy + 1, COL.navy, FS, 1); }
   }
 }
 function drawNextUp() {
@@ -209,6 +235,7 @@ function drawNextUp() {
   if (done) { if (button(x + 6, yy, w - 12, 14, 'CLAIM REWARD', { kind: 'primary', font: FS }) || kp('KeyR')) { claimGoal(); HUB_FX.burst(x + w / 2, yy + 8, 40, { c: [COL.gold, '#fff', COL.pink], sp: 140, life: 0.8, s: 2, t: 'shrink' }); } }
   else if (button(x + 6, yy, w - 12, 14, 'GO', { kind: 'blue', font: FS, icon: (bx, by, bw, bh, c) => { for (let i = 0; i < 3; i++) line(bx + bw / 2 + 8 + i, by + 4, bx + bw / 2 + 11 + i, by + 7, c), line(bx + bw / 2 + 11 + i, by + 7, bx + bw / 2 + 8 + i, by + 10, c); } })) openStation(G.go);
   // today's contracts
+  if (!uiOpen('contracts')) return;
   const C = ensureContracts(); let cy = y + h + 5; const ch = 14 + C.list.length * 15;
   panel(x, cy, w, ch, { bg: 'rgba(14,22,48,0.94)', bd: COL.mauve });
   rect(x + 1, cy + 1, w - 2, 10, 'rgba(30,39,73,0.95)'); text("TODAY'S CONTRACTS", x + 6, cy + 3, COL.lilac, FS); text(`${C.list.filter(c => c.claimed).length}/${C.list.length}`, x + w - 6, cy + 3, COL.mute, FS, 2);

@@ -18,7 +18,7 @@ function newState() {
     planet: { reached: 1, cur: 1, visited: {}, bosses: {}, bossCd: {}, stars: {}, landings: 0, ev: {} },
     titles: { earned: {}, eq: null }, stats: { crates: 0, wrecks: 0, kills: 0, ore: 0, coinsEarned: 0, bestCombo: 0, donWins: 0, legendaries: 0, mythics: 0, cosmics: 0, maxHaul: 0, carriers: 0, equips: 0, sold: 0, goals: 0, staggers: 0, perfects: 0, reactions: 0, weakhits: 0, events: 0, caches: 0, podkills: 0, kills2: 0, parries: 0, elites: 0, clsKills: {} },
     miners: { slots: {}, acc: {}, last: Date.now() }, nova: { count: 0, stars: 0, perks: { coin: 0, luck: 0, o2: 0 } },
-    firstOpen: true, choiceQueue: [], haulCrates: [], goal: null, reactions: {}, contracts: null, track: null, fresh: {}, name: '', nameAsked: false, settings: { mute: false, music: false, mv2: true }, tutorial: { crate: false, land: false }, created: Date.now(),
+    firstOpen: true, choiceQueue: [], haulCrates: [], goal: null, reactions: {}, contracts: null, track: null, fresh: {}, name: '', nameAsked: false, unlocked: {}, unlockNew: {}, unlockInit: true, settings: { mute: false, music: false, mv2: true }, tutorial: { crate: false, land: false }, created: Date.now(),
   };
   const kit = [firstOf('w', 'blaster'), firstOf('t', 'tool', n => n % 2 === 0), firstOf('a', 'helmet'), firstOf('a', 'chest'), firstOf('a', 'boots'), firstOf('a', 'jetpack'), firstOf('a', 'o2'),
   firstOf('s', 'engine'), firstOf('s', 'hull'), firstOf('s', 'cargo'), firstOf('s', 'scanner'), firstOf('s', 'shield'), firstOf('g', 'blackhole'), firstOf('p', 'bot')];
@@ -39,6 +39,7 @@ function normalizeSave(o) {
   if (st.keys) { st.coins += st.keys * CRATE_COIN; } delete st.keys; if (!Array.isArray(st.haulCrates)) st.haulCrates = []; if (!Array.isArray(st.choiceQueue)) st.choiceQueue = []; if (!st.reactions) st.reactions = {}; if (!st.planet.ev) st.planet.ev = {}; if (!st.stats.clsKills) st.stats.clsKills = {};
   if (!(o.settings && o.settings.mv2)) { st.settings.music = false; st.settings.mv2 = true; }
   delete st._pub;
+  if (o.unlockInit === undefined) st.unlockInit = false;
   if (st.eq.weapon2) delete st.eq.weapon2; // the 2nd weapon slot became the gadget slot
   if (!st.gift2) { st.gift2 = 1; for (const id of [firstOf('g', 'blackhole'), firstOf('p', 'bot')]) { if (!st.inv[id]) { st.inv[id] = { l: 1, p: 0, t: Date.now(), g: 0 }; st.fresh[id] = 1; } const sl = slotOf(getDef(id)); if (sl && !st.eq[sl]) st.eq[sl] = id; } st.giftNote = 1; }
   return st;

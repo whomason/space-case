@@ -1020,7 +1020,7 @@ language sql security definer set search_path = '' as $$
   select jsonb_build_object(
     'online', (select count(*) from public.profiles where last_seen > now() - interval '90 seconds'),
     'in_arenas', (select count(*) from public.arena_presence where last_seen > now() - interval '25 seconds'),
-    'ai', (select coalesce(sum(greatest(0, 20 - h)), 0) from (select count(*) as h from public.arena_presence where last_seen > now() - interval '25 seconds' group by server_id) x)
+    'ai', (select coalesce(sum(least(5, greatest(0, 10 - h))), 0) from (select count(*) as h from public.arena_presence where last_seen > now() - interval '25 seconds' group by server_id) x)
          + (select count(*) from public.duels where b is null and not done and created_at > now() - interval '5 minutes'))
 $$;
 

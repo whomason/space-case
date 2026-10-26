@@ -28,5 +28,5 @@ An 8-bit space crate-opening game: open crates, gear up your astronaut and ship,
 
 - Arenas and duels use Supabase Realtime: broadcast plus presence.
 - The first player in a room also runs the AI pilots.
-- On the free plan, up to 5 real players fit in one server, and AI pilots fill the rest up to 20.
+- A server holds 10 pilots: up to 5 real players, and AI pilots fill the empty seats, never more than 5 of them.
 - The free plan allows 100 realtime messages per second for the whole project, so that's the real limit on how many live matches can run at once.

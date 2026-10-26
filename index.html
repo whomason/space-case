@@ -2219,7 +2219,7 @@ function newState() {
     planet: { reached: 1, cur: 1, visited: {}, bosses: {}, bossCd: {}, stars: {}, landings: 0, ev: {} },
     titles: { earned: {}, eq: null }, stats: { crates: 0, wrecks: 0, kills: 0, ore: 0, coinsEarned: 0, bestCombo: 0, donWins: 0, legendaries: 0, mythics: 0, cosmics: 0, maxHaul: 0, carriers: 0, equips: 0, sold: 0, goals: 0, staggers: 0, perfects: 0, reactions: 0, weakhits: 0, events: 0, caches: 0, podkills: 0, kills2: 0, parries: 0, elites: 0, clsKills: {} },
     miners: { slots: {}, acc: {}, last: Date.now() }, nova: { count: 0, stars: 0, perks: { coin: 0, luck: 0, o2: 0 } },
-    firstOpen: true, choiceQueue: [], haulCrates: [], goal: null, reactions: {}, contracts: null, track: null, fresh: {}, name: '', nameAsked: false, settings: { mute: false, music: false, mv2: true }, tutorial: { crate: false, land: false }, created: Date.now(),
+    firstOpen: true, choiceQueue: [], haulCrates: [], goal: null, reactions: {}, contracts: null, track: null, fresh: {}, name: '', nameAsked: false, unlocked: {}, unlockNew: {}, unlockInit: true, settings: { mute: false, music: false, mv2: true }, tutorial: { crate: false, land: false }, created: Date.now(),
   };
   const kit = [firstOf('w', 'blaster'), firstOf('t', 'tool', n => n % 2 === 0), firstOf('a', 'helmet'), firstOf('a', 'chest'), firstOf('a', 'boots'), firstOf('a', 'jetpack'), firstOf('a', 'o2'),
   firstOf('s', 'engine'), firstOf('s', 'hull'), firstOf('s', 'cargo'), firstOf('s', 'scanner'), firstOf('s', 'shield'), firstOf('g', 'blackhole'), firstOf('p', 'bot')];
@@ -2240,6 +2240,7 @@ function normalizeSave(o) {
   if (st.keys) { st.coins += st.keys * CRATE_COIN; } delete st.keys; if (!Array.isArray(st.haulCrates)) st.haulCrates = []; if (!Array.isArray(st.choiceQueue)) st.choiceQueue = []; if (!st.reactions) st.reactions = {}; if (!st.planet.ev) st.planet.ev = {}; if (!st.stats.clsKills) st.stats.clsKills = {};
   if (!(o.settings && o.settings.mv2)) { st.settings.music = false; st.settings.mv2 = true; }
   delete st._pub;
+  if (o.unlockInit === undefined) st.unlockInit = false;
   if (st.eq.weapon2) delete st.eq.weapon2; // the 2nd weapon slot became the gadget slot
   if (!st.gift2) { st.gift2 = 1; for (const id of [firstOf('g', 'blackhole'), firstOf('p', 'bot')]) { if (!st.inv[id]) { st.inv[id] = { l: 1, p: 0, t: Date.now(), g: 0 }; st.fresh[id] = 1; } const sl = slotOf(getDef(id)); if (sl && !st.eq[sl]) st.eq[sl] = id; } st.giftNote = 1; }
   return st;
@@ -6366,8 +6367,28 @@ const NAV = [
   { id: 'workshop', n: 'WORKSHOP', sub: 'BLUEPRINTS, EVOLUTIONS AND ARTIFACTS', icon: 'wrench' },
   { id: 'profile', n: 'PROFILE', sub: 'SKILLS, TITLES AND STATS', icon: 'star' },
   { id: 'mining', n: 'MINING', sub: 'AUTO-MINERS EARN COINS WHILE YOU ARE AWAY', icon: 'pick' },
-  { id: 'arena', n: 'ARENA', sub: 'FFA SERVERS, 1V1 DUELS, TROPHIES AND RANKS', icon: 'swords' },
 ];
+NAV.splice(1, 0, { id: 'arena', n: 'ARENA', sub: 'FFA SERVERS, 1V1 DUELS, TROPHIES AND RANKS', icon: 'swords' });
+// stations open up as you play, so a new pilot isn't handed everything at once
+const UNLOCKS = {
+  arena: [() => S.planet.landings >= 1, 'FIGHT OTHER PILOTS FOR COINS, CRATES AND TROPHIES'],
+  hangar: [() => S.planet.landings >= 1, 'SHIP PARTS RAISE YOUR RATING SO YOU CAN REACH NEW PLANETS'],
+  profile: [() => S.lvl >= 2, 'SPEND SKILL POINTS AND WEAR TITLES'],
+  contracts: [() => S.lvl >= 3 || S.planet.landings >= 2, 'DAILY CONTRACTS ON THE RIGHT PAY EXTRA'],
+  collection: [() => Object.keys(S.inv).length >= 15 || S.planet.landings >= 3, 'FINISH COLLECTION PAGES FOR BIG REWARDS'],
+  mining: [() => S.planet.reached >= 2, 'AUTO-MINERS EARN COINS WHILE YOU ARE AWAY'],
+  workshop: [() => Object.keys(S.planet.bosses || {}).length >= 1 || S.lvl >= 6, 'BUILD, EVOLVE AND FORGE WEAPONS'],
+};
+function uiOpen(id) { const u = UNLOCKS[id]; return !u || !!(S.unlocked && S.unlocked[id]) || u[0](); }
+function visNav() { return NAV.filter(n => uiOpen(n.id)); }
+function checkUnlocks() {
+  S.unlocked = S.unlocked || {}; S.unlockNew = S.unlockNew || {}; const quiet = !S.unlockInit;
+  for (const id in UNLOCKS) if (!S.unlocked[id] && UNLOCKS[id][0]()) {
+    S.unlocked[id] = 1; dirty();
+    if (!quiet) { if (id !== 'contracts') S.unlockNew[id] = 1; toast(`NEW: ${id === 'contracts' ? 'DAILY CONTRACTS' : id.toUpperCase()} UNLOCKED`, COL.pink); toast(UNLOCKS[id][1], COL.lilac); SND.play('unlock'); }
+  }
+  if (quiet) { S.unlockInit = true; dirty(); }
+}
 const ICONS = {
   rocket: '.....#.....|....###....|....#.#....|...#####...|...##.##...|...#####...|...#####...|..#######..|.##.###.##.|.#..#.#..#.|....#.#....',
   crate: '###########|#.........#|###########|#..#...#..#|#..#.#.#..#|#..#...#..#|#..#...#..#|#.........#|###########',
@@ -6385,6 +6406,7 @@ function openStation(id) {
   if (id === 'crates' || id === 'vendor') { BAY.auto = true; setScene('crates'); return; }
   if (id === 'map') { setScene('map'); return; }
   if (id === 'launch') { if (SCENE === 'hub' && HUB.launch === null) { HUB.launch = 0; HUB.panel = null; SND.play('unlock'); } else setScene('map'); return; }
+  if (S.unlockNew && S.unlockNew[id]) { delete S.unlockNew[id]; dirty(); }
   HUB.panel = id; HUB.ps[id] = HUB.ps[id] || { tab: 0, slot: id === 'hangar' ? 'engine' : 'weapon', scroll: 0 };
   if (id === 'mining') tickMiners();
 }
@@ -6415,6 +6437,7 @@ function drawNebula(ox = 0) {
 }
 // ---------- hub update ----------
 function navBadge(id) {
+  if (S.unlockNew && S.unlockNew[id]) return { t: 'NEW!', c: COL.pink, pulse: true };
   switch (id) {
     case 'launch': { const n = S.planet.reached + 1; return shipRating() >= PLANET_REQ(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
     case 'crates': { const n = Math.floor(S.coins / CRATE_COIN); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
@@ -6437,13 +6460,15 @@ function updateHub(dt) {
     return;
   }
   if (HUB.choice) { updateChoiceOverlay(dt); return; }
+  checkUnlocks();
   if (S.haulCrates && S.haulCrates.length) { startHaulOpen(S.haulCrates.splice(0)); return; }
   if (!HUB.choice && S.choiceQueue.length) nextQueuedChoice();
   if (HUB.panel) { if (kp('Escape')) { HUB.panel = null; SND.play('click'); } return; }
-  if (kp('ArrowDown') || kp('KeyS')) { HUB.sel = (HUB.sel + 1) % NAV.length; SND.play('hover'); }
-  if (kp('ArrowUp') || kp('KeyW')) { HUB.sel = (HUB.sel + NAV.length - 1) % NAV.length; SND.play('hover'); }
-  if (kp('Enter') || kp('KeyE') || kp('Space')) openStation(NAV[HUB.sel].id);
-  for (let i = 0; i < NAV.length; i++) if (kp('Digit' + (i + 1))) openStation(NAV[i].id);
+  const VN = visNav(); if (HUB.sel >= VN.length) HUB.sel = 0;
+  if (kp('ArrowDown') || kp('KeyS')) { HUB.sel = (HUB.sel + 1) % VN.length; SND.play('hover'); }
+  if (kp('ArrowUp') || kp('KeyW')) { HUB.sel = (HUB.sel + VN.length - 1) % VN.length; SND.play('hover'); }
+  if (kp('Enter') || kp('KeyE') || kp('Space')) openStation(VN[HUB.sel].id);
+  for (let i = 0; i < VN.length; i++) if (kp('Digit' + (i + 1))) openStation(VN[i].id);
   if (kp('KeyC')) openStation('crates'); if (kp('KeyM') || kp('KeyL')) openStation('launch');
   tickMinersLite();
 }
@@ -6510,7 +6535,7 @@ function drawHubTop() {
   tog(W - 54, !SND.muted, (x, y, w, h, c) => { rect(x + 4, y + 6, 2, 4, c); ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + 10, y + 3); ctx.lineTo(x + 10, y + 13); ctx.lineTo(x + 6, y + 10); ctx.fill(); }, SND.muted ? 'SOUND IS OFF' : 'SOUND IS ON', () => { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); });
   tog(W - 36, SND.musicOn, (x, y, w, h, c) => { rect(x + 5, y + 4, 1, 7, c); rect(x + 10, y + 3, 1, 7, c); rect(x + 5, y + 3, 6, 2, c); rect(x + 3, y + 10, 3, 2, c); rect(x + 8, y + 9, 3, 2, c); }, SND.musicOn ? 'MUSIC IS ON' : 'MUSIC IS OFF. CLICK TO TURN IT ON', () => { SND.setMusic(!SND.musicOn); S.settings.music = SND.musicOn; if (SND.musicOn) SND.playSong('hub'); dirty(); });
   drawOnlinePill(Math.max(168, 60 + textW((S.name ? S.name + ' ' : '') + (t ? t.n : 'ASTRONAUT'), FS) + 14), 5);
-  if (button(W - 18, 4, 14, 16, '?', { font: FS, tip: 'W/S OR ARROWS TO PICK, ENTER TO OPEN. 1-8 JUMP STRAIGHT TO A ROOM' })) { }
+  if (button(W - 18, 4, 14, 16, '?', { font: FS, tip: 'W/S OR ARROWS TO PICK, ENTER TO OPEN. NUMBER KEYS JUMP STRAIGHT TO A ROOM' })) { }
 }
 function drawNav(dimmed) {
   const x = 10, w = 162;
@@ -6528,9 +6553,10 @@ function drawNav(dimmed) {
   const lb = navBadge('launch'); if (lb) { const bw = textW(lb.t, FS) + 6; panel(x + w - bw - 4, ly - 5, bw, 10, { bg: COL.pink, bd: '#fff', flat: true }); text(lb.t, x + w - bw / 2 - 4, ly - 3, COL.navy, FS, 1); }
   if (lhov) { IN.cursor = 'pointer'; if (clickIn(x, ly, w, lh)) openStation('launch'); }
   // rows
-  const ry0 = 80, rh = NAV.length > 8 ? 19 : 21;
-  for (let i = 1; i < NAV.length; i++) {
-    const n = NAV[i], y = ry0 + (i - 1) * (rh + 2); const hov = !dimmed && inBox(x, y, w, rh); if (hov && HUB.sel !== i) { HUB.sel = i; SND.play('hover'); }
+  const VN = visNav(); if (HUB.sel >= VN.length) HUB.sel = 0;
+  const ry0 = 80, rh = VN.length > 8 ? 19 : 21;
+  for (let i = 1; i < VN.length; i++) {
+    const n = VN[i], y = ry0 + (i - 1) * (rh + 2); const hov = !dimmed && inBox(x, y, w, rh); if (hov && HUB.sel !== i) { HUB.sel = i; SND.play('hover'); }
     const sel = HUB.sel === i;
     if (sel) { panel(x, y, w, rh, { bg: COL.void3, bd: COL.steel }); rect(x, y + 2, 2, rh - 4, COL.pink); }
     const off = sel ? 3 : 0;
@@ -6540,11 +6566,12 @@ function drawNav(dimmed) {
     if (b) { const bw = textW(b.t, FS) + 6; if (b.quiet) text(b.t, x + w - 5, y + 8, b.c, FS, 2); else { if (b.pulse) { ctx.globalAlpha = 0.3 + 0.25 * Math.sin(T_NOW * 6); rect(x + w - bw - 5, y + 3, bw + 4, 14, b.c); ctx.globalAlpha = 1; } panel(x + w - bw - 3, y + 5, bw, 10, { bg: b.c, bd: b.pulse ? '#fff' : b.c, flat: true }); text(b.t, x + w - bw / 2 - 3, y + 7, COL.navy, FS, 1); } }
     if (hov) { IN.cursor = 'pointer'; if (clickIn(x, y, w, rh)) openStation(n.id); }
   }
-  if (!dimmed) { const s = NAV[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, ry0 + (NAV.length - 1) * (rh + 2) + 2 + k * 7, COL.dim, FS)); }
+  if (!dimmed) { const s = VN[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, ry0 + (VN.length - 1) * (rh + 2) + 2 + k * 7, COL.dim, FS)); }
   // first-time guidance
   if (!dimmed) {
     const tip = S.stats.crates === 0 ? [1, 'START HERE: OPEN A CRATE'] : S.planet.landings === 0 ? [0, 'NEXT: LAUNCH TO DUSTMOOR'] : null;
-    if (tip) { const yy = tip[0] === 0 ? ly + 16 : ry0 + 5; const bx = x + w + 8 + Math.round(Math.sin(T_NOW * 6) * 3); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(bx, yy + 4); ctx.lineTo(bx + 6, yy); ctx.lineTo(bx + 6, yy + 8); ctx.fill(); const tw = textW(tip[1], FS) + 8; panel(bx + 7, yy - 2, tw, 12, { bg: COL.pink, bd: '#fff', flat: true }); text(tip[1], bx + 7 + tw / 2, yy + 1, COL.navy, FS, 1); }
+    const ci = VN.findIndex(n => n.id === 'crates');
+    if (tip) { const yy = tip[0] === 0 ? ly + 16 : ry0 + (ci - 1) * (rh + 2) + 5; const bx = x + w + 8 + Math.round(Math.sin(T_NOW * 6) * 3); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(bx, yy + 4); ctx.lineTo(bx + 6, yy); ctx.lineTo(bx + 6, yy + 8); ctx.fill(); const tw = textW(tip[1], FS) + 8; panel(bx + 7, yy - 2, tw, 12, { bg: COL.pink, bd: '#fff', flat: true }); text(tip[1], bx + 7 + tw / 2, yy + 1, COL.navy, FS, 1); }
   }
 }
 function drawNextUp() {
@@ -6566,6 +6593,7 @@ function drawNextUp() {
   if (done) { if (button(x + 6, yy, w - 12, 14, 'CLAIM REWARD', { kind: 'primary', font: FS }) || kp('KeyR')) { claimGoal(); HUB_FX.burst(x + w / 2, yy + 8, 40, { c: [COL.gold, '#fff', COL.pink], sp: 140, life: 0.8, s: 2, t: 'shrink' }); } }
   else if (button(x + 6, yy, w - 12, 14, 'GO', { kind: 'blue', font: FS, icon: (bx, by, bw, bh, c) => { for (let i = 0; i < 3; i++) line(bx + bw / 2 + 8 + i, by + 4, bx + bw / 2 + 11 + i, by + 7, c), line(bx + bw / 2 + 11 + i, by + 7, bx + bw / 2 + 8 + i, by + 10, c); } })) openStation(G.go);
   // today's contracts
+  if (!uiOpen('contracts')) return;
   const C = ensureContracts(); let cy = y + h + 5; const ch = 14 + C.list.length * 15;
   panel(x, cy, w, ch, { bg: 'rgba(14,22,48,0.94)', bd: COL.mauve });
   rect(x + 1, cy + 1, w - 2, 10, 'rgba(30,39,73,0.95)'); text("TODAY'S CONTRACTS", x + 6, cy + 3, COL.lilac, FS); text(`${C.list.filter(c => c.claimed).length}/${C.list.length}`, x + w - 6, cy + 3, COL.mute, FS, 2);
@@ -7617,7 +7645,8 @@ function rtJoinLocal(topic, me, on) {
 // Every device runs its own pilot. The first player in a room also runs the AI pilots.
 // Hits are decided by the one getting hit, so what you see is what hits you.
 let AM = null;
-const AR_FIGHTERS = 20, AR_DUEL_TO = 5, AR_DUEL_TIME = 180, AR_SEND = 0.2;
+const AR_FIGHTERS = 10, AR_MAX_AI = 5, AR_DUEL_TO = 5, AR_DUEL_TIME = 180, AR_SEND = 0.2;
+const arAIFor = humans => Math.max(0, Math.min(AR_MAX_AI, AR_FIGHTERS - humans));
 const AR_RANKS = [['ROOKIE', 0, '#9aa3c0'], ['BRONZE', 50, '#c8875a'], ['SILVER', 200, '#cfd6e6'], ['GOLD', 500, '#fca311'], ['PLATINUM', 1000, '#7fe9ff'], ['DIAMOND', 2000, '#9fd3ff'], ['MASTER', 3500, '#e0b1cb'], ['GALACTIC', 6000, 'RAINBOW']];
 const rankOf = t => { let r = AR_RANKS[0]; for (const k of AR_RANKS) if (t >= k[1]) r = k; return r; };
 const BN1 = ['KAI', 'NOVA', 'ZED', 'LUNA', 'RIO', 'JAX', 'MILO', 'ZARA', 'ACE', 'NYX', 'ECHO', 'VEX', 'ORION', 'SKY', 'REX', 'PIXEL', 'BLAZE', 'FROST', 'DUSK', 'COMET', 'TACO', 'MOCHI', 'BEANS', 'GOOSE', 'SPUD', 'WAFFLE', 'NOODLE', 'PICKLE', 'TURBO', 'GHOST', 'RAVEN', 'VIPER', 'ASTRO', 'COSMO', 'JUNO', 'KODA', 'ROOK', 'SAGE', 'ZION', 'NIKO', 'OTTO', 'REI', 'TOBI', 'YUKI', 'BEAR', 'CHIP', 'DOT', 'FINN', 'IVY', 'LEO', 'MAX', 'OLLIE', 'PIP', 'QUINN', 'RUBY', 'SOL', 'TEX', 'UMA', 'WREN'];
@@ -7643,9 +7672,9 @@ function arColPack(c) { return [c.core, c.mid, c.edge]; }
 function arColUnpack(a) { return a && a.length ? { core: a[0], mid: a[1], edge: a[2], dark: a[2] } : { core: '#fff', mid: '#9ff', edge: '#4ef', dark: '#226' }; }
 // ---------- maps ----------
 function arMap(seed, duel) {
-  const R = RNG(seed), w = duel ? 520 : 800, h = duel ? 380 : 600, blocks = [];
+  const R = RNG(seed), w = duel ? 520 : 640, h = duel ? 380 : 480, blocks = [];
   const free = (x, y, bw, bh, m) => blocks.every(b => x + bw + m < b[0] || x > b[0] + b[2] + m || y + bh + m < b[1] || y > b[1] + b[3] + m);
-  const n = duel ? 5 : 10;
+  const n = duel ? 5 : 8;
   for (let i = 0; i < 200 && blocks.length < n * 2; i++) {
     const bw = R.ir(2, 6) * 8, bh = R.ir(2, 4) * 8, x = R.ir(36, w / 2 - bw - 10), y = R.ir(36, h - 36 - bh);
     const x2 = w - x - bw, y2 = h - y - bh;
@@ -7673,11 +7702,21 @@ function arFighter(o) {
   return Object.assign({ x: 0, y: 0, vx: 0, vy: 0, nx: 0, ny: 0, aim: 0, dir: 0, walk: 0, moving: false, recoil: 0, mode: 'weapon', inv: 0, hurtT: 0, r: 6,
     hp: 150, maxHp: 150, alive: true, respT: 0, kills: 0, deaths: 0, streak: 0, boostCd: 0, boostT: 0, fireCd: 0, charge: 0, lastHit: 99, fired: [] }, o);
 }
+// the two weapons you bring into arenas (your pick, from anything you own)
+function arenaLoadout() {
+  const okW = id => id && S.inv[id] && getDef(id).cat === 'w';
+  const L = S.arenaLoadout = S.arenaLoadout || {};
+  if (!okW(L.w1)) L.w1 = okW(S.eq.weapon) ? S.eq.weapon : Object.keys(S.inv).find(okW) || null;
+  if (L.w2 && (!okW(L.w2) || L.w2 === L.w1)) L.w2 = null;
+  return L;
+}
 function myFighter() {
   const eq = Object.assign({}, S.eq); delete eq.backdrop;
+  const LO = arenaLoadout(); if (LO.w1) eq.weapon = LO.w1;
   const ar = ['helmet', 'chest', 'boots', 'jetpack', 'o2'].map(s => S.eq[s] ? getDef(S.eq[s]).r : 0); const avg = ar.reduce((a, b) => a + b, 0) / 5;
   const hp = Math.round(150 + avg * 5);
-  return arFighter({ id: NET.sess ? NET.sess.uid : 'me', cs: S.name || 'YOU', human: true, local: true, eq, wpn: arenaWeapon(S.eq.weapon, gradeOf(S.eq.weapon)), hp, maxHp: hp, lvl: S.lvl, title: S.titles.eq });
+  const wpns = [LO.w1, LO.w2].filter(Boolean);
+  return arFighter({ id: NET.sess ? NET.sess.uid : 'me', cs: S.name || 'YOU', human: true, local: true, eq, wpns, wi: 0, wpn: arenaWeapon(wpns[0] || S.eq.weapon, gradeOf(wpns[0] || S.eq.weapon)), hp, maxHp: hp, lvl: S.lvl, title: S.titles.eq });
 }
 function botLoadout(R, skill) {
   const pick = (cat, sub, rmax) => { const P = POOLS[cat]; for (let t = 0; t < 60; t++) { const r = Math.min(6, Math.floor(R() * R() * (rmax + 1))); const arr = P && P[r]; if (!arr || !arr.length) continue; const id = arr[R.int(arr.length)]; if (!sub || getDef(id).sub === sub) return id; } return null; };
@@ -7726,7 +7765,7 @@ function arLeave(quiet) {
 function arBots() { return [...AM.fighters.values()].filter(f => f.bot); }
 function arFillBots() {
   const A = AM; if (!A.host || A.mode === 'duel') return;
-  const want = Math.max(0, AR_FIGHTERS - A.humans), bots = arBots();
+  const want = arAIFor(A.humans), bots = arBots();
   if (bots.length > want) { const extra = bots.sort((a, b) => (a.alive - b.alive) || (a.kills - b.kills)).slice(0, bots.length - want); for (const b of extra) A.fighters.delete(b.id); }
   for (let i = bots.length; i < want; i++) { const id = 'b' + (++A.botSeq) + '-' + A.me.id.slice(0, 4); const b = arMakeBot(id, A.botR, 0.2 + A.botR() * 0.55); A.fighters.set(id, b); arRespawn(b, true); }
 }
@@ -7823,6 +7862,7 @@ function arSlash(f, x, y, a) {
 function arAuth(o) { return o.local || (o.bot && AM.host); }
 function arHit(o, dmg, by, x, y) {
   const A = AM; A.fx.burst(x, y, 4, { c: ['#fff', '#ffcb3d'], sp: 60, life: 0.25 });
+  if (by === A.me.id && o !== A.me && o.alive && !(o.inv > 0)) { A.hitT = 0.14; SND.play('hit'); A.fx.text(o.x + (Math.random() - 0.5) * 8, o.y - 26, Math.max(1, Math.round(dmg)) + '', dmg >= 30 ? '#ffcb3d' : '#ffffff', { f: FS, vy: -40, life: 0.6 }); }
   if (!arAuth(o) || !o.alive || o.inv > 0) return;
   o.hp -= dmg; o.lastHit = 0; o.hurtT = 0.15; o.lastBy = by;
   if (o.local) { shake(2); SND.play('hurt'); }
@@ -7830,10 +7870,12 @@ function arHit(o, dmg, by, x, y) {
 }
 function arDie(o, by, broadcast) {
   const A = AM; if (!o.alive) return; o.alive = false; o.hp = 0; o.respT = 3; o.deaths++; o.streak = 0;
-  const k = A.fighters.get(by); if (k && k !== o) { k.kills++; k.streak++; if (k.local) { A.rk++; if (o.human) A.rhk++; A.best = Math.max(A.best, k.streak); arStreakBanner(k.streak); SND.play('kill'); } }
+  const k = A.fighters.get(by); if (k && k !== o) { k.kills++; k.streak++; if (k.local) { A.rk++; if (o.human) A.rhk++; A.best = Math.max(A.best, k.streak); arStreakBanner(k.streak); arKillFx(o); } }
   if (o.local) { A.rd++; SND.play('lose'); }
   A.feed.unshift({ k: k ? k.cs : '?', v: o.cs, t: 5, me: (k && k.local) || o.local }); if (A.feed.length > 5) A.feed.pop();
-  A.fx.burst(o.x, o.y - 8, 26, { c: [arColUnpack(arColPack(o.wpn.col)).mid, '#fff', '#ff5a6e'], sp: 120, life: 0.6, s: 2 });
+  A.fx.burst(o.x, o.y - 8, 34, { c: [o.wpn.col.mid, '#fff', '#ff5a6e', o.wpn.col.core], sp: 150, life: 0.7, s: 2, g: 120 });
+  A.fx.add({ x: o.x, y: o.y - 8, life: 0.45, c: '#ffffff', s: 34, t: 'ring' }); A.fx.add({ x: o.x, y: o.y - 8, life: 0.6, c: o.wpn.col.mid, s: 52, t: 'ring' });
+  (A.ghosts = A.ghosts || []).push({ x: o.x, y: o.y, eq: o.eq || {}, dir: o.dir, t: 0 });
   if (broadcast && A.room) A.room.send('d', { v: o.id, by });
   if (A.mode === 'duel') arDuelCheck();
 }
@@ -7958,12 +8000,16 @@ function arReport(final) {
 }
 // ---------- update ----------
 function arUpdate(dt) {
-  const A = AM; if (!A) return; A.t += dt; const me = A.me;
-  if (kp('Escape')) { A.menu = !A.menu; SND.play('click'); }
+  const A = AM; if (!A) return; const me = A.me;
+  if (A.hitT > 0) A.hitT -= dt; if (A.kPop > 0) A.kPop -= dt; if (A.killHit > 0) A.killHit -= dt;
+  if (A.slow > 0) { A.slow -= dt; dt *= 0.3; }
+  A.t += dt;
+  if (kp('Escape')) { if (A.pick) A.pick = 0; else A.menu = !A.menu; SND.play('click'); }
+  if (!A.menu && !A.pick && me.alive) { if (kp('KeyQ') || IN.wheel) arSwap(1 - me.wi); if (kp('Digit1')) arSwap(0); if (kp('Digit2')) arSwap(1); }
   if (A.ended) { A.endT += dt; arUpdateShots(dt); A.fx.update(dt); return; }
   if (A.count > 0) { const c0 = Math.ceil(A.count); A.count -= dt; if (Math.ceil(A.count) !== c0 && A.count > 0) SND.play('tick'); if (A.count <= 0) SND.play('fanfare'); }
   // me
-  const inp = { mx: (key('KeyD') || key('ArrowRight') ? 1 : 0) - (key('KeyA') || key('ArrowLeft') ? 1 : 0), my: (key('KeyS') || key('ArrowDown') ? 1 : 0) - (key('KeyW') || key('ArrowUp') ? 1 : 0), fire: IN.down && !A.menu && IN.my > 20, boost: kp('Space') || kp('ShiftLeft') };
+  const inp = { mx: (key('KeyD') || key('ArrowRight') ? 1 : 0) - (key('KeyA') || key('ArrowLeft') ? 1 : 0), my: (key('KeyS') || key('ArrowDown') ? 1 : 0) - (key('KeyW') || key('ArrowUp') ? 1 : 0), fire: IN.down && !A.menu && !A.pick && IN.my > 20 && !(IN.my > H - 34 && IN.mx < 92), boost: kp('Space') || kp('ShiftLeft') };
   let ax = IN.mx + A.cam.x, ay = IN.my + A.cam.y;
   if (IN.touch || TOUCH.size) { const t = touchInput(me, A.cam, { player: me }); inp.mx = t.mx; inp.my = t.my; inp.fire = t.fire; inp.boost = t.boost; ax = t.ax; ay = t.ay; }
   const frozen = A.count > 0 || A.menu && false;
@@ -8004,7 +8050,7 @@ function arDraw(dt) {
     const f = o; drawPlayer(wf, f, cx, cy, f.eq || {}, {});
     const nx = Math.floor(f.x - cx), ny = Math.floor(f.y - cy) - 34;
     const tag = f.cs; const tw = textW(tag, FS) + 4; ctx.globalAlpha = 0.6; rect(nx - tw / 2, ny - 1, tw, 7, '#000'); ctx.globalAlpha = 1; text(tag, nx, ny, f.local ? COL.gold : COL.cream, FS, 1);
-    if (!f.local) bar(nx - 10, ny + 7, 20, 2, f.hp / f.maxHp, f.hp < f.maxHp * 0.3 ? COL.coral : '#7dffb0', '#200');
+    const bw = f.local ? 26 : 20; rect(nx - bw / 2 - 1, ny + 6, bw + 2, 4, '#000'); bar(nx - bw / 2, ny + 7, bw, 2, f.hp / f.maxHp, f.hp < f.maxHp * 0.3 ? COL.coral : f.local ? COL.gold : '#7dffb0', '#300');
   }
   // shots
   for (const s of A.shots) {
@@ -8014,20 +8060,25 @@ function arDraw(dt) {
     if (s.kind === 'throwing') { const f = Math.floor(s.t * 20) % 2; if (f) { rect(x - 3, y, 7, 1, c.mid); rect(x, y - 3, 1, 7, c.mid); } else { line(x - 2, y - 2, x + 2, y + 2, c.mid); line(x - 2, y + 2, x + 2, y - 2, c.mid); } continue; }
     const L = s.kind === 'railgun' || s.kind === 'sniper' ? 0.03 : 0.02; line(x, y, x - s.vx * L, y - s.vy * L, c.mid); px(x, y, c.core);
   }
-  A.fx.draw(cx, cy);
+  A.fx.draw(cx, cy); arDrawKillFeel(cx, cy, dt);
   // dead overlay
   const me = A.me;
   if (!me.alive && !A.ended) { ctx.globalAlpha = 0.45; rect(0, 0, W, H, '#200008'); ctx.globalAlpha = 1; textO('DOWN!', W / 2, 100, COL.coral, '#000', FB, 1, 3); text(`BACK IN ${Math.ceil(me.respT)}`, W / 2, 130, COL.cream, FB, 1); const k = A.fighters.get(me.lastBy); if (k) text(`BY ${k.cs}`, W / 2, 142, COL.dim, FS, 1); }
-  arHUD();
-  if (A.menu && !A.ended) arMenu();
-  if (A.ended) arEndScreen();
-  if (!IN.touch && !A.menu && !A.ended) { const x = Math.floor(IN.mx), y = Math.floor(IN.my); rect(x - 5, y, 3, 1, COL.ink); rect(x + 3, y, 3, 1, COL.ink); rect(x, y - 5, 1, 3, COL.ink); rect(x, y + 3, 1, 3, COL.ink); px(x, y, COL.gold); }
+  arHUD(); arDrawKillPop(dt);
+  if (A.pick) { drawWeaponPicker(A.pickSt = A.pickSt || {}, A.pick, () => { A.pick = 0; }); }
+  else if (A.menu && !A.ended) arMenu();
+  if (AM && AM.ended) arEndScreen();
+  if (AM && !IN.touch && !A.menu && !A.ended && !A.pick) {
+    const x = Math.floor(IN.mx), y = Math.floor(IN.my);
+    rect(x - 5, y, 3, 1, COL.ink); rect(x + 3, y, 3, 1, COL.ink); rect(x, y - 5, 1, 3, COL.ink); rect(x, y + 3, 1, 3, COL.ink); px(x, y, COL.gold);
+    if (A.hitT > 0) { const c = A.killHit > 0 ? COL.coral : '#ffffff', g = A.killHit > 0 ? 6 : 4; line(x - g - 3, y - g - 3, x - g, y - g, c); line(x + g + 3, y - g - 3, x + g, y - g, c); line(x - g - 3, y + g + 3, x - g, y + g, c); line(x + g + 3, y + g + 3, x + g, y + g, c); }
+  }
 }
 function arHUD() {
   const A = AM, me = A.me;
   panel(6, 6, 120, 30, { bg: 'rgba(5,6,15,0.75)', bd: COL.steel });
   text('HP', 12, 11, COL.mute, FS); bar(26, 10, 94, 6, me.hp / me.maxHp, me.hp < me.maxHp * 0.3 ? COL.coral : '#7dffb0', '#200'); text(Math.ceil(me.hp) + '', 73, 11, '#000', FS, 1);
-  text(`K ${me.kills}  D ${me.deaths}`, 12, 21, COL.cream, FS); if (me.streak >= 2) text(`STREAK ${me.streak}`, 120, 21, COL.gold, FS, 2);
+  if (A.kPop > 0) textO(`K ${me.kills}`, 12, 19, COL.gold, '#000', FB); else text(`K ${me.kills}`, 12, 21, COL.cream, FS); text(`D ${me.deaths}`, 46, 21, COL.dim, FS); if (me.streak >= 2) text(`STREAK ${me.streak}`, 120, 21, COL.gold, FS, 2);
   bar(12, 30, 108, 2, me.boostCd > 0 ? 1 - me.boostCd / 2 : 1, me.boostCd > 0 ? COL.steel : COL.cyan, COL.void0);
   // top center: mode / timer / score
   const title = A.mode === 'duel' ? `${A.ranked ? 'RANKED' : 'UNRANKED'} 1V1` : A.practice ? 'PRACTICE ARENA' : (A.server ? A.server.name : 'ARENA');
@@ -8048,7 +8099,12 @@ function arHUD() {
   A.feed.forEach((f, i) => { const s = `${f.k} > ${f.v}`; const w = textW(s, FS) + 8; ctx.globalAlpha = Math.min(1, f.t); panel(W - w - 6, 6 + i * 10, w, 9, { bg: f.me ? '#3a2a10' : 'rgba(5,6,15,0.75)', bd: f.me ? COL.gold : COL.void3, flat: true }); text(s, W - w - 2, 8 + i * 10, f.me ? COL.gold : COL.cream, FS); ctx.globalAlpha = 1; });
   // scoreboard (TAB) or mini top 3
   if (key('Tab')) arScoreboard();
-  else if (A.mode !== 'duel') { const list = [...A.fighters.values()].sort((a, b) => b.kills - a.kills).slice(0, 3); list.forEach((f, i) => text(`${i + 1} ${f.cs} ${f.kills}`, 8, 42 + i * 7, f.local ? COL.gold : COL.dim, FS)); text('TAB: SCORES', 8, 64, COL.mute, FS); }
+  else if (A.mode !== 'duel') {
+    const list = [...A.fighters.values()].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths); const top = list.slice(0, 5); if (!top.includes(me)) top.push(me);
+    panel(6, 40, 92, 12 + top.length * 8, { bg: 'rgba(5,6,15,0.75)', bd: COL.void3, flat: true }); text('KILLS', 10, 43, COL.gold, FS); text('TAB', 94, 43, COL.mute, FS, 2);
+    top.forEach((f, i) => { const yy = 51 + i * 8; const pl = list.indexOf(f) + 1; if (f.local) rect(7, yy - 1, 90, 7, '#3a2a10'); let nm = f.cs; while (textW(nm, FS) > 60 && nm.length > 3) nm = nm.slice(0, -1); text(`${pl}. ${nm}`, 10, yy, f.local ? COL.gold : COL.cream, FS); text(f.kills + '', 94, yy, f.local ? COL.gold : COL.ink, FS, 2); });
+  }
+  drawArenaSlots(10, H - 26, slot => { A.pick = slot; });
   if (A.banner) { const k = Math.min(1, A.banner.life); ctx.globalAlpha = k; textO(A.banner.t, W / 2, 60, COL.gold, '#000', FB, 1, 2); ctx.globalAlpha = 1; }
   if (button(W - 52, H - 20, 46, 14, 'MENU', { font: FS })) A.menu = !A.menu;
   if (IN.touch || TOUCH.size) { const B = TC.btn; if (B && B.boost) { const b = B.boost; panel(b[0], b[1], b[2], b[3], { bg: 'rgba(5,6,15,0.6)', bd: COL.steel }); text('BOOST', b[0] + b[2] / 2, b[1] + 8, COL.ink, FS, 1); } }
@@ -8067,8 +8123,9 @@ function arMenu() {
   if (A.mode === 'duel') text('LEAVING NOW COUNTS AS A LOSS', W / 2, 94, COL.coral, FS, 1);
   else text(A.practice ? 'PRACTICE: NO REWARDS' : 'KILLS ARE PAID EVERY MINUTE AND WHEN YOU LEAVE', W / 2, 94, COL.dim, FS, 1);
   if (button(W / 2 - 70, 110, 140, 18, 'KEEP PLAYING', { kind: 'primary' })) A.menu = false;
+  if (button(W / 2 + 74, 110, 60, 18, 'LOADOUT', { kind: 'blue', font: FS })) { A.pick = 1; A.menu = false; }
   if (button(W / 2 - 70, 134, 140, 18, A.mode === 'duel' ? 'FORFEIT AND LEAVE' : 'LEAVE ARENA', { kind: 'danger' })) { arLeave(); return; }
-  text('WASD MOVE. MOUSE AIM AND FIRE. SPACE BOOSTS', W / 2, 162, COL.mute, FS, 1); text('BOOSTING THROUGH SHOTS DODGES THEM', W / 2, 170, COL.mute, FS, 1);
+  text('WASD MOVE. MOUSE AIM AND FIRE. SPACE BOOSTS. Q OR 1/2 SWAPS WEAPONS', W / 2, 162, COL.mute, FS, 1); text('BOOSTING THROUGH SHOTS DODGES THEM', W / 2, 170, COL.mute, FS, 1);
 }
 function arEndScreen() {
   const A = AM, r = A.result; ctx.globalAlpha = Math.min(0.75, A.endT); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
@@ -8131,12 +8188,14 @@ function panelArena(st) {
   const c = ARL.counts; if (c) text(`${fmt(c.online + c.ai)} ONLINE`, W - 74, 13, '#7dffb0', FS, 2);
   // my rank strip
   const me = ARL.me; const tr = me ? me.trophies : 0, rk = rankOf(tr);
-  panel(14, 30, W - 28, 22, { bg: COL.void0, bd: COL.void3, flat: true });
+  panel(14, 30, W - 28, 25, { bg: COL.void0, bd: COL.void3, flat: true });
   drawRankBadge(20, 33, rk, 16);
   text(on ? (NET.callsign || 'NO CALLSIGN') : 'OFFLINE', 42, 34, COL.ink, FB); text(on ? `${rk[0]}  ${fmt(tr)} TROPHIES` : 'SIGN IN FOR REWARDS, TROPHIES AND RANKS', 42, 43, rk[2] === 'RAINBOW' ? rainbow(T_NOW) : rk[2], FS);
-  if (me) text(`KILLS ${fmt(me.kills)}   BEST STREAK ${me.best_streak}   1V1 ${me.duels_won}W ${me.duels_lost}L`, W - 22, 38, COL.dim, FS, 2);
-  if (!on && button(W - 110, 33, 90, 16, 'SIGN IN', { kind: 'blue', font: FS })) openStation('social');
+  if (me) { text(`KILLS ${fmt(me.kills)}  BEST STREAK ${me.best_streak}`, W - 152, 35, COL.dim, FS, 2); text(`1V1 ${me.duels_won}W ${me.duels_lost}L`, W - 152, 43, COL.dim, FS, 2); }
+  text('YOUR', W - 142, 35, COL.mute, FS); text('ARENA', W - 142, 41, COL.mute, FS); text('GUNS', W - 142, 47, COL.mute, FS); drawArenaSlots(W - 106, 32, slot => { st.pick = slot; });
+  if (!on && button(W - 214, 33, 90, 16, 'SIGN IN', { kind: 'blue', font: FS })) openStation('social');
   if (st.tab === 0) arenaFFA(st, on); else if (st.tab === 1) arenaDuel(st, on); else arenaRanks(st, on);
+  if (st.pick) drawWeaponPicker(st.pickSt = st.pickSt || {}, st.pick, () => { st.pick = 0; });
 }
 function drawRankBadge(x, y, rk, s) {
   const c = rk[2] === 'RAINBOW' ? rainbow(T_NOW) : rk[2];
@@ -8146,17 +8205,23 @@ function drawRankBadge(x, y, rk, s) {
 }
 function arenaFFA(st, on) {
   const x = 14, y = 58;
-  text('FREE FOR ALL: 20 PILOTS PER SERVER. EVERY KILL PAYS COINS AND TROPHIES, SOMETIMES A CRATE', x, y, COL.dim, FS);
+  text('FREE FOR ALL: UP TO 10 PILOTS PER SERVER. EVERY KILL PAYS COINS AND TROPHIES, SOMETIMES A CRATE', x, y, COL.dim, FS);
   const list = (ARL.list || []);
   if (on && !ARL.list) text('LOADING SERVERS...', x, y + 14, COL.dim, FS);
   list.slice(0, 6).forEach((s, i) => {
     const yy = y + 10 + i * 22; panel(x, yy, 300, 20, { bg: COL.void1, bd: s.private ? COL.magenta : COL.void3, flat: true });
     const pd = planetDef(s.theme || 1); text(s.name, x + 6, yy + 3, COL.ink, FB); text(`${s.private ? 'PRIVATE: ' + (s.owner || '') + (s.code ? '  CODE ' + s.code : '') : pd.name + ' ARENA'}`, x + 6, yy + 12, s.private ? COL.magenta : COL.mute, FS);
-    const pilots = s.humans > 0 ? AR_FIGHTERS : 0; text(`${pilots}/${AR_FIGHTERS}`, x + 240, yy + 7, s.humans > 0 ? '#7dffb0' : COL.mute, FS, 2);
+    const pilots = s.humans > 0 ? s.humans + arAIFor(s.humans) : 0; text(`${pilots}/${AR_FIGHTERS}`, x + 240, yy + 7, s.humans > 0 ? '#7dffb0' : COL.mute, FS, 2);
     if (button(x + 248, yy + 3, 48, 14, s.humans >= s.cap ? 'FULL' : 'JOIN', { kind: 'primary', font: FS, disabled: !on || s.humans >= s.cap || NET.act })) netDo(() => arJoinServer(s.id));
     if (inBox(x, yy, 240, 20) && s.players && s.players.length) TIP.set('IN HERE NOW: ' + s.players.join(', '));
   });
   // right column: private servers + practice
+  // all-time kill leaders
+  const kb = ARL.lb.kills; if (on && T_NOW - (ARL.lbT.kills || -99) > 20) { ARL.lbT.kills = T_NOW; rpc('leaderboard', { p_kind: 'kills' }).then(r => { ARL.lb.kills = r; }).catch(() => { }); }
+  const ky = y + 10 + Math.min(6, list.length) * 22 + 6; text('TOP KILLERS, ALL TIME', x, ky, COL.gold, FS);
+  ((kb && kb.top) || []).slice(0, 5).forEach((r, i) => { const yy = ky + 9 + i * 8; text(`${i + 1}. ${(r.crew ? '[' + r.crew + '] ' : '') + r.callsign}`, x + 4, yy, r.me ? COL.gold : COL.cream, FS); text(fmt(r.value) + ' KILLS', x + 296, yy, COL.dim, FS, 2); });
+  if (kb && !(kb.top || []).length) text('NO KILLS YET. GO GET THE FIRST ONE', x + 4, ky + 9, COL.mute, FS);
+  if (kb && kb.me && kb.me.value) text(`YOU: #${kb.me.place}`, x + 296, ky, COL.gold, FS, 2);
   const rx = 324, rw = W - 14 - rx; let ry = y + 10;
   text('PRIVATE SERVER', rx, ry, COL.magenta, FS); ry += 8;
   const nm = textField('arenaName', rx, ry, rw - 52, 14, { ph: 'SERVER NAME', max: 16, label: 'Private server name' });
@@ -8166,7 +8231,7 @@ function arenaFFA(st, on) {
   if (button(rx + rw - 48, ry, 48, 14, 'JOIN', { kind: 'primary', font: FS, disabled: !on || cd.value.length < 6 || NET.act }) || (cd.enter && cd.value.length === 6 && on)) { const v = cd.value; netDo(() => arJoinServer(null, v).then(() => setField('arenaCode', ''))); }
   ry += 26; text('NO INTERNET? WARM UP OFFLINE', rx, ry, COL.mute, FS); ry += 8;
   if (button(rx, ry, rw, 16, 'PRACTICE VS AI', { font: FS })) arPractice('ffa');
-  text('ONLY 5 REAL PLAYERS FIT IN ONE SERVER', rx, H - 30, COL.mute, FS); text('ON THE FREE PLAN. AI PILOTS FILL THE REST', rx, H - 23, COL.mute, FS);
+
 }
 function arenaDuel(st, on) {
   const x = 14, y = 60;
@@ -8204,6 +8269,58 @@ function arenaRanks(st, on) {
   });
   if (!rows.length) text('NOBODY HAS PLAYED YET. BE FIRST!', W / 2, 140, COL.dim, FS, 1);
   if (lb.me) text(`YOU: #${lb.me.place} WITH ${fmt(lb.me.value)}`, W / 2, H - 22, COL.gold, FS, 1);
+}
+
+// ---------- kill feel ----------
+function arKillFx(o) {
+  const A = AM; A.killPop = { cs: o.cs, t: 0, coins: A.practice ? 0 : (o.human ? 60 : 20), streak: A.me.streak }; A.kPop = 0.5; A.slow = 0.14; A.hitT = 0.3; A.killHit = 0.3;
+  flash(0.12, '#fff6c0'); shake(4); SND.play('kill'); SND.play('coin'); if (A.me.streak >= 3) SND.play('win');
+  for (let i = 0; i < 14; i++) A.fx.add({ x: o.x + (Math.random() - 0.5) * 10, y: o.y - 10, vx: (Math.random() - 0.5) * 90, vy: -60 - Math.random() * 90, life: 0.9, c: i % 3 ? '#fca311' : '#fff2a0', s: 2, g: 160, t: 'shrink' });
+}
+function arDrawKillFeel(cx, cy, dt) {
+  const A = AM;
+  if (A.ghosts) { for (const g of A.ghosts) { g.t += dt; const spr = astroSprite(g.eq, g.dir === 3 ? 3 : 2, 0); ctx.globalAlpha = Math.max(0, 0.7 - g.t); ctx.drawImage(maskOf(spr, '#dff8ff'), Math.floor(g.x - cx - 10), Math.floor(g.y - cy - 25 - g.t * 30)); ctx.globalAlpha = 1; } A.ghosts = A.ghosts.filter(g => g.t < 0.75); }
+}
+function arDrawKillPop(dt) {
+  const A = AM, P = A.killPop; if (!P) return; P.t += dt; if (P.t > 1.6) { A.killPop = null; return; }
+  const k = Math.min(1, P.t / 0.12), sc = P.t < 0.12 ? 3 - 2 * k : 1, a = P.t > 1.2 ? 1 - (P.t - 1.2) / 0.4 : 1;
+  ctx.globalAlpha = a; text('ELIMINATED', W / 2, 38, COL.coral, FS, 1);
+  ctx.save(); ctx.translate(W / 2, 54); ctx.scale(sc, sc); textO(P.cs, 0, -7, '#ffffff', '#000', FB, 1, 2); ctx.restore();
+  if (P.coins) text(`+${P.coins} COINS`, W / 2, 68, COL.gold, FS, 1);
+  ctx.globalAlpha = 1;
+}
+// ---------- loadout: swap and pick ----------
+function arSwap(i) {
+  const A = AM, me = A.me; if (!me.wpns || !me.wpns[i] || i === me.wi) return;
+  me.wi = i; const id = me.wpns[i]; me.wpn = arenaWeapon(id, gradeOf(id)); me.eq.weapon = id; me.fireCd = 0.25; SND.play('click');
+  if (A.room && A.t - (A.swapHiT || -9) > 0.3) { A.swapHiT = A.t; arSendHi(); } else if (A.room) A.hiT = Math.min(A.hiT, 0.35);
+}
+function arSetLoadout(slot, id) {
+  const L = arenaLoadout();
+  if (slot === 1) { if (L.w2 === id) L.w2 = L.w1; L.w1 = id; } else { if (id && L.w1 === id) L.w1 = L.w2 || id; L.w2 = id && id !== L.w1 ? id : null; }
+  dirty();
+  if (AM) { const me = AM.me; me.wpns = [L.w1, L.w2].filter(Boolean); me.wi = Math.min(me.wi, me.wpns.length - 1); const cur = me.wpns[me.wi]; me.wpn = arenaWeapon(cur, gradeOf(cur)); me.eq.weapon = cur; if (AM.room) arSendHi(); }
+}
+// a weapon grid over whatever is on screen. st keeps the scroll
+function drawWeaponPicker(st, slot, close) {
+  ctx.globalAlpha = 0.7; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
+  const x = 40, y = 26, w = W - 80, h = H - 52; panel(x, y, w, h, { bg: COL.void1, bd: COL.gold });
+  textO(`ARENA WEAPON ${slot}`, x + 10, y + 7, COL.gold, '#000', FB); text('EVERY TYPE DOES THE SAME DAMAGE PER SECOND HERE. RARITY AND GRADE ADD A LITTLE', x + 10, y + 19, COL.dim, FS);
+  if (button(x + w - 56, y + 5, 48, 14, 'CLOSE', { font: FS, kind: 'cream' }) || kp('Escape')) { close(); return; }
+  const L = arenaLoadout(); const ids = Object.keys(S.inv).filter(id => getDef(id).cat === 'w').sort((a, b) => getDef(b).r - getDef(a).r || power(getDef(b), effL(b)) - power(getDef(a), effL(a)));
+  const c = itemGrid(st, slot === 2 ? [null].concat(ids) : ids, x + 8, y + 30, w - 16, h - 38, { cw: 40, ch: 22, sel: slot === 1 ? L.w1 : L.w2, eqd: [L.w1, L.w2].filter(Boolean) });
+  if (c) { arSetLoadout(slot, c === 'NONE' ? null : c); SND.play('pickup'); close(); }
+}
+function drawArenaSlots(x, y, onClick) {
+  const L = arenaLoadout(); const cur = AM ? AM.me.wi : -1;
+  [L.w1, L.w2].forEach((id, i) => {
+    const bx = x + i * 42, hov = inBox(bx, y, 38, 22), act = cur === i;
+    const rc = id ? (getDef(id).r === 6 ? rainbow(T_NOW) : RAR[getDef(id).r].c) : COL.void3;
+    panel(bx, y, 38, 22, { bg: act ? COL.void3 : COL.void0, bd: act ? COL.gold : hov ? COL.ink : rc, flat: true });
+    if (id) drawItemIn(id, bx + 1, y + 3, 36, 16, { maxSc: 1, noFx: true }); else text('+', bx + 19, y + 7, COL.mute, FB, 1);
+    keycap(bx - 3, y - 4, String(i + 1));
+    if (hov) { IN.cursor = 'pointer'; TIP.set(id ? { item: id } : 'PICK A SECOND WEAPON'); if (clickIn(bx, y, 38, 22)) onClick(i + 1); }
+  });
 }
 
 // ===== MAIN: scenes and loop =====

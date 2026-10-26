@@ -34,13 +34,21 @@ async def main():
         ctx = await b.new_context(viewport={'width': 960, 'height': 540})  # one browser profile: BroadcastChannel reaches all tabs
         A, eA = await boot(ctx, 'A')
         # ---- practice works with no account
-        await A.evaluate("arPractice('ffa')"); await A.wait_for_timeout(300)
-        ok('practice FFA has 20 pilots', await A.evaluate("AM.fighters.size") == 20)
+        await A.evaluate("addItem('w|sniper|3'); addItem('w|shotgun|4'); arenaLoadout(); S.arenaLoadout.w2 = 'w|sniper|3'; arPractice('ffa')"); await A.wait_for_timeout(300)
+        c1 = await A.evaluate("AM.me.wpn.cls"); await A.keyboard.press('KeyQ'); await A.wait_for_timeout(100)
+        ok('Q swaps to the second arena weapon', await A.evaluate("AM.me.wpn.cls") == 'sniper' and c1 != 'sniper', [c1, await A.evaluate("AM.me.wpn.cls")])
+        await A.evaluate("AM.pick = 2"); await A.wait_for_timeout(200); await A.screenshot(path=OUT + 'ar0_picker.png')
+        await A.evaluate("arSetLoadout(2, 'w|shotgun|4'); AM.pick = 0")
+        ok('picking a weapon in a match applies right away', await A.evaluate("AM.me.wpn.cls") == 'shotgun' and await A.evaluate("S.arenaLoadout.w2") == 'w|shotgun|4')
+        ok('practice FFA: you + 5 AI pilots', await A.evaluate("AM.fighters.size") == 6)
         await A.mouse.move(700, 270); await A.mouse.down()
         for i in range(30):
             await A.keyboard.down(['KeyW', 'KeyD', 'KeyS', 'KeyA'][i % 4]); await A.wait_for_timeout(150); await A.keyboard.up(['KeyW', 'KeyD', 'KeyS', 'KeyA'][i % 4])
             await A.evaluate("AM.me.hp = AM.me.maxHp")
         await A.mouse.up()
+        await A.evaluate("(() => { const b = [...AM.fighters.values()].find(f => f.bot && f.alive); b.inv = 0; arHit(b, 9999, AM.me.id, b.x, b.y - 8); })()"); await A.wait_for_timeout(250)
+        ok('my kill: eliminated pop, slow-mo, hit marker', await A.evaluate("!!AM.killPop && AM.hitT > 0"), await A.evaluate("[!!AM.killPop, AM.hitT]"))
+        await A.screenshot(path=OUT + 'ar1b_kill.png')
         kills = await A.evaluate("[...AM.fighters.values()].reduce((a, f) => a + f.kills, 0)")
         ok('AI pilots fight and score kills', kills > 0, kills)
         await A.screenshot(path=OUT + 'ar1_practice.png')
@@ -60,7 +68,7 @@ async def main():
         # ---- shared FFA server
         await A.evaluate("arJoinServer('alpha')"); await wait_for(A, "SCENE === 'arena' && AM && AM.room")
         await B.evaluate("arJoinServer('alpha')"); await wait_for(B, "SCENE === 'arena' && AM && AM.room")
-        ok('both see each other + AI = 20 pilots', await wait_for(A, "AM.humans === 2 && AM.fighters.size === 20") and await wait_for(B, "AM.fighters.size === 20 && !AM.host"), [await A.evaluate("[AM.humans, AM.fighters.size, AM.host]"), await B.evaluate("[AM.humans, AM.fighters.size, AM.host]")])
+        ok('both see each other + 5 AI = 7 pilots', await wait_for(A, "AM.humans === 2 && AM.fighters.size === 7") and await wait_for(B, "AM.fighters.size === 7 && !AM.host"), [await A.evaluate("[AM.humans, AM.fighters.size, AM.host]"), await B.evaluate("[AM.humans, AM.fighters.size, AM.host]")])
         ok('B sees the same AI pilots as host A', await wait_for(B, "(() => { const ids = [...AM.fighters.values()].filter(f => f.bot).map(f => f.id).sort().join(); return ids.length > 0 && ids === window.__hostBots; })()" .replace('window.__hostBots', repr(await A.evaluate("[...AM.fighters.values()].filter(f => f.bot).map(f => f.id).sort().join()")))))
         ok('B sees A moving', await wait_for(B, "(() => { const a = [...AM.fighters.values()].find(f => f.human && !f.local); return a && a.x > 0 && a.cs === 'MASON'; })()"))
         await B.screenshot(path=OUT + 'ar5_ffa_B.png')
@@ -77,9 +85,9 @@ async def main():
         ok('kills paid: coins + trophies + mailbox', await wait_for(B, "!!(NET.arena && NET.arena.trophies === 4)", 6000), [q("select kills, trophies from public.arena_stats"), q("select coins, reason from public.deliveries")])
         # host leaves: B takes over the AI pilots
         await A.evaluate("arLeave(true)")
-        ok('B becomes host and keeps 20 pilots', await wait_for(B, "AM.host && AM.humans === 1 && AM.fighters.size === 20", 9000), await B.evaluate("[AM.host, AM.humans, AM.fighters.size]"))
+        ok('B becomes host and keeps the AI pilots', await wait_for(B, "AM.host && AM.humans === 1 && AM.fighters.size === 6", 9000), await B.evaluate("[AM.host, AM.humans, AM.fighters.size]"))
         await B.wait_for_timeout(1500)
-        ok('taken-over AI keeps fighting', await B.evaluate("[...AM.fighters.values()].filter(f => f.bot && f.ai).length") >= 18)
+        ok('taken-over AI keeps fighting', await B.evaluate("[...AM.fighters.values()].filter(f => f.bot && f.ai).length") == 5)
         await B.evaluate("arLeave(true)"); await B.wait_for_timeout(500)
         ok('presence cleared after leaving', q("select count(*) from public.arena_presence")[0][0] == 0)
         # ---- ranked 1v1 between two real players

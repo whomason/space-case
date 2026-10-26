@@ -148,7 +148,7 @@ r = call('A', 'select arena_list()'); ok('4 public arenas listed', len([x for x 
 r = call('A', "select arena_join('alpha')"); ok('A joins alpha', r['id'] == 'alpha', r)
 r = call('B', "select arena_join('alpha')"); ok('B joins alpha', r['id'] == 'alpha', r)
 r = call('A', 'select arena_list()'); al = [x for x in r if x['id'] == 'alpha'][0]; ok('alpha shows 2 humans', al['humans'] == 2 and set(al['players']) == {'MASON', 'KAI-7'}, al)
-r = call('A', 'select online_counts()'); ok('counts: real players + AI pilots', r['in_arenas'] == 2 and r['ai'] == 18 and r['online'] >= 2, r)
+r = call('A', 'select online_counts()'); ok('counts: real players + AI pilots (max 5 AI, 10 pilots)', r['in_arenas'] == 2 and r['ai'] == 5 and r['online'] >= 2, r)
 r = call('A', "select arena_report('alpha', 50, 5, 3, 9)"); ok('kills capped by time passed', r['kills'] <= 2, r)
 c.execute('reset role'); c.execute("update public.arena_presence set reported_at = now() - interval '60 seconds' where user_id = %s", (U['A'],))
 r = call('A', "select arena_report('alpha', 20, 4, 3, 9)"); ok('a minute of kills pays coins and trophies', r['kills'] == 20 and r['coins'] == 16 * 20 + 4 * 60 and r['trophies_gained'] == 28, r)
