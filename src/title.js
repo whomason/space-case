@@ -10,8 +10,11 @@ const LOGO_GLYPH = {
   A: ['.####.', '##..##', '##..##', '######', '##..##', '##..##', '##..##'],
   C: ['.####.', '##..##', '##....', '##....', '##....', '##..##', '.####.'],
   E: ['######', '##....', '##....', '#####.', '##....', '##....', '######'],
+  R: ['#####.', '##..##', '##..##', '#####.', '##.##.', '##..##', '##..##'],
+  T: ['######', '..##..', '..##..', '..##..', '..##..', '..##..', '..##..'],
 };
-const LOGO_K = 6, LOGO_DEPTH = 5;
+const LOGO_K = 5, LOGO_DEPTH = 4;
+const LOGO_A = 'SPACE', LOGO_B = 'CRATES', LOGO_N = LOGO_A.length + LOGO_B.length;
 const LOGO_COLS = {
   cool: ['#d8fdff', '#8ff3ff', '#4fd8ff', '#2fa8ff', '#3b74ff', '#5a4cff', '#7a37e6'],
   warm: ['#fff6c2', '#ffe36b', '#ffc53d', '#ffa024', '#ff7b1c', '#f2521e', '#d6341f'],
@@ -53,8 +56,8 @@ function ttInit() {
   TT.big = []; for (let i = 0; i < 7; i++) TT.big.push({ x: 20 + R() * 440, y: 10 + R() * 170, ph: R() * 9, c: ['#ffffff', '#9fe8ff', '#ffd9a0'][R.int(3)] });
   // a giant planet on the horizon
   TT.pl = renderSphere(planetDef(3), 250, 2.2);
-  TT.word1 = [...'SPACE'].map(ch => ttLetter(ch, LOGO_COLS.cool));
-  TT.word2 = [...'CASE'].map(ch => ttLetter(ch, LOGO_COLS.warm));
+  TT.word1 = [...LOGO_A].map(ch => ttLetter(ch, LOGO_COLS.cool));
+  TT.word2 = [...LOGO_B].map(ch => ttLetter(ch, LOGO_COLS.warm));
   TT.P = new Particles(700); TT.ready = true; TT.t = 0;
   TT.warp = []; for (let i = 0; i < 160; i++) TT.warp.push({ a: R() * TAU, d: R() * 40, s: 0.4 + R() * 0.9, c: R() < 0.25 ? '#8ff3ff' : '#ffffff' });
   TT.rocks = []; for (let i = 0; i < 6; i++) TT.rocks.push({ x: R() * W, y: 30 + R() * 150, s: 1 + R.int(3), v: 3 + R() * 6, c: ['#3a2e57', '#4a3b6b', '#2b2342'][R.int(3)] });
@@ -64,16 +67,16 @@ const ttBack = t => { t = clamp(t, 0, 1); const s = 1.9; return 1 + (s + 1) * Ma
 function ttRar(r) { return r === 6 ? rainbow(T_NOW) : RAR[r].c; }
 // logo layout: one line, centred
 function ttLogoPos() {
-  const k = LOGO_K, lw = 6 * k, gap = 6, sp = 22;
-  const total = 9 * lw + 7 * gap + sp; let x = Math.round(W / 2 - total / 2) - 2; const out = [];
-  for (let i = 0; i < 9; i++) { out.push(x); x += lw + gap; if (i === 4) x += sp - gap; }
+  const k = LOGO_K, lw = 6 * k, gap = 5, sp = 20;
+  const total = LOGO_N * lw + (LOGO_N - 2) * gap + sp; let x = Math.round(W / 2 - total / 2) - 2; const out = [];
+  for (let i = 0; i < LOGO_N; i++) { out.push(x); x += lw + gap; if (i === LOGO_A.length - 1) x += sp - gap; }
   return out;
 }
 function drawTitle(dt) {
   if (!TT.ready) { ttInit(); rect(0, 0, W, H, '#000'); return; }
   TT.t += dt; const t = TT.t, P = TT.P;
   const skip = t < TT_INTRO && (IN.pr || kp('Enter') || kp('Space') || kp('Escape'));
-  if (skip) { TT.t = TT_INTRO; IN.pr = false; for (let i = 0; i < 9; i++) TT['landed' + i] = true; }
+  if (skip) { TT.t = TT_INTRO; IN.pr = false; for (let i = 0; i < LOGO_N; i++) TT['landed' + i] = true; }
   // ---- 1. hyperspace
   if (t < 1.15) {
     rect(0, 0, W, H, '#020109'); const sp = Math.min(1, t / 0.9);
@@ -147,17 +150,17 @@ function drawTitle(dt) {
 }
 function ttLogo(t) {
   const xs = ttLogoPos(), letters = TT.word1.concat(TT.word2), base = 22;
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < LOGO_N; i++) {
     const t0 = 1.5 + i * 0.075, k = (t - t0) / 0.32; if (k <= 0) continue;
     const y = base + (1 - ttBack(k)) * -70 + Math.sin(T_NOW * 2.2 + i * 0.55) * (k > 1.6 ? 1.5 : 0);
-    if (k >= 1 && !TT['landed' + i]) { TT['landed' + i] = true; shake(i === 8 ? 5 : 2); TT.P.burst(xs[i] + 18, base + 44, 8, { c: ['#ffffff', '#e6dcff', i < 5 ? '#8ff3ff' : '#ffe36b'], sp: 70, life: 0.45, ang: -Math.PI / 2, spread: 2.4, g: 140, s: 1 }); }
+    if (k >= 1 && !TT['landed' + i]) { TT['landed' + i] = true; shake(i === LOGO_N - 1 ? 5 : 2); TT.P.burst(xs[i] + 15, base + 38, 8, { c: ['#ffffff', '#e6dcff', i < LOGO_A.length ? '#8ff3ff' : '#ffe36b'], sp: 70, life: 0.45, ang: -Math.PI / 2, spread: 2.4, g: 140, s: 1 }); }
     ctx.globalAlpha = clamp(k * 3, 0, 1); ctx.drawImage(letters[i], xs[i] - 2, Math.round(y) - 2); ctx.globalAlpha = 1;
   }
   // a shine sweeps across every few seconds
   const st = (t - 2.4) % 3.6; if (t > 2.4 && st < 0.7) {
     const sx = -40 + st / 0.7 * (W + 80);
     ctx.save(); ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx + 16, 0); ctx.lineTo(sx - 14, 90); ctx.lineTo(sx - 30, 90); ctx.closePath(); ctx.clip();
-    ctx.globalAlpha = 0.7; for (let i = 0; i < 9; i++) { const y = base + Math.sin(T_NOW * 2.2 + i * 0.55) * 1.5; ctx.drawImage(letters[i].mask, xs[i] - 2, Math.round(y) - 2); }
+    ctx.globalAlpha = 0.7; for (let i = 0; i < LOGO_N; i++) { const y = base + Math.sin(T_NOW * 2.2 + i * 0.55) * 1.5; ctx.drawImage(letters[i].mask, xs[i] - 2, Math.round(y) - 2); }
     ctx.restore(); ctx.globalAlpha = 1;
   }
 }

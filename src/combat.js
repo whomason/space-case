@@ -160,6 +160,7 @@ function hitEnemy(w, e, dmg, o = {}) {
   if (e.steam > 0) mult *= 1.3;
   if (pl) {
     if (pl.focusT > 0) mult *= 1.5;
+    if (!w.demo && typeof relicPower === 'function') mult *= relicPower();
     const sa = pl.setAb || {};
     if (sa[8] && pl.hp < pl.maxHp * 0.35) mult *= sa[8] > 1 ? 1.7 : 1.5;
     if (sa[10] && w.combo >= 12) mult *= sa[10] > 1 ? 1.35 : 1.2;
@@ -338,6 +339,7 @@ function updateShots(w, dt) {
     }
     if (!removed && w.props.length) for (const p of w.props) {
       if (p.dead || !p.shoot || s.hits.has(p)) continue;
+      if (p.kind === 'prism') { if (Math.hypot(p.x - s.x, p.y - (p.cy || 4) - s.y) < p.r + s.r) { s.hits.add(p); prismSplit(w, s, p); } continue; }
       if (Math.hypot(p.x - s.x, p.y - (p.cy || 4) - s.y) < p.r + s.r) { s.hits.add(p); hitProp(w, p, s.dmg, s.el ? s.el[0] : null); if (s.v.detonate) explode(w, s.x, s.y, (s.aoe || 14) + s.v.detonate * 6, s.dmg * 0.8, s.col); if (s.sig === 'blackhole') { blackHole(w, s); removed = true; break; } if (s.pierce > 0) { s.pierce--; continue; } removed = true; break; }
     }
     if (removed) { s.dead = true; continue; }
@@ -504,7 +506,7 @@ function updateTele(w, dt) {
       t.done = true;
       if (t.onDone) t.onDone(t);
       if (t.line) { if (t.dmg > 0) { if (segDist(pl.x, pl.y - 6, t.x, t.y, t.x + Math.cos(t.a) * t.len, t.y + Math.sin(t.a) * t.len) < (t.wd || 6) / 2 + pl.r) hurtPlayer(w, t.dmg, null); for (let k = 0; k < t.len; k += 24) w.fx.add({ x: t.x + Math.cos(t.a) * k, y: t.y + Math.sin(t.a) * k, life: 0.3, c: t.col, s: Math.max(2, (t.wd || 6) * 0.6), t: 'shrink' }); } continue; }
-      if (Math.hypot(pl.x - t.x, pl.y - t.y) < t.r + pl.r) hurtPlayer(w, t.dmg, null);
+      if (!t.safe && Math.hypot(pl.x - t.x, pl.y - t.y) < t.r + pl.r) hurtPlayer(w, t.dmg, null);
       w.fx.burst(t.x, t.y, 14, { c: [t.col, '#fff', '#ffcb3d'], sp: t.r * 4, life: 0.4, s: 2, t: 'shrink' }); w.fx.add({ x: t.x, y: t.y, vx: 0, vy: 0, life: 0.3, c: '#fff', s: t.r, t: 'ring' });
       if (w.sndOn) SND.play('boom'); shake(2);
     }
@@ -845,4 +847,12 @@ function drawDummy(e, x, y) {
   rect(x - 1, y - 6, 3, 7, '#6b5a48'); rect(x - 6, y - 26, 13, 20, e.flash > 0 ? '#fff' : '#d6bfb2'); rect(x - 5, y - 25, 11, 18, e.flash > 0 ? '#fff' : '#efd9ce');
   ring(x, y - 16, 4, COL.coral); ring(x, y - 16, 2, COL.coral); px(x, y - 16, COL.coral);
   text('DUMMY', x, y - 34, COL.cream, FS, 1);
+}
+
+// a shot through a prism splits into 2 (3 with the prism shard)
+function prismSplit(w, s, p) {
+  if (s.prismed) return; const n = hasRelic(15) ? 3 : 2; p.flash = 0.1;
+  w.fx.burst(s.x, s.y, 8, { c: ['#c77dff', '#fff', '#7fe9ff'], sp: 90, life: 0.3 });
+  for (let i = 0; i < n; i++) { const a = s.ang + (i - (n - 1) / 2) * 0.32; const c = Object.assign({}, s, { hits: new Set([p]), ang: a, prismed: true, dmg: s.dmg * 0.8, life: Math.max(s.life, 0.6) }); c.vx = Math.cos(a) * s.spd; c.vy = Math.sin(a) * s.spd; w.shots.push(c); }
+  s.dead = true;
 }

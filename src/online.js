@@ -249,8 +249,8 @@ function drawOnlinePill(x, y) {
   if (n) { const bw = textW(n + '', FS) + 6; panel(x + w - 4, y - 4, bw, 9, { bg: COL.pink, bd: '#fff', flat: true }); text(n + '', x + w - 4 + bw / 2, y - 2, COL.navy, FS, 1); }
 }
 
-// the number players see: (real pilots online + 200) x 3
-function shownOnline(c) { return ((c && c.online) || 0) * 3 + 600; }
+// the number players see: (real pilots online + 25) x 3
+function shownOnline(c) { return ((c && c.online) || 0) * 3 + 75; }
 // ---------- the ONLINE panel ----------
 function panelSocial(st) {
   if (panelFrame('ONLINE', COL.cyan)) return;

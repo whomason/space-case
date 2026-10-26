@@ -67,11 +67,12 @@ function itemGrid(st, ids, x, y, w, h, o = {}) {
     const i = r * cols + c; if (i >= ids.length) break; const id = ids[i];
     const bx = x + 2 + c * (cw + gap), by = y + 2 + r * (ch + gap) - st.scroll;
     if (id === null) { const hov = inBox(bx, by, cw, ch) && inBox(x, y, w, h); panel(bx, by, cw, ch, { bg: COL.void0, bd: hov ? COL.ink : COL.void3, flat: true }); line(bx + 6, by + 6, bx + cw - 7, by + ch - 7, COL.mute); text('NONE', bx + cw / 2, by + ch - 7, COL.mute, FS, 1); if (hov && clickIn(bx, by, cw, ch)) clicked = 'NONE'; continue; }
-    const d = getDef(id); const own = o.allOwned || owned(id); const sel = o.sel === id; const hov = inBox(bx, by, cw, ch) && inBox(x, y, w, h);
+    const d = getDef(id); const own = o.allOwned || owned(id); const sel = o.sel === id || (o.multi && o.multi.includes(id)); const hov = inBox(bx, by, cw, ch) && inBox(x, y, w, h);
     panel(bx, by, cw, ch, { bg: sel ? COL.void3 : COL.void0, bd: sel ? COL.mint : own ? (hov ? COL.ink : (d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c)) : COL.void3, flat: true });
     drawItemIn(id, bx + 1, by + 1, cw - 2, ch - 2, { sil: !own, maxSc: o.maxSc || 1, noFx: !own });
     if (own && S.inv[id] && S.inv[id].l > 1) text(S.inv[id].l + '', bx + cw - 2, by + ch - 6, S.inv[id].l >= 10 ? COL.gold : COL.cyan, FS, 2);
     if (o.eqd && o.eqd.includes(id)) { rect(bx + 1, by + 1, 4, 4, COL.mint); }
+    if (o.multi && o.multi.includes(id)) { ctx.strokeStyle = COL.gold; ctx.strokeRect(bx + 0.5, by + 0.5, cw - 1, ch - 1); rect(bx + cw - 7, by + 1, 6, 6, COL.gold); line(bx + cw - 6, by + 4, bx + cw - 5, by + 5, '#05020c'); line(bx + cw - 5, by + 5, bx + cw - 3, by + 2, '#05020c'); }
     if (S.fresh && S.fresh[id] && own) { if (Math.floor(T_NOW * 3) % 2) { ctx.strokeStyle = COL.pink; ctx.strokeRect(bx + 0.5, by + 0.5, cw - 1, ch - 1); } panel(bx + 1, by + 1, 15, 7, { bg: COL.pink, bd: COL.pink, flat: true }); text('NEW', bx + 2, by + 2, COL.navy, FS); }
     if (hov) { IN.cursor = 'pointer'; TIP.set(own ? { item: id } : `??? ${RAR[d.r].n} ${roleHint(id)}. FIND: ${whereToFind(id)}`); if (clickIn(bx, by, cw, ch)) clicked = id; if (own) seeFresh(id); }
   }

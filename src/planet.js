@@ -10,9 +10,9 @@ function genPlanetMap(pi, seed) {
   const p = planetDef(pi), R = RNG(seed), nz = makeNoise(seed), nz2 = makeNoise(seed + 9);
   const cx = MW / 2, cy = MH / 2; const GW = MW * TS, GH = MH * TS;
   // liquid field at 4px resolution, smooth edges
-  const LM = 4, LW = GW / LM + 1, LH = GH / LM + 1, lv = new Float32Array(LW * LH);
+  const LM = 4, LW = GW / LM + 1, LH = GH / LM + 1, lv = new Float32Array(LW * LH); const SL = sigLayoutInit(pi, RNG(seed + 5));
   for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) {
-    const tx = x * LM / TS, ty = y * LM / TS; let v = p.liq ? nz2.fbm(tx * 0.085, ty * 0.085, 3) : 1;
+    const tx = x * LM / TS, ty = y * LM / TS; let v = p.liq ? nz2.fbm(tx * 0.085, ty * 0.085, 3) : 1; v = sigLayoutV(SL, tx, ty, v);
     const dc = Math.hypot(tx - cx, ty - cy); if (dc < 8) v = Math.max(v, 0.33 + (8 - dc) * 0.04);
     const edge = Math.min(tx, ty, MW - tx, MH - ty); if (edge < 1.2) v = Math.min(v, 0.33 - (1.2 - edge) * 0.4);
     lv[y * LW + x] = v;
@@ -24,6 +24,18 @@ function genPlanetMap(pi, seed) {
   let lair = null; for (let k = 0; k < 300; k++) { const a = R() * TAU, dd = R.range(380, 470); const x = shipX + Math.cos(a) * dd, y = shipY + Math.sin(a) * dd; if (x > 100 && y > 100 && x < GW - 100 && y < GH - 100 && lvAt(x, y) > TH + 0.05) { lair = { x, y }; break; } }
   if (!lair) lair = { x: shipX + 400, y: shipY };
   for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) { const d = Math.hypot((x * LM - lair.x) / 1.2, y * LM - lair.y); if (d < 110) lv[y * LW + x] = Math.max(lv[y * LW + x], TH + (110 - d) * 0.004); }
+  // there is always a way from the ship to the boss: if the land doesn't connect, cut a winding causeway
+  {
+    const solidAt = (tx, ty) => lvAt(tx * TS + 8, ty * TS + 8) < TH + 0.02;
+    const s0 = [Math.floor(shipX / TS), Math.floor(shipY / TS)], g0 = [Math.floor(lair.x / TS), Math.floor(lair.y / TS)];
+    const seen = new Uint8Array(MW * MH), q = [s0]; seen[s0[1] * MW + s0[0]] = 1; let ok = false;
+    while (q.length && !ok) { const [x, y] = q.shift(); if (Math.abs(x - g0[0]) + Math.abs(y - g0[1]) <= 2) ok = true; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 1 || ny < 1 || nx >= MW - 1 || ny >= MH - 1 || seen[ny * MW + nx] || solidAt(nx, ny)) continue; seen[ny * MW + nx] = 1; q.push([nx, ny]); } }
+    if (!ok) {
+      const n = 60; for (let i = 0; i <= n; i++) { const k = i / n, wob = Math.sin(k * Math.PI * 3 + seed) * 40 * Math.sin(k * Math.PI);
+        const px = lerp(shipX, lair.x, k) + (lair.y - shipY) / 500 * wob, py = lerp(shipY, lair.y, k) - (lair.x - shipX) / 500 * wob;
+        for (let y = Math.floor((py - 30) / LM); y <= Math.ceil((py + 30) / LM); y++) for (let x = Math.floor((px - 30) / LM); x <= Math.ceil((px + 30) / LM); x++) { if (x < 0 || y < 0 || x >= LW || y >= LH) continue; const d = Math.hypot(x * LM - px, y * LM - py); if (d < 26) lv[y * LW + x] = Math.max(lv[y * LW + x], TH + 0.08 + (26 - d) * 0.004); } }
+    }
+  }
   // pixel mask
   const mask = new Uint8Array(GW * GH);
   for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (lvAt(x, y) < TH) mask[y * GW + x] = 1;
@@ -169,6 +181,8 @@ function startRun(pi) {
   if (p.trait === 'SPORE CLOUDS') for (let i = 0; i < 9; i++) RUN.spores.push({ x: R0() * map.GW, y: R0() * map.GH, r: 30 + R0() * 30, vx: (R0() - 0.5) * 8, vy: (R0() - 0.5) * 8 });
   w.onKill = e => onRunKill(e); w.onDeath = () => endRun('dead'); w.onProp = (pr, el) => onRunProp(pr, el);
   setupProps(RUN, RNG(seed + 77));
+  if (p.trait === 'HEAVY GRAVITY' && hasRelic(9)) w.moveMul = 1;
+  RUN.baseMove = w.moveMul; sigSetup(RUN, RNG(seed + 133));
   if (evKey) setupEvent(RUN, evKey, RNG(seed + 91));
   SND.playSong('planet');
   setScene('planet');
@@ -180,6 +194,7 @@ const TUT = [
   { k: 'tool', keys: ['Q'], t: 'SWITCH TO YOUR MINING TOOL', tt: 'TAP SWAP FOR YOUR MINING TOOL' },
   { k: 'mine', keys: ['CLICK'], t: 'WALK UP TO GLOWING ORE AND HOLD CLICK ON IT', tt: 'WALK UP TO GLOWING ORE AND HOLD ON IT' },
   { k: 'boost', keys: ['SPACE'], t: 'BOOST FORWARD. IT RECHARGES OVER TIME', tt: 'TAP BOOST TO DASH FORWARD' },
+  { k: 'gadget', keys: ['F'], t: 'FIRE YOUR GADGET AT THE ALIENS. IT RECHARGES, SO USE IT OFTEN', tt: 'TAP GADGET TO USE YOUR GADGET' },
   { k: 'weapon', keys: ['Q'], t: 'SWAP BACK TO YOUR WEAPON. KEYS 1 2 3 PICK A SLOT TOO', tt: 'TAP SWAP FOR YOUR WEAPON' },
   { k: 'o2', keys: ['E'], t: 'YOUR O2 IS RUNNING NOW. GET BACK TO THE SHIP AND PRESS E BEFORE IT HITS ZERO', tt: 'YOUR O2 IS RUNNING NOW. GET BACK TO THE SHIP AND TAP USE BEFORE IT HITS ZERO' },
 ];
@@ -193,6 +208,7 @@ function tutTick(dt, inp) {
     case 'tool': ok = pl.mode === 'tool'; break;
     case 'mine': ok = R.cargoN >= 2; break;
     case 'boost': if (inp.boost) T.boosted = true; ok = !!T.boosted; break;
+    case 'gadget': if (inp.gadget) T.gad = true; ok = !!T.gad || !S.eq.gadget; break;
     case 'weapon': ok = pl.mode === 'weapon'; break;
     case 'o2': ok = T.t > 8; break;
   }
@@ -277,6 +293,7 @@ function onRunKill(e) {
     banner(first ? `${R.p.boss[0]} DEFEATED! +3 ARSENAL CRATES FOR YOUR HAUL` : `${R.p.boss[0]} DEFEATED! +1 ARSENAL CRATE`, COL.gold);
     SND.play('fanfare'); flash(0.6, '#fff'); shake(8); FX.hitstop = 0.25;
     if (R.p.mastery) checkMastery('noHitBoss', !R.bossHit);
+    sigBossDown(R);
     SND.playSong('planet'); dirty();
   }
   const wid = pl.mode === 'weapon' && pl.W ? pl.W.id : S.eq.weapon;
@@ -359,6 +376,7 @@ function updateRun(dt) {
   if (R.state === 'play' && !pl.dead) {
     if (inp.swap) cycleSlot(pl, w);
     if (inp.slot !== undefined) setSlot(pl, w, inp.slot);
+    if (!R.spores.length) w.moveMul = R.baseMove; sigUpdate(R, dt);
     if (inp.gadget && pl.G) { if (pl.G.cd > 0) { if (!pl.gDenyT || w.t - pl.gDenyT > 0.4) { pl.gDenyT = w.t; SND.play('deny'); } } else useGadget(w, pl, inp.ax, inp.ay); }
     updatePlayer(w, pl, inp, dt, R.L); tutTick(dt, inp);
     if (pl.mode === 'weapon' && pl.W) fireWeapon(w, pl, pl.W, inp, dt); else { w.beam = null; }
@@ -366,7 +384,7 @@ function updateRun(dt) {
     if (pl.mode === 'tool') updateExtract(dt, inp);
     else R.extracting = null;
     // o2
-    const heat = R.p.trait === 'HEAT' ? 1 + 0.6 * (1 - R.L.shield) : 1;
+    const heat = R.p.trait === 'HEAT' && !hasRelic(3) ? 1 + 0.6 * (1 - R.L.shield) : 1;
     if (!R.tut || R.tut.i >= TUT.length - 1) R.o2 -= dt * heat;
     if (R.o2 < R.o2max * 0.25) { R.o2warn -= dt; if (R.o2warn <= 0) { R.o2warn = R.o2 < R.o2max * 0.1 ? 0.5 : 1.2; SND.play('o2'); } }
     if (R.o2 <= 0) { if (pl.perks.reserve && !R.reserveUsed) { R.reserveUsed = true; R.o2 = R.o2max * 0.3; banner('RESERVE O2 TANK ENGAGED', COL.cyan); } else endRun('o2'); }
@@ -375,7 +393,7 @@ function updateRun(dt) {
     R.prompt = null;
     if (dShip < 30) { R.prompt = { x: map.shipX, y: map.shipY - 30, t: `E  LAUNCH (${R.cargoN} ORE)` }; if (kp('KeyE')) endRun('launch'); }
     for (const wr of map.wrecks) if (!wr.looted && Math.hypot(pl.x - wr.x, pl.y - wr.y) < 28) { R.prompt = { x: wr.x, y: wr.y - 22, t: 'E  SEARCH WRECK' }; if (kp('KeyE')) lootWreck(wr); }
-    updateProps(R, dt);
+    updateProps(R, dt); sigInteract(R);
     updateEvent(R, dt);
     updateSignal(R, dt);
     // boss lair
@@ -397,7 +415,7 @@ function updateRun(dt) {
     }
     if (R.carrier) { const e = R.carrier; if (e.dead) R.carrier = null; else { e.life -= dt; if (e.life <= 0) { e.dead = true; w.fx.burst(e.x, e.y - 6, 24, { c: [COL.blueL, '#fff'], sp: 120, life: 0.6, s: 2 }); banner('THE CRATE CARRIER WARPED AWAY', COL.dim); SND.play('deny'); R.carrier = null; } } }
     // hazards
-    if (R.p.trait === 'LIGHTNING') { R.lightningT -= dt; if (R.lightningT <= 0) { R.lightningT = 4 + R0() * 4; w.tele.push({ x: pl.x + (R0() - 0.5) * 120, y: pl.y + (R0() - 0.5) * 90, r: 20, t: 0, max: 1.1, dmg: 12 * w.dmgMul * (1 - R.L.shield), col: '#fff25a', bolt: true }); } }
+    if (R.p.trait === 'LIGHTNING') { R.lightningT -= dt; if (R.lightningT <= 0) { R.lightningT = 4 + R0() * 4; w.tele.push({ safe: hasRelic(14), x: pl.x + (R0() - 0.5) * 120, y: pl.y + (R0() - 0.5) * 90, r: 20, t: 0, max: 1.1, dmg: 12 * w.dmgMul * (1 - R.L.shield), col: '#fff25a', bolt: true }); } }
     if (R.p.trait === 'METEORS') { R.meteorT -= dt; if (R.meteorT <= 0) { R.meteorT = 3 + R0() * 3; for (let i = 0; i < 1 + R0.int(3); i++) w.tele.push({ x: pl.x + (R0() - 0.5) * 160, y: pl.y + (R0() - 0.5) * 120, r: 18, t: 0, max: 1.2, dmg: 14 * w.dmgMul * (1 - R.L.shield), col: '#ff7a2e', meteor: true }); } }
     if (R.spores.length) { let inSp = false; for (const s of R.spores) { s.x += s.vx * dt; s.y += s.vy * dt; if (Math.hypot(pl.x - s.x, pl.y - s.y) < s.r) inSp = true; } w.moveMul = inSp ? 0.6 * (1 - R.L.shield) + 0.4 : 1; }
   }
@@ -434,6 +452,7 @@ function updateExtract(dt, inp) {
   if (pl.perks.tchain) for (const o of map.ores) if (o !== best && o.left > 0 && Math.hypot(o.x - best.x, o.y - best.y) < 40 && R.L.toolTier >= o.tier) o.prog += dt * R.L.extract * 0.8 / hard;
   for (const o of map.ores) {
     while (o.left > 0 && o.prog >= 1) {
+      if (o.fake && sigOreFake(R, o)) break;
       o.prog -= 1; o.left--;
       const n = pl.perks.tdouble && R0() < 0.2 ? 2 : 1;
       for (let k = 0; k < n; k++) R.chunks.push({ x: o.x, y: o.y - 6, vx: (R0() - 0.5) * 90, vy: -60 - R0() * 60, t: 0, pi: o.pi, delay: 0.25 });
@@ -495,6 +514,7 @@ function drawRun() {
       else if (ph > 0.6) rect(sx + 3 + ((tx + ty) % 6), sy + 6 + (above ? 2 : 0), 4, 1, lc);
     }
   }
+  sigDrawGround(R, cx, cy);
   drawTele(w, cx, cy);
   // y-sorted objects
   const objs = [];
@@ -509,7 +529,7 @@ function drawRun() {
   objs.sort((a, b) => a[0] - b[0]);
   for (const [, k, o] of objs) {
     if (k === 0) { const s = o.s; const x = Math.floor(o.x - s.w / 2 - cx), y = Math.floor(o.y - s.h - cy + 2); shadow(o.x - cx, o.y - cy, Math.floor(s.w * 0.38), Math.max(2, Math.floor(s.w * 0.12)), 0.3); if (o.flip) { ctx.save(); ctx.translate(x + s.w, y); ctx.scale(-1, 1); ctx.drawImage(s.c, 0, 0); ctx.restore(); } else ctx.drawImage(s.c, x, y); if (o.lair && R.bossAvail && !R.bossBeaten && s.glow) { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(T_NOW * 4); ctx.drawImage(s.glow, x, y); ctx.globalAlpha = 1; } }
-    else if (k === 1) { const s = oreSprite(o.pi, o.size, Math.floor(T_NOW * 8) % 8); const sh = o.shake > 0 ? Math.round((R0() - 0.5) * 2) : 0; o.shake -= 1 / 60; const x = Math.floor(o.x - s.width / 2 - cx) + sh, y = Math.floor(o.y - s.height - cy + 3); const gl = 0.16 + 0.1 * Math.sin(T_NOW * 3 + o.x); ctx.globalAlpha = gl; ellipse(o.x - cx, o.y - cy - 2, 12 + o.size * 3, 6 + o.size, oreHex(o.pi)); ctx.globalAlpha = 1; shadow(o.x - cx, o.y - cy + 1, 6 + o.size * 2, 2, 0.3); ctx.drawImage(s, x, y); if (o === R.extractTarget && pl.mode === 'tool') { const ok = R.L.toolTier >= o.tier; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T_NOW * 8); ctx.drawImage(tinted(s, ok ? '#ffffff' : '#ff3050'), x, y); ctx.globalAlpha = 1; } if (((T_NOW * 1.7 + o.x * 0.01) % 2) < 0.12) { const sx = x + (o.x % (s.width - 2)) + 1, sy = y + 2; rect(sx, sy - 1, 1, 3, '#fff'); rect(sx - 1, sy, 3, 1, '#fff'); } if (o.left < o.units) bar(o.x - cx - 6, y - 4, 12, 2, o.left / o.units, oreHex(o.pi)); }
+    else if (k === 1) { const s = oreSprite(o.pi, o.size, Math.floor(T_NOW * 8) % 8); const sh = o.shake > 0 ? Math.round((R0() - 0.5) * 2) : 0; o.shake -= 1 / 60; const x = Math.floor(o.x - s.width / 2 - cx) + sh, y = Math.floor(o.y - s.height - cy + 3); const gl = 0.16 + 0.1 * Math.sin(T_NOW * 3 + o.x); ctx.globalAlpha = gl; ellipse(o.x - cx, o.y - cy - 2, 12 + o.size * 3, 6 + o.size, oreHex(o.pi)); ctx.globalAlpha = 1; if (!o.fake) shadow(o.x - cx, o.y - cy + 1, 6 + o.size * 2, 2, 0.3); if (o.fake && R.sig && R.sig.reveal) ctx.globalAlpha = 0.3 + 0.15 * Math.sin(T_NOW * 9); ctx.drawImage(s, x, y); ctx.globalAlpha = 1; if (o === R.extractTarget && pl.mode === 'tool') { const ok = R.L.toolTier >= o.tier; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T_NOW * 8); ctx.drawImage(tinted(s, ok ? '#ffffff' : '#ff3050'), x, y); ctx.globalAlpha = 1; } if (((T_NOW * 1.7 + o.x * 0.01) % 2) < 0.12) { const sx = x + (o.x % (s.width - 2)) + 1, sy = y + 2; rect(sx, sy - 1, 1, 3, '#fff'); rect(sx - 1, sy, 3, 1, '#fff'); } if (o.left < o.units) bar(o.x - cx - 6, y - 4, 12, 2, o.left / o.units, oreHex(o.pi)); }
     else if (k === 2) { const s = wreckSprite(R.pi); const x = Math.floor(o.x - s.width / 2 - cx), y = Math.floor(o.y - s.height - cy + 4); shadow(o.x - cx, o.y - cy, 18, 4, 0.35); ctx.drawImage(s, x, y); if (!o.looted) { if (R0() < 0.08) w.fx.add({ x: o.x + (R0() - 0.5) * 10, y: o.y - 14, vx: 4, vy: -14, life: 1.6, c: '#5a5a66', s: 2, t: 'fade', drag: 0.2 }); if (Math.floor(T_NOW * 3) % 2) px(x + 27, y + 13, '#4ef'); const by = Math.floor(o.y - cy - 34 + Math.sin(T_NOW * 3) * 2); text('!', o.x - cx, by, COL.gold, FB, 1); } }
     else if (k === 3) { const sx = map.shipX - 24 - cx, sy = map.shipY - 24 - cy + (R.state === 'land' ? -Math.max(0, 1 - R.st / 1.2) * 120 : 0) + (R.state === 'leave' ? -Math.pow(R.st, 2.2) * 40 : 0); shadow(map.shipX - cx, map.shipY + 8 - cy, 22, 5, 0.35); drawShip(S.eq, sx, sy, 1, T_NOW, { thrust: R.state === 'leave' ? 1 : 0 }); if (R.state === 'leave' && !pl.dead) {} }
     else if (k === 4) drawEnemy(w, o, cx, cy);
@@ -520,6 +540,7 @@ function drawRun() {
       if (R.extracting) { const o2 = R.extracting; const a = Math.atan2(o2.y - 6 - (pl.y - 8), o2.x - pl.x); const x0 = pl.x + Math.cos(a) * 14 - cx, y0 = pl.y - 8 + Math.sin(a) * 6 - cy; const c = weaponColor(eq.tool); for (let i = 0; i < 2; i++) line(x0, y0, o2.x - cx + (R0() - 0.5) * 4, o2.y - 6 - cy + (R0() - 0.5) * 4, i ? c.core : c.mid); }
     }
   }
+  sigDrawObjs(R, cx, cy);
   drawShots(w, cx, cy);
   drawEventWorld(R, cx, cy);
   // chunks
@@ -530,7 +551,7 @@ function drawRun() {
   // darkness
   drawBossOverlay(w);
   if (p.dark) drawDarkness(R, cx, cy);
-  drawAmbient(R, cx, cy);
+  drawAmbient(R, cx, cy); sigDrawSky(R, cx, cy);
   // telegraph bolts (lightning flash)
   for (const t of w.tele) if (t.bolt && t.t >= t.max - 0.02 && !t.flashed) { t.flashed = true; flash(0.35, '#fffbd0'); SND.play('rail'); let x = t.x - cx, y = -10; for (let i = 0; i < 8; i++) { const nx = (t.x - cx) + (R0() - 0.5) * 20, ny = (t.y - cy) * (i + 1) / 8; line(x, y, nx, ny, '#fff'); x = nx; y = ny; } }
   // sniper scope line
@@ -538,7 +559,7 @@ function drawRun() {
   // prompt
   if (R.prompt) { const t = R.prompt.t, ww = textW(t, FS) + 8; const x = Math.floor(R.prompt.x - cx - ww / 2), y = Math.floor(R.prompt.y - cy + Math.sin(T_NOW * 4) * 1.5); panel(x, y, ww, 11, { bg: COL.void0, bd: COL.gold }); text(t, x + ww / 2, y + 3, COL.gold, FS, 1); }
   drawTutWorld(R, cx, cy);
-  drawRunHUD(R);
+  drawRunHUD(R); sigHUD(R);
   drawTut(R);
   if (R.paused) drawPause(R);
   if (R.choice) drawChoiceOverlay();
@@ -567,7 +588,7 @@ function trailFx(w, pl, d) {
 let DARK_C = null;
 function drawDarkness(R, cx, cy) {
   if (!DARK_C) DARK_C = mkCanvas(W, H);
-  const g = DARK_C.x, pl = R.w.player, L = R.L.light;
+  const g = DARK_C.x, pl = R.w.player, L = R.L.light * sigLightMul(R);
   g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, W, H); g.fillStyle = 'rgba(2,3,10,0.93)'; g.fillRect(0, 0, W, H);
   g.globalCompositeOperation = 'destination-out';
   const hole = (x, y, r, a) => { g.globalAlpha = a; g.beginPath(); g.ellipse(Math.floor(x), Math.floor(y), r, r * 0.8, 0, 0, TAU); g.fill(); };
@@ -576,6 +597,7 @@ function drawDarkness(R, cx, cy) {
   for (const o of R.map.ores) if (o.left > 0) hole(o.x - cx, o.y - 6 - cy, 14, 0.5);
   for (const s of R.w.shots) hole(s.x - cx, s.y - cy, 10, 0.5);
   hole(R.map.shipX - cx, R.map.shipY - cy, 50, 0.5);
+  sigLight(R, hole, cx, cy);
   for (const e of R.w.ents) if (e.boss) hole(e.x - cx, e.y - 10 - cy, 40, 0.4);
   if (R.w.beam) hole(px0 + Math.cos(R.w.beam.a) * 40, py0 + Math.sin(R.w.beam.a) * 40, 40, 0.5);
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
@@ -804,7 +826,7 @@ function updateProps(R, dt) {
     const d = Math.hypot(pl.x - p.x, pl.y - p.y);
     if (p.use && d < p.r + 16 && !R.prompt) {
       R.prompt = { x: p.x, y: p.y - 30, t: p.use };
-      if (p.kind === 'turret' && kp('KeyE')) { p.on = 25; p.use = null; banner('TURRET ONLINE FOR 25 SECONDS', COL.blueL); SND.play('unlock'); }
+      if (p.kind === 'turret' && !p.machine && kp('KeyE')) { p.on = 25; p.use = null; banner('TURRET ONLINE FOR 25 SECONDS', COL.blueL); SND.play('unlock'); }
       if (p.kind === 'o2st' && kp('KeyE')) { R.o2 = Math.min(R.o2max, R.o2 + R.o2max * 0.45); p.use = null; p.used = true; w.fx.burst(p.x, p.y - 10, 20, { c: ['#4ee8ff', '#fff'], sp: 80 }); w.fx.text(pl.x, pl.y - 30, '+O2', '#4ee8ff', { f: FB }); SND.play('pickup'); }
       if (p.kind === 'pylon' && !p.on) { if (key('KeyE') || (IN.touch && IN.down)) { p.charge = (p.charge || 0) + dt; if (R0() < 0.4) w.fx.add({ x: p.x + (R0() - 0.5) * 10, y: p.y - 20, vx: 0, vy: -30, life: 0.4, c: '#7fe9ff', s: 1 }); if (p.charge >= 2.5) { p.on = true; p.use = null; R.ev.n++; SND.play('unlock'); banner(R.ev.n >= R.ev.need ? 'ALL PYLONS ON! THE VAULT IS OPEN' : `PYLON POWERED ${R.ev.n}/${R.ev.need}`, COL.gold); if (R.ev.n >= R.ev.need) { const v = w.props.find(q => q.kind === 'vault'); if (v) { v.use = 'E  OPEN THE VAULT'; v.open = true; } } else eventWave(R, p.x, p.y, 4); } } }
       if (p.kind === 'vault' && p.open && kp('KeyE')) { p.use = null; p.looted = true; completeEvent(R, p.x, p.y); }
@@ -883,6 +905,8 @@ function updateEvent(R, dt) {
 }
 function drawProp(R, p, cx, cy) {
   const x = Math.floor(p.x - cx), y = Math.floor(p.y - cy), fl = p.flash > 0;
+  if (p.kind === 'arrival') { const b = Math.round(Math.sin(T_NOW * 3) * 2); ctx.globalAlpha = 0.3 + 0.2 * Math.sin(T_NOW * 5); ellipse(x, y - 4, 22, 10, COL.gold); ctx.globalAlpha = 1; shadow(x, y, 10, 3, 0.4); miniCrate(x - 6, y - 14 + b, Math.min(7, R.haulTier + 1)); for (let i = 0; i < 3; i++) { const a = T_NOW * 2 + i * 2.1; px(x + Math.cos(a) * 12, y - 10 + Math.sin(a) * 5, '#fff6c2'); } if (Math.floor(T_NOW * 2) % 2) text('ARRIVAL CACHE', x, y - 26, COL.gold, FS, 1); return; }
+  if (p.kind === 'prism') { shadow(x, y, 7, 2, 0.4); ctx.fillStyle = fl ? '#ffffff' : '#c77dff'; ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.lineTo(x + 7, y - 4); ctx.lineTo(x, y); ctx.lineTo(x - 7, y - 4); ctx.fill(); ctx.fillStyle = '#f0d0ff'; ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.lineTo(x + 3, y - 6); ctx.lineTo(x, y - 2); ctx.fill(); if (((T_NOW * 1.3 + p.x * 0.02) % 2) < 0.15) { rect(x - 1, y - 18, 3, 1, '#fff'); rect(x, y - 19, 1, 3, '#fff'); } return; }
   switch (p.kind) {
     case 'pod': {
       const g = 0.35 + 0.25 * Math.sin(T_NOW * 4 + p.x); shadow(x, y, 5, 2, 0.35);

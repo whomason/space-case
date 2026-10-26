@@ -1,8 +1,14 @@
-# Space Case
+# Space Crates
 
 An 8-bit space crate-opening game: open crates, gear up your astronaut and ship, land on 20 planets, fight aliens, mine ore. Sign in to keep your save in the cloud, add friends, join a crew and trade.
 
 **Play:** https://whomason.github.io/space-case/
+
+## Planets and relics
+
+- Every planet has one signature mechanic and its own map shape: supply drops on Dustmoor, black ice on Glacis, tides on Saltmere, total darkness on Abyssia, and so on.
+- Each boss drops a **relic**. It is the key to the next planet's mechanic (cleat spikes stop you sliding on Glacis, the coolant core handles Pyrrhos's heat).
+- The star map and the warp screen show each planet's signature, its prize relic, and which relic helps you there. The code is in `src/sigs.js`.
 
 ## How it's built
 

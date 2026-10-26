@@ -47,10 +47,11 @@ function openStation(id) {
   SND.play('click');
   if (id === 'crates' || id === 'vendor') { BAY.auto = true; setScene('crates'); return; }
   if (id === 'map') { setScene('map'); return; }
+  if (id === 'launch' && S.planet.landings === 0 && S.stats.crates > 0 && S.stats.equips === 0) { toast('EQUIP YOUR NEW WEAPON BEFORE YOU LAUNCH', COL.gold); id = 'locker'; }
   if (id === 'launch') { if (SCENE === 'hub' && HUB.launch === null) { HUB.launch = 0; HUB.panel = null; SND.play('unlock'); } else setScene('map'); return; }
   if (S.unlockNew && S.unlockNew[id]) { delete S.unlockNew[id]; dirty(); }
   HUB.panel = id; HUB.ps[id] = HUB.ps[id] || { tab: 0, slot: id === 'hangar' ? 'engine' : 'weapon', scroll: 0 };
-  const ps = HUB.ps[id]; ps.sell = false; ps.sellSel = null; ps.bulk = 0;   // selling never carries over from the last visit
+  const ps = HUB.ps[id]; ps.sell = false; ps.fuse = false; ps.pick = []; ps.fuseRes = null;   // selling never carries over from the last visit
   if (id === 'mining') tickMiners();
 }
 // ---------- starfield ----------
@@ -213,9 +214,9 @@ function drawNav(dimmed) {
   if (!dimmed) { const s = VN[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, ry0 + (VN.length - 1) * (rh + 2) + 2 + k * 7, COL.dim, FS)); }
   // first-time guidance
   if (!dimmed) {
-    const tip = S.stats.crates === 0 ? [1, 'START HERE: OPEN A CRATE'] : S.planet.landings === 0 ? [0, 'NEXT: LAUNCH TO DUSTMOOR'] : null;
-    const ci = VN.findIndex(n => n.id === 'crates');
-    if (tip) { const yy = tip[0] === 0 ? ly + 16 : ry0 + (ci - 1) * (rh + 2) + 5; const bx = x + w + 8 + Math.round(Math.sin(T_NOW * 6) * 3); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(bx, yy + 4); ctx.lineTo(bx + 6, yy); ctx.lineTo(bx + 6, yy + 8); ctx.fill(); const tw = textW(tip[1], FS) + 8; panel(bx + 7, yy - 2, tw, 12, { bg: COL.pink, bd: '#fff', flat: true }); text(tip[1], bx + 7 + tw / 2, yy + 1, COL.navy, FS, 1); }
+    const tip = S.stats.crates === 0 ? ['crates', 'START HERE: OPEN A WEAPON CRATE'] : S.stats.equips === 0 && S.planet.landings === 0 ? ['locker', 'NEXT: EQUIP YOUR NEW WEAPON'] : S.planet.landings === 0 ? ['launch', 'NEXT: LAUNCH TO DUSTMOOR'] : null;
+    const ti = tip ? VN.findIndex(n => n.id === tip[0]) : -1;
+    if (tip && (tip[0] === 'launch' || ti > 0)) { const yy = tip[0] === 'launch' ? ly + 16 : ry0 + (ti - 1) * (rh + 2) + 5; const bx = x + w + 8 + Math.round(Math.sin(T_NOW * 6) * 3); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(bx, yy + 4); ctx.lineTo(bx + 6, yy); ctx.lineTo(bx + 6, yy + 8); ctx.fill(); const tw = textW(tip[1], FS) + 8; panel(bx + 7, yy - 2, tw, 12, { bg: COL.pink, bd: '#fff', flat: true }); text(tip[1], bx + 7 + tw / 2, yy + 1, COL.navy, FS, 1); }
   }
 }
 function drawNextUp() {
@@ -291,30 +292,82 @@ function equipSlotGrid(st, x, y, w, h) {
   const slot = st.slot; const ids = ownedFor(slot); const optional = !SLOTS_GEAR.includes(slot) && !SLOTS_SHIP.includes(slot);
   const list = optional ? [null].concat(ids) : ids;
   text(`${SLOT_LABEL[slot]}: ${ids.length} OWNED`, x, y - 10, COL.ink, FS);
+  if (S.stats.equips === 0 && slot === 'weapon' && !st.sell && !st.fuse) { const k = Math.floor(T_NOW * 3) % 2; textO('CLICK YOUR NEW WEAPON TO EQUIP IT', x + w / 2, y + 60, k ? COL.gold : '#fff6c2', '#000', FB, 1); const ay = y + 28 + Math.round(Math.sin(T_NOW * 6) * 2); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(x + 18, ay + 8); ctx.lineTo(x + 24, ay + 16); ctx.lineTo(x + 30, ay + 8); ctx.fill(); }
   const big = slot === 'weapon' || slot === 'skin_weapon';
   // sell mode
-  if ((slot === 'weapon' || slot === 'gadget') && S.eq[slot] && !st.sell && button(x + w - 112, y - 14, 44, 12, 'TEST IT', { font: FS, kind: 'blue', tip: 'TRY IT IN THE TEST RANGE' })) { startRange(S.eq[slot], 'locker'); return; }
-  if (button(x + w - 64, y - 14, 64, 12, st.sell ? 'DONE SELLING' : 'SELL ITEMS', { font: FS, kind: st.sell ? 'cream' : 'def', tip: 'SELL GEAR YOU DO NOT NEED FOR COINS' })) { st.sell = !st.sell; st.sellSel = null; st.bulk = 0; SND.play('click'); }
-  const gh = st.sell ? h - 26 : h;
-  const c = itemGrid(st, list, x, y, w, gh, { cw: big ? 40 : 30, ch: big ? 22 : 26, sel: st.sell ? st.sellSel : S.eq[slot], empty: 'OPEN CRATES TO FIND MORE', eqd: st.sell ? Object.values(S.eq) : null });
-  if (st.sell) {
+  if ((slot === 'weapon' || slot === 'gadget') && S.eq[slot] && !st.sell && !st.fuse && button(x + w - 160, y - 14, 44, 12, 'TEST IT', { font: FS, kind: 'blue', tip: 'TRY IT IN THE TEST RANGE' })) { startRange(S.eq[slot], 'locker'); return; }
+  const mode = st.sell ? 'sell' : st.fuse ? 'fuse' : null;
+  if (!st.fuse && button(x + w - 64, y - 14, 64, 12, st.sell ? 'DONE SELLING' : 'SELL ITEMS', { font: FS, kind: st.sell ? 'cream' : 'def', tip: 'SELL GEAR YOU DO NOT NEED FOR COINS' })) { st.sell = !st.sell; st.pick = []; SND.play('click'); }
+  if (!st.sell && button(x + w - (st.fuse ? 64 : 112), y - 14, st.fuse ? 64 : 44, 12, st.fuse ? 'DONE FUSING' : 'FUSE', { font: FS, kind: st.fuse ? 'cream' : 'blue', tip: '5 OF ONE RARITY BECOME 1 OF THE NEXT' })) { st.fuse = !st.fuse; st.pick = []; SND.play('click'); }
+  st.pick = (st.pick || []).filter(id => S.inv[id] && !isEquipped(id));
+  const gh = mode ? h - 26 : h;
+  const c = itemGrid(st, list, x, y, w, gh, { cw: big ? 40 : 30, ch: big ? 22 : 26, sel: mode ? null : S.eq[slot], multi: mode ? st.pick : null, empty: 'OPEN CRATES TO FIND MORE', eqd: mode ? Object.values(S.eq) : null });
+  if (st.fuseRes) drawFuseReveal(st, x, y, w, gh);
+  if (mode === 'sell') {
     const by = y + h - 22; panel(x, by, w, 22, { bg: COL.void2, bd: COL.gold });
-    const sid = st.sellSel && S.inv[st.sellSel] ? st.sellSel : null;
-    if (sid) { const d = getDef(sid); let nm = d.name; while (textW(nm, FS) > w - 150 && nm.length > 6) nm = nm.slice(0, -1); text(nm, x + 6, by + 4, rcol(d.r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(d.r), FS); text(`LEVEL ${lvl(sid)}`, x + 6, by + 12, COL.mute, FS);
-      if (button(x + w - 140, by + 4, 84, 14, `SELL ${fmt(sellValue(sid))}`, { kind: 'primary', font: FS })) { const v = sellItem(sid); if (v) { SND.play('coin'); toast(`SOLD FOR ${fmt(v)} COINS`, COL.gold); } st.sellSel = null; }
-      if (button(x + w - 52, by + 4, 46, 14, 'CANCEL', { font: FS })) st.sellSel = null; }
-    else {
-      const junk = ids.filter(id => !isEquipped(id) && getDef(id).r <= 1); const jv = junk.reduce((a, id) => a + sellValue(id), 0);
-      text('CLICK AN ITEM TO SELL IT. EQUIPPED GEAR IS SAFE', x + 6, by + 8, COL.dim, FS);
-      if (junk.length && button(x + w - 128, by + 4, 122, 14, st.bulk ? `SURE? +${fmt(jv)} COINS` : `SELL ${junk.length} COMMON+UNC`, { kind: st.bulk ? 'primary' : 'cream', font: FS, tip: 'SELLS EVERY UNEQUIPPED COMMON AND UNCOMMON IN THIS SLOT' })) {
-        if (!st.bulk) st.bulk = 1; else { let t = 0; for (const id of junk) t += sellItem(id); st.bulk = 0; SND.play('coin'); SND.play('win'); toast(`SOLD ${junk.length} ITEMS FOR ${fmt(t)} COINS`, COL.gold); }
-      }
+    const tot = st.pick.reduce((a, id) => a + sellValue(id), 0);
+    if (st.pick.length) {
+      text(`${st.pick.length} PICKED`, x + 6, by + 4, COL.ink, FS); drawCoinIcon(x + 6, by + 12); text(`+${fmt(tot)}`, x + 16, by + 13, COL.gold, FS);
+      if (button(x + w - 144, by + 4, 88, 14, `SELL ${st.pick.length}`, { kind: 'primary', font: FS })) { let t = 0; const n = st.pick.length; for (const id of st.pick) t += sellItem(id); st.pick = []; SND.play('coin'); if (n > 1) SND.play('win'); toast(`SOLD ${n} ITEM${n > 1 ? 'S' : ''} FOR ${fmt(t)} COINS`, COL.gold); }
+      if (button(x + w - 52, by + 4, 46, 14, 'CLEAR', { font: FS })) st.pick = [];
+    } else {
+      text('CLICK ITEMS TO PICK THEM. EQUIPPED GEAR IS SAFE', x + 6, by + 8, COL.dim, FS);
+      const junk = ids.filter(id => !isEquipped(id) && getDef(id).r <= 1);
+      if (junk.length && button(x + w - 128, by + 4, 122, 14, `PICK ${junk.length} COMMON+UNC`, { kind: 'cream', font: FS })) { st.pick = junk.slice(); SND.play('click'); }
     }
-    if (c && c !== 'NONE') { if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); } else { st.sellSel = c; st.bulk = 0; SND.play('click'); } }
+    if (c && c !== 'NONE') { if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); } else { const i = st.pick.indexOf(c); if (i >= 0) st.pick.splice(i, 1); else st.pick.push(c); SND.play('click'); } }
+    return;
+  }
+  if (mode === 'fuse') {
+    const by = y + h - 22; panel(x, by, w, 22, { bg: '#16102a', bd: COL.cyan });
+    const r = st.pick.length ? getDef(st.pick[0]).r : -1;
+    if (!st.pick.length) text('PICK 5 OF THE SAME RARITY. THEY BECOME 1 RANDOM ITEM ONE RARITY UP', x + 6, by + 8, COL.dim, FS);
+    else {
+      text(`${st.pick.length}/5 ${RAR[r].n}`, x + 6, by + 4, rcol(r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(r), FS);
+      text(`BECOMES 1 ${RAR[Math.min(6, r + 1)].n}`, x + 6, by + 12, COL.mute, FS);
+      if (button(x + w - 144, by + 4, 88, 14, st.pick.length === 5 ? 'FUSE!' : 'FUSE (NEED 5)', { kind: 'primary', font: FS, disabled: st.pick.length < 5 })) doFuse(st, slot);
+      if (button(x + w - 52, by + 4, 46, 14, 'CLEAR', { font: FS })) st.pick = [];
+    }
+    if (c && c !== 'NONE') {
+      const d = getDef(c), i = st.pick.indexOf(c);
+      if (i >= 0) { st.pick.splice(i, 1); SND.play('click'); }
+      else if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); }
+      else if (!fusable(c)) { SND.play('deny'); toast(d.r >= 6 ? 'COSMIC IS THE TOP. NOTHING TO FUSE INTO' : 'ONE-OF-A-KIND ITEMS CANNOT BE FUSED', COL.coral); }
+      else if (st.pick.length && d.r !== r) { SND.play('deny'); toast(`PICK ${RAR[r].n} ITEMS ONLY, OR CLEAR FIRST`, COL.coral); }
+      else if (st.pick.length >= 5) { SND.play('deny'); toast('5 IS ENOUGH. HIT FUSE!', COL.coral); }
+      else { st.pick.push(c); SND.play('click'); }
+    }
     return;
   }
   if (c === 'NONE') { delete S.eq[slot]; SND.play('click'); dirty(); }
   else if (c) { equipped(c); if (S.eq[slot] !== c) S.stats.equips++; S.eq[slot] = c; SND.play('pickup'); dirty(); }
+}
+// ---------- fusion: 5 of a rarity -> 1 of the next ----------
+function fusable(id) { const d = getDef(id); return d.r < 6 && !/^(u|e)\|/.test(id) && !(d.o && d.o.t === 'art') && !d.nova; }
+function doFuse(st, slot) {
+  const ids = st.pick.slice(); if (ids.length !== 5 || ids.some(id => !S.inv[id] || isEquipped(id) || !fusable(id))) return;
+  const d0 = getDef(ids[0]), r = d0.r + 1, cat = d0.cat;
+  const pool = ((POOLS[cat] || [])[r] || []).filter(i => fusable(i) || r === 6).filter(i => slotOf(getDef(i)) === slot);
+  if (!pool.length) { toast('NOTHING TO FUSE INTO FOR THIS SLOT', COL.coral); return; }
+  const fresh = pool.filter(i => !S.inv[i]); const pick = fresh.length && R0() < 0.65 ? fresh : pool;
+  const out = pick[Math.floor(R0() * pick.length)];
+  const g = Math.floor(ids.reduce((a, id) => a + gradeOf(id), 0) / ids.length);
+  for (const id of ids) { delete S.inv[id]; delete S.fresh[id]; }
+  const res = addItem(out, g); S.stats.fused = (S.stats.fused || 0) + 1;
+  st.pick = []; st.fuseRes = { id: out, t: 0, isNew: res && res.isNew }; dirty(); save();
+  SND.play('reveal', r); if (r >= 4) SND.play('fanfare'); HUB.flashT = 2; HUB.flashCol = RAR[r].c === 'RAINBOW' ? '#fff' : RAR[r].c;
+}
+function drawFuseReveal(st, x, y, w, h) {
+  const F = st.fuseRes; F.t += 1 / 60; const d = getDef(F.id), col = d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c;
+  ctx.globalAlpha = 0.85; rect(x, y, w, h, '#05020c'); ctx.globalAlpha = 1;
+  const cx = x + w / 2, cy = y + h / 2 - 8, k = Math.min(1, F.t / 0.35);
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(T_NOW * 0.8); ctx.globalAlpha = 0.25;
+  for (let i = 0; i < 10; i++) { ctx.fillStyle = i % 2 ? col : '#fff'; ctx.beginPath(); ctx.moveTo(0, 0); const a = i / 10 * TAU; ctx.lineTo(Math.cos(a - 0.15) * 90, Math.sin(a - 0.15) * 90); ctx.lineTo(Math.cos(a + 0.15) * 90, Math.sin(a + 0.15) * 90); ctx.fill(); }
+  ctx.restore(); ctx.globalAlpha = 1;
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(k, k); const sc = Math.max(1, Math.min(3, Math.floor(80 / d.w))); drawItem(F.id, -d.w * sc / 2, -d.h * sc / 2, sc); ctx.restore();
+  textO('FUSED!', cx, y + 6, COL.gold, '#000', FB, 1, 2);
+  text(d.name, cx, cy + 30, col, FS, 1); text(RAR[d.r].n + (F.isNew ? '  NEW!' : '  (LEVELED UP)'), cx, cy + 40, COL.dim, FS, 1);
+  if (F.t > 0.6 && (button(cx - 30, y + h - 22, 60, 16, 'NICE', { kind: 'primary', font: FS }) || kp('Enter'))) st.fuseRes = null;
 }
 function panelLocker(st) {
   if (panelFrame('LOCKER', COL.gold, true)) return;
@@ -520,7 +573,7 @@ function panelProfile(st) {
   if (button(250 + Math.max(textW(S.name || 'NOT SET', FB), 40) + 6, H - 32, 44, 13, S.name ? 'RENAME' : 'SET', { font: FS, kind: 'blue' })) openNameUI(!S.name);
   // reset
   if (!st.reset) { if (button(W - 96, H - 30, 80, 14, 'RESET SAVE', { font: FS, col: '#2a0a14', tc: COL.coral })) st.reset = true; }
-  else { text('ERASE EVERYTHING?', W - 210, H - 27, COL.coral, FS); if (button(W - 120, H - 30, 50, 14, 'YES', { font: FS, col: '#5a1020' })) { try { localStorage.removeItem(SAVE_KEY); } catch (e) { } S = newState(); save(); HUB.panel = null; toast('NEW GAME STARTED', COL.mint); } if (button(W - 66, H - 30, 50, 14, 'NO', { font: FS })) st.reset = false; }
+  else { panel(236, H - 40, W - 250, 28, { bg: '#1a0610', bd: COL.coral }); text('ERASE EVERYTHING?', 244, H - 34, COL.coral, FB); text('THIS CANNOT BE UNDONE', 244, H - 23, COL.dim, FS); if (button(W - 124, H - 34, 50, 16, 'YES', { font: FS, col: '#5a1020' })) { try { localStorage.removeItem(SAVE_KEY); } catch (e) { } S = newState(); save(); HUB.panel = null; toast('NEW GAME STARTED', COL.mint); } if (button(W - 70, H - 34, 50, 16, 'NO', { font: FS })) st.reset = false; }
 }
 function panelMining(st) {
   if (panelFrame('MINING OFFICE', COL.mint, true)) return;
@@ -582,7 +635,8 @@ function drawMap(dt) {
   panel(4, 192, W - 8, 74, { bg: 'rgba(14,22,48,0.96)', bd: ok ? COL.gold : COL.steel, notch: true });
   let big = MAP.big; if (!big || big.n !== n || redraw) { big = MAP.big = renderSphere(p, 28, T_NOW * 0.2, { canvas: big && big.n === n ? big : null }); big.n = n; }
   drawRings(p, 40, 229, 28, false); ctx.drawImage(big, 40 - 28 - big.pad, 229 - 28 - big.pad); drawRings(p, 40, 229, 28, true);
-  textO(`${n}. ${p.name}`, 78, 197, COL.ink, '#000', FB); text(p.look, 78, 207, COL.dim, FS);
+  textO(`${n}. ${p.name}`, 78, 197, COL.ink, '#000', FB); if (n <= 20) text('SIGNATURE: ' + sigOf(n).n, 78, 207, COL.magenta, FS); else text(p.look, 78, 207, COL.dim, FS);
+  if (n <= 20) drawRelicStrip(n);
   text(p.trait ? `HAZARD: ${p.trait}. ${TRAIT_TXT[p.trait]}` : 'NO HAZARDS', 78, 215, p.trait ? COL.orange : COL.mute, FS);
   oreIcon(n, 78, 221); text(`${p.ore[0]}  TIER ${p.ore[1]} ORE  ${orePrice(p.ore[1])} COINS EACH`, 94, 226, COL.ink, FS);
   text(`BOSS: ${p.boss[0]}${S.planet.bosses[n] ? (S.planet.bossCd[n] > 0 ? ` (BACK IN ${S.planet.bossCd[n]} LANDINGS)` : ' (READY AGAIN)') : ' (DROPS 3 CRATES)'}`, 78, 236, S.planet.bosses[n] ? COL.mint : COL.coral, FS);
@@ -595,6 +649,18 @@ function drawMap(dt) {
   if (S.planet.bosses[20] && n >= 20) { if (button(W - 230, 240, 108, 20, 'GO SUPERNOVA', { col: '#4a1d3a', tc: COL.magenta, tip: 'RESET PLANETS AND COINS. KEEP EVERY ITEM. GAIN STARS, BETTER ORE AND THE SINGULARITY TIER' })) MAP.nova = true; }
   if (MAP.nova) drawNovaConfirm();
   text('CLICK A PLANET. DRAG OR SCROLL TO MOVE', W - 8, 23, COL.dim, FS, 2);
+}
+// the payoff chain, spelled out: what this planet gives you, and what helps you survive it
+function drawRelicStrip(n) {
+  const pr = relicOf(n), got = hasRelic(n), y = 178;
+  let w = 0; const a = got ? `PRIZE: ${pr.n} (YOURS)` : `PRIZE: ${pr.n} - BEAT ${planetDef(n).boss[0]}`;
+  const kb = n > 1 ? (hasRelic(n - 1) ? `KEY: ${relicOf(n - 1).n} (YOU HAVE IT)` : `KEY: ${relicOf(n - 1).n} - FROM ${planetDef(n - 1).name}`) : '';
+  w = 18 + textW(a, FS) + (kb ? 26 + textW(kb, FS) : 0);
+  const x = Math.max(4, Math.floor(W / 2 - w / 2));
+  panel(x, y, w + 8, 13, { bg: 'rgba(5,6,15,0.92)', bd: got ? COL.mint : pr.c, flat: true });
+  drawRelicIcon(n, x + 4, y + 2, 1, got); text(a, x + 18, y + 4, got ? COL.mint : pr.c, FS);
+  if (kb) { const kx = x + 18 + textW(a, FS) + 12; drawRelicIcon(n - 1, kx, y + 2, 1, !hasRelic(n - 1)); text(kb, kx + 14, y + 4, hasRelic(n - 1) ? '#7dffb0' : COL.dim, FS); }
+  if (inBox(x, y, w + 8, 13)) TIP.set(`${pr.n}: ${pr.t}` + (n > 1 ? `   |   ${relicOf(n - 1).n}: ${relicOf(n - 1).t}` : ''));
 }
 function drawNovaConfirm() {
   ctx.globalAlpha = 0.8; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
@@ -636,8 +702,14 @@ function drawWarp(dt) {
     if (p.trait) text(`HAZARD: ${p.trait}`, tx, 132, COL.orange, FS);
     oreIcon(w.n, tx, 140); text(`NEW ORE: ${p.ore[0]} (TIER ${p.ore[1]})`, tx + 16, 145, COL.ink, FS);
     text(`BOSS: ${p.boss[0]}`, tx, 158, COL.coral, FS); text(`NEW: ${p.name} SALVAGE CRATES`, tx, 168, COL.mint, FS);
+    if (w.n <= 20) {
+      const sg = sigOf(w.n), pr = relicOf(w.n);
+      textO(sg.n, tx, 30, COL.magenta, '#000', FB); text(sg.t.slice(0, 52), tx, 44, COL.cream, FS); if (sg.t.length > 52) text(sg.t.slice(52), tx, 52, COL.cream, FS);
+      drawRelicIcon(w.n, tx, 176, 1); text(`PRIZE: ${pr.n}`, tx + 14, 177, pr.c, FS); text(pr.t, tx + 14, 185, COL.dim, FS);
+      if (w.n > 1 && hasRelic(w.n - 1)) text(`YOUR ${relicOf(w.n - 1).n} WILL HELP HERE`, tx, 60, '#7dffb0', FS);
+    }
     ctx.globalAlpha = 1;
-    if (k > 1.2) text('CLICK TO LAND', tx, 196, Math.floor(T_NOW * 3) % 2 ? COL.gold : '#fff6c0', FB);
+    if (k > 1.2) text('CLICK TO LAND', tx, 202, Math.floor(T_NOW * 3) % 2 ? COL.gold : '#fff6c0', FB);
     if ((k > 1.2 && (IN.pr || kp('Enter') || kp('Space'))) || k > 6) { startRun(w.n); WARP = null; }
   }
 }

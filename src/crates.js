@@ -66,6 +66,7 @@ function drawCrateBay(dt) {
   // ---- center: the crate
   if (BAY.kind.startsWith('finisher:') && poolSize(BAY.kind) === 0) BAY.kind = 'weapon';
   if (BAY.auto) { BAY.auto = false; BAY.manual = false; }
+  if (S.stats.crates === 0) BAY.kind = 'weapon';   // your first crate gives you a gun
   if (!BAY.manual) BAY.tier = bestTier(BAY.kind);   // always the best crate you can buy, unless you picked one yourself
   if (!tierUnlocked(BAY.tier)) BAY.tier = 0;
   const kind = BAY.kind, tier = BAY.tier, ki = kindInfo(kind);
@@ -204,9 +205,11 @@ function labelsSim(id, sh, tier = 0) {
   if (!sim) sh[id] = { l: 1, p: 0, g: tier }; else { if (sim.l < 10) { sim.p++; if (sim.p >= sim.l) { sim.p -= sim.l; sim.l++; } } sim.g = Math.max(sim.g || 0, tier); sh[id] = sim; }
   return L;
 }
+function pullValue(r) { const d = getDef(r.id); return Math.round(SELL_VAL[d.r] * (1 + 0.1 * (r.tier ?? (OPEN ? OPEN.tier : 0)))); }
+function sellPull(r) { if (r.lost || r.sold) return 0; const v = pullValue(r); r.sold = true; S.coins += v; S.stats.sold = (S.stats.sold || 0) + 1; SND.play('coin'); dirty(); return v; }
 function collectOpen() {
   const O = OPEN; if (!O || O.collected) return; O.collected = true; const got = [];
-  for (const r of O.results) if (!r.lost) { const res = addItem(r.id, r.tier ?? O.tier); got.push(res); }
+  for (const r of O.results) if (!r.lost && !r.sold) { const res = addItem(r.id, r.tier ?? O.tier); got.push(res); }
   const ups = got.filter(g => g.levelUp).length, news = got.filter(g => g.isNew).length, rs = got.reduce((a, g) => a + g.research, 0);
   if (news) toast(`${news} NEW DISCOVER${news > 1 ? 'IES' : 'Y'} ADDED`, COL.mint);
   if (ups) toast(`${ups} ITEM${ups > 1 ? 'S' : ''} LEVELED UP`, COL.cyan);
@@ -620,8 +623,9 @@ function drawShow(O, i, single) {
   if (single && O.after) { drawAfterCollect(O, r, d, bx); return; }
   if (single) {
     if (r.lost) { if (button(bx, 150, 176, 20, 'CONTINUE', { kind: 'def' }) || kp('Space') || kp('Enter')) { collectOpen(); finishOpen(); return; } }
-    else if (button(bx, 150, 176, 20, 'COLLECT', { kind: 'primary' }) || kp('Space') || kp('Enter')) { collectOpen(); if (slotOf(d)) { O.after = true; O.afterT = 0; SND.play('pickup'); } else finishOpen(); return; }
-    const canD = d.r < 6 && !r.lost;
+    else if (button(bx, 150, 112, 20, 'COLLECT', { kind: 'primary' }) || kp('Space') || kp('Enter')) { collectOpen(); if (slotOf(d)) { O.after = true; O.afterT = 0; SND.play('pickup'); } else finishOpen(); return; }
+    if (!r.lost && button(bx + 116, 150, 60, 20, `SELL ${fmt(pullValue(r))}`, { kind: 'cream', font: FS, tip: 'SELL IT RIGHT NOW INSTEAD OF KEEPING IT' })) { const v = sellPull(r); toast(`SOLD FOR ${fmt(v)} COINS`, COL.gold); collectOpen(); finishOpen(); return; }
+    const canD = d.r < 6 && !r.lost && !r.sold;
     if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
     if (!O.haul) {
       const tr = BAY.manual ? Math.min(BAY.tier, 7) : bestTier(O.kind), cost = crateCost(O.kind, tr), ok = S.coins >= cost && (!O.kind.startsWith('finisher') || poolSize(O.kind) > 1);
@@ -630,9 +634,10 @@ function drawShow(O, i, single) {
     if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 222, 176, 18, 'TEST IT IN THE RANGE FIRST', { font: FS, tip: 'TRY IT ON TARGETS, THEN COME BACK' })) { startRange(id, 'open'); return; }
   } else {
     if (button(bx, 150, 176, 20, 'BACK TO ALL PULLS') || kp('Escape')) { O.st = 'summary'; O.demo = null; return; }
-    const canD = d.r < 6 && !r.lost;
+    const canD = d.r < 6 && !r.lost && !r.sold;
     if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
-    if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 198, 176, 20, 'TEST IT IN THE RANGE', { kind: 'blue', font: FS })) { startRange(id, 'open'); return; }
+    if ((d.cat === 'w' || d.cat === 'g') && !r.lost && !r.sold && button(bx, 198, 176, 20, 'TEST IT IN THE RANGE', { kind: 'blue', font: FS })) { startRange(id, 'open'); return; }
+    if (!r.lost && !r.sold && button(bx, 222, 176, 18, `SELL IT: +${fmt(pullValue(r))} COINS`, { kind: 'cream', font: FS })) { const v = sellPull(r); toast(`SOLD FOR ${fmt(v)} COINS`, COL.gold); O.st = 'summary'; O.demo = null; return; }
   }
 }
 function drawCards(O) {
@@ -653,12 +658,16 @@ function drawCards(O) {
       const nm = wrap(d.name, c.w - 6, FS); nm.slice(0, 2).forEach((l, k) => text(l, c.x + c.w / 2, y + 56 + k * 7, COL.ink, FS, 1));
       const lab = r.lost ? 'LOST' : r.labels[0] || ''; if (lab) { text(lab === 'NEW' ? 'NEW!' : lab, c.x + c.w / 2, y + c.h - 12, r.lost ? COL.coral : LABEL_COL[lab] || COL.gold, FS, 1); }
       if (r.lost) { ctx.globalAlpha = 0.6; rect(c.x + 1, y + 1, c.w - 2, c.h - 2, '#000'); ctx.globalAlpha = 1; text('LOST', c.x + c.w / 2, y + 30, COL.coral, FB, 1); }
+      else if (r.sold) { ctx.globalAlpha = 0.6; rect(c.x + 1, y + 1, c.w - 2, c.h - 2, '#000'); ctx.globalAlpha = 1; text('SOLD', c.x + c.w / 2, y + 30, COL.gold, FB, 1); }
     }
     if (hov) { IN.cursor = 'pointer'; if (clickIn(c.x, y, c.w, c.h)) { O.sel = c.ri; O.st = 'detail'; O.st_t = 0; O.stampSnd = true; O.demo = makeDemo(r.id); SND.play('click'); } }
   }
   if (O.st === 'summary') {
     text('CLICK A CARD FOR DETAILS, A HOLO DEMO, OR DOUBLE OR NOTHING', W / 2, H - 42, COL.dim, FS, 1);
-    if (button(W / 2 - 80, H - 32, 160, 20, O.results.every(r => r.lost) ? 'CONTINUE' : 'COLLECT ALL', { kind: 'primary' }) || kp('Space') || kp('Enter')) { collectOpen(); finishOpen(); }
+    const dupes = O.results.filter(r => !r.lost && !r.sold && owned(r.id)), dv = dupes.reduce((a, r) => a + pullValue(r), 0);
+    const left = O.results.filter(r => !r.lost && !r.sold);
+    if (button(W / 2 - (dupes.length ? 166 : 80), H - 32, 160, 20, left.length ? 'COLLECT ALL' : 'CONTINUE', { kind: 'primary' }) || kp('Space') || kp('Enter')) { collectOpen(); finishOpen(); }
+    if (dupes.length && button(W / 2 + 6, H - 32, 160, 20, `SELL ${dupes.length} I OWN: +${fmt(dv)}`, { kind: 'cream', font: FS, tip: 'SELLS THE PULLS YOU ALREADY HAVE. NEW FINDS ARE KEPT' })) { let t = 0; for (const r of dupes) t += sellPull(r); toast(`SOLD ${dupes.length} FOR ${fmt(t)} COINS`, COL.gold); }
   }
 }
 function drawDoN(O) {
