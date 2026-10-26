@@ -8,6 +8,8 @@ An 8-bit space crate-opening game: open crates, gear up your astronaut and ship,
 
 - `src/` holds the game code, and `head.html` holds the page shell.
 - `python3 build.py` joins them into one file, `index.html`, which is what GitHub Pages serves.
+  - On the website the whole game runs inside one closure, so nothing can be changed from the browser console.
+  - `space-case.html` is the same game with everything exposed, for the tests.
 - The online features use [Supabase](https://supabase.com).
   - `server/schema.sql` sets up the whole backend: tables, read rules and the server functions.
   - To set it up or update it, paste the file into Supabase → SQL Editor and run it. It's safe to run again.
@@ -18,11 +20,26 @@ An 8-bit space crate-opening game: open crates, gear up your astronaut and ship,
 - Players can only read what the database rules allow, and every change goes through the server functions.
 - Never put the **secret / service_role** key in this repo.
 
+## Fair play and moderation
+
+- Saves on a device carry a seal. Editing the save file by hand marks it.
+- Every cloud save goes through a fair-play check (coins, item levels, how much changed since the last save).
+- An impossible jump never deletes anything. It flags the account: trading and the market pause and it drops off the leaderboards until a moderator clears it.
+- Players can report each other. Moderators get a MOD tab in the ONLINE screen: reports, flags, bans, force-rename.
+- To make yourself a moderator, run this once in the Supabase SQL Editor (with your callsign):
+  `insert into public.admins select id from public.profiles where callsign = 'MASON';`
+
+## Password reset
+
+- "Forgot password?" on the sign-in screen sends a Supabase reset email that links back to the game.
+- In Supabase → Authentication → URL Configuration, the Site URL should be `https://whomason.github.io/space-case/` (and add it under Redirect URLs).
+
 ## Tests
 
 - `server/test_schema.py` runs the backend against a local Postgres.
 - `server/e2e.py` plays sign-up, friends, crews and a full trade in real browsers against `server/mock_supabase.py`.
 - `server/arena_e2e.py` plays FFA servers, kill rewards, host hand-over, ranked 1v1s and AI duels across browser tabs.
+- `server/live_e2e.py` plays daily rewards, the market, reports and bans, friend challenges, watching a 1v1, emotes, password reset, key rebinding and the fair-play flag.
 
 ## Live play
 

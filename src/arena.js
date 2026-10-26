@@ -93,25 +93,27 @@ function arMakeBot(id, R, skill, o = {}) {
 function arStart(o) {
   const duel = o.mode === 'duel', seed = hashStr(String(o.seed || (o.server && o.server.id) || o.matchId || 'practice'));
   const M = arMap(seed, duel), theme = o.theme || (o.server && o.server.theme) || 1 + (seed % 20);
-  const me = myFighter();
+  const me = o.spec ? arFighter({ id: 'w' + Math.random().toString(36).slice(2, 8), cs: '', alive: false, x: -999, y: -999, wpn: arenaWeapon(null, 0) }) : myFighter();
   AM = { mode: o.mode, practice: !!o.practice, server: o.server || null, matchId: o.matchId || null, ranked: !!o.ranked, M, F: arFloor(M, theme), theme, me, fighters: new Map([[me.id, me]]),
     shots: [], fx: new Particles(900), t: 0, cam: { x: 0, y: 0 }, room: null, host: true, peers: [], sendT: 0, hiT: 0, feed: [], banner: null,
     rk: 0, rhk: 0, rd: 0, best: 0, reportT: 0, pingT: 0, humans: 1, menu: false, ended: false, result: null, timer: duel ? AR_DUEL_TIME : 0, count: duel ? 3 : 0, botSeq: 0, botR: RNG(seed ^ 0x5bd1e995),
     opp: o.opponent || null, vsAI: !!o.vsAI, oppSeenT: 0, connecting: !!o.live, liveErr: '', skill: o.skill ?? 0.5, joinedAt: Date.now() };
   if (duel) AM.host = !!(o.vsAI || o.practice || o.hostFirst);
-  arRespawn(me, true);
+  if (o.spec) { AM.spec = true; AM.host = false; AM.fighters.clear(); AM.count = 0; AM.watchTitle = o.title || 'LIVE 1V1'; AM.needT = 0; }
+  else arRespawn(me, true);
   if (duel && o.vsAI) arAddDuelBot(o.botCard);
   if (o.mode === 'ffa' || o.mode === 'practice') arFillBots();
   if (o.live) {
     const topic = (duel ? 'duel-' + o.matchId : 'arena-' + o.server.id);
-    rtJoin(topic, { id: me.id, cs: me.cs, j: o.hostFirst ? 1 : AM.joinedAt }, { msg: arOnMsg, peers: arOnPeers })
+    rtJoin(topic, { id: me.id, cs: me.cs, j: o.hostFirst ? 1 : AM.joinedAt, watch: !!o.spec }, { msg: arOnMsg, peers: o.spec ? () => { } : arOnPeers })
       .then(room => { if (!AM) { room.leave(); return; } AM.room = room; AM.connecting = false; arSendHi(); })
-      .catch(e => { if (!AM) return; AM.connecting = false; AM.liveErr = e.message; if (duel) arDuelFallback(); });
+      .catch(e => { if (!AM) return; AM.connecting = false; AM.liveErr = e.message; if (AM.spec) { toast("COULD NOT CONNECT TO THAT MATCH", COL.coral); arLeave(); return; } if (duel) arDuelFallback(); });
   }
   SND.playSong('boss'); setScene('arena');
 }
 function arLeave(quiet) {
   const A = AM; if (!A) return;
+  if (A.spec) { if (A.room) try { A.room.leave(); } catch (e) { } AM = null; goHub(); if (!quiet) { openStation('arena'); HUB.ps.arena.tab = 1; } return; }
   const rep = A.mode !== 'duel' && !A.practice ? arReport(true) : null;
   if (A.mode === 'duel' && !A.ended && !A.practice) { arDuelReport(false); }
   if (A.room) { try { A.room.send('bye', {}); A.room.leave(); } catch (e) { } }
@@ -231,6 +233,7 @@ function arDie(o, by, broadcast) {
   const A = AM; if (!o.alive) return; o.alive = false; o.hp = 0; o.respT = 3; o.deaths++; o.streak = 0;
   const k = A.fighters.get(by); if (k && k !== o) { k.kills++; k.streak++; if (k.local) { A.rk++; if (o.human) A.rhk++; A.best = Math.max(A.best, k.streak); arStreakBanner(k.streak); arKillFx(o); } }
   if (o.local) { A.rd++; SND.play('lose'); }
+  if (A.host && !A.spec) { if (k && k.bot && o.human && Math.random() < 0.3) arEmote(k, [0, 6, 7][Math.floor(Math.random() * 3)]); else if (o.bot && k && k.human && Math.random() < 0.18) arEmote(o, [3, 1, 2][Math.floor(Math.random() * 3)]); }
   A.feed.unshift({ k: k ? k.cs : '?', v: o.cs, t: 5, me: (k && k.local) || o.local }); if (A.feed.length > 5) A.feed.pop();
   A.fx.burst(o.x, o.y - 8, 34, { c: [o.wpn.col.mid, '#fff', '#ff5a6e', o.wpn.col.core], sp: 150, life: 0.7, s: 2, g: 120 });
   A.fx.add({ x: o.x, y: o.y - 8, life: 0.45, c: '#ffffff', s: 34, t: 'ring' }); A.fx.add({ x: o.x, y: o.y - 8, life: 0.6, c: o.wpn.col.mid, s: 52, t: 'ring' });
@@ -267,6 +270,7 @@ function arUpdateShots(dt) {
 }
 // ---------- network ----------
 function arSendHi() {
+  if (!AM || AM.spec || !AM.room) return;   // spectators never announce themselves
   const A = AM; if (!A.room) return; const me = A.me;
   const eq = {}; for (const k of ['weapon', 'helmet', 'chest', 'boots', 'jetpack', 'o2', 'eyewear', 'headgear', 'back', 'trail', 'skin_armor', 'skin_weapon']) if (me.eq[k]) eq[k] = me.eq[k];
   const msg = { cs: me.cs, eq, w: [me.wpn.cls, +me.wpn.dmg.toFixed(2), me.wpn.rate, me.wpn.spd, me.wpn.rng, me.wpn.pellets, me.wpn.spread, me.wpn.aoe, arColPack(me.wpn.col)], mh: me.maxHp, k: me.kills, dd: me.deaths, lv: me.lvl };
@@ -296,11 +300,13 @@ function arOnMsg(ev, d, from) {
   if (ev === 's') {
     const f = A.fighters.get(from); if (f && f.wpn) arApplyF(f, d.p, now); else if (!f) arSendHiSoon();
     if (A.mode === 'duel' && f && f.human) A.oppSeenT = now;
-    if (d.b && from === A.hostId && !A.host) for (const bs of d.b) { const b = A.fighters.get(bs[0]); if (b) arApplyF(b, bs.slice(1), now); }
+    if (d.b && (from === A.hostId || A.spec) && !A.host) for (const bs of d.b) { const b = A.fighters.get(bs[0]); if (b) arApplyF(b, bs.slice(1), now); }
     return;
   }
   if (ev === 'd') { const v = A.fighters.get(d.v); if (v && !v.local && !(v.bot && A.host)) { v.alive = true; arDie(v, d.by, false); } return; }
   if (ev === 'bye') { A.fighters.delete(from); return; }
+  if (ev === 'need') { if (!A.spec) { A.specT = A.t; arSendHiSoon(); } return; }
+  if (ev === 'em') { const f = A.fighters.get(d.f || from); if (f && (d.i | 0) >= 0 && (d.i | 0) < EMOTES.length) f.emote = { i: d.i | 0, t: 2.6 }; return; }
 }
 let AR_HI_SOON = 0; function arSendHiSoon() { if (AM && AM.t - AR_HI_SOON > 1) { AR_HI_SOON = AM.t; arSendHi(); } }
 function arOnPeers(list) {
@@ -315,10 +321,13 @@ function arOnPeers(list) {
 function arNet(dt) {
   const A = AM; if (!A.room) return;
   A.sendT -= dt; A.hiT -= dt;
-  if (A.hiT <= 0) { A.hiT = 6; arSendHi(); }
+  const watched = A.t - (A.specT ?? -99) < 12, quiet = A.spec || (A.mode === 'duel' && A.vsAI && !watched);
+  if (A.spec) { A.needT -= dt; if (A.needT <= 0) { A.needT = A.fighters.size < 2 ? 1.5 : 6; A.room.send('need', {}); } }
+  if (A.hiT <= 0 && !quiet) { A.hiT = 6; arSendHi(); }
+  if (A.sendT <= 0 && quiet) { A.sendT = AR_SEND; A.me.fired = []; for (const b of arBots()) b.fired = []; }
   if (A.sendT <= 0) {
     A.sendT = AR_SEND; const msg = { p: arPackF(A.me) };
-    if (A.host && A.humans > 1) msg.b = arBots().map(b => [b.id].concat(arPackF(b)));
+    if (A.host && (A.humans > 1 || watched)) msg.b = arBots().map(b => [b.id].concat(arPackF(b)));
     else for (const b of arBots()) b.fired = [];
     A.room.send('s', msg);
   }
@@ -331,7 +340,7 @@ function arNet(dt) {
 }
 // ---------- duel flow ----------
 function arDuelCheck() {
-  const A = AM; if (A.ended) return; const me = A.me, opp = [...A.fighters.values()].find(f => f !== me);
+  const A = AM; if (A.ended || A.spec) return; const me = A.me, opp = [...A.fighters.values()].find(f => f !== me);
   if (!opp) return;
   if (me.kills >= AR_DUEL_TO || opp.kills >= AR_DUEL_TO) arDuelEnd(me.kills > opp.kills);
 }
@@ -363,12 +372,17 @@ function arUpdate(dt) {
   if (A.hitT > 0) A.hitT -= dt; if (A.kPop > 0) A.kPop -= dt; if (A.killHit > 0) A.killHit -= dt;
   if (A.slow > 0) { A.slow -= dt; dt *= 0.3; }
   A.t += dt;
-  if (kp('Escape')) { if (A.pick) A.pick = 0; else A.menu = !A.menu; SND.play('click'); }
-  if (!A.menu && !A.pick && me.alive) { if (kp('KeyQ') || IN.wheel) arSwap(1 - me.wi); if (kp('Digit1')) arSwap(0); if (kp('Digit2')) arSwap(1); }
+  for (const f of A.fighters.values()) if (f.emote) { f.emote.t -= dt; if (f.emote.t <= 0) f.emote = null; }
+  if (A.spec) return arSpecUpdate(dt);
+  if (A.emoCd > 0) A.emoCd -= dt;
+  if (kp('Escape')) { if (A.emo) A.emo = false; else if (A.pick) A.pick = 0; else A.menu = !A.menu; SND.play('click'); }
+  if (kp('KeyT') && !A.menu && !A.pick && !A.ended) { A.emo = !A.emo; SND.play('click'); }
+  if (A.emo) { for (let i = 0; i < EMOTES.length; i++) if (kp('Digit' + (i + 1))) { arEmote(me, i); A.emo = false; break; } }
+  else if (!A.menu && !A.pick && me.alive) { if (kp('KeyQ') || IN.wheel) arSwap(1 - me.wi); if (kp('Digit1')) arSwap(0); if (kp('Digit2')) arSwap(1); }
   if (A.ended) { A.endT += dt; arUpdateShots(dt); A.fx.update(dt); return; }
   if (A.count > 0) { const c0 = Math.ceil(A.count); A.count -= dt; if (Math.ceil(A.count) !== c0 && A.count > 0) SND.play('tick'); if (A.count <= 0) SND.play('fanfare'); }
   // me
-  const inp = { mx: (key('KeyD') || key('ArrowRight') ? 1 : 0) - (key('KeyA') || key('ArrowLeft') ? 1 : 0), my: (key('KeyS') || key('ArrowDown') ? 1 : 0) - (key('KeyW') || key('ArrowUp') ? 1 : 0), fire: IN.down && !A.menu && !A.pick && IN.my > 20 && !(IN.my > H - 34 && IN.mx < 92), boost: kp('Space') || kp('ShiftLeft') };
+  const inp = { mx: (key('KeyD') || key('ArrowRight') ? 1 : 0) - (key('KeyA') || key('ArrowLeft') ? 1 : 0), my: (key('KeyS') || key('ArrowDown') ? 1 : 0) - (key('KeyW') || key('ArrowUp') ? 1 : 0), fire: IN.down && !A.menu && !A.pick && !A.emo && IN.my > 20 && !(IN.my > H - 34 && IN.mx < 92), boost: kp('Space') || kp('ShiftLeft') };
   let ax = IN.mx + A.cam.x, ay = IN.my + A.cam.y;
   if (IN.touch || TOUCH.size) { const t = touchInput(me, A.cam, { player: me }); inp.mx = t.mx; inp.my = t.my; inp.fire = t.fire; inp.boost = t.boost; ax = t.ax; ay = t.ay; }
   const frozen = A.count > 0 || A.menu && false;
@@ -409,6 +423,7 @@ function arDraw(dt) {
     const f = o; drawPlayer(wf, f, cx, cy, f.eq || {}, {});
     const nx = Math.floor(f.x - cx), ny = Math.floor(f.y - cy) - 34;
     const tag = f.cs; const tw = textW(tag, FS) + 4; ctx.globalAlpha = 0.6; rect(nx - tw / 2, ny - 1, tw, 7, '#000'); ctx.globalAlpha = 1; text(tag, nx, ny, f.local ? COL.gold : COL.cream, FS, 1);
+    if (f.emote) { const s = EMOTES[f.emote.i], ew = textW(s, FS) + 8, k = Math.min(1, f.emote.t * 2), pop = Math.max(0, f.emote.t - 2.4) * 10; ctx.globalAlpha = k; panel(nx - ew / 2, ny - 13 - pop, ew, 10, { bg: '#fff6c2', bd: '#05020c', flat: true }); px(nx - 1, ny - 3 - pop, '#05020c'); text(s, nx, ny - 11 - pop, '#1c0f2e', FS, 1); ctx.globalAlpha = 1; }
     const bw = f.local ? 26 : 20; rect(nx - bw / 2 - 1, ny + 6, bw + 2, 4, '#000'); bar(nx - bw / 2, ny + 7, bw, 2, f.hp / f.maxHp, f.hp < f.maxHp * 0.3 ? COL.coral : f.local ? COL.gold : '#7dffb0', '#300');
   }
   // shots
@@ -422,7 +437,8 @@ function arDraw(dt) {
   A.fx.draw(cx, cy); arDrawKillFeel(cx, cy, dt);
   // dead overlay
   const me = A.me;
-  if (!me.alive && !A.ended) { ctx.globalAlpha = 0.45; rect(0, 0, W, H, '#200008'); ctx.globalAlpha = 1; textO('DOWN!', W / 2, 100, COL.coral, '#000', FB, 1, 3); text(`BACK IN ${Math.ceil(me.respT)}`, W / 2, 130, COL.cream, FB, 1); const k = A.fighters.get(me.lastBy); if (k) text(`BY ${k.cs}`, W / 2, 142, COL.dim, FS, 1); }
+  if (!me.alive && !A.ended && !A.spec) { ctx.globalAlpha = 0.45; rect(0, 0, W, H, '#200008'); ctx.globalAlpha = 1; textO('DOWN!', W / 2, 100, COL.coral, '#000', FB, 1, 3); text(`BACK IN ${Math.ceil(me.respT)}`, W / 2, 130, COL.cream, FB, 1); const k = A.fighters.get(me.lastBy); if (k) text(`BY ${k.cs}`, W / 2, 142, COL.dim, FS, 1); }
+  if (A.spec) { arSpecHUD(); return; }
   arHUD(); arDrawKillPop(dt);
   if (A.pick) { drawWeaponPicker(A.pickSt = A.pickSt || {}, A.pick, () => { A.pick = 0; }); }
   else if (A.menu && !A.ended) arMenu();
@@ -464,6 +480,11 @@ function arHUD() {
     top.forEach((f, i) => { const yy = 51 + i * 8; const pl = list.indexOf(f) + 1; if (f.local) rect(7, yy - 1, 90, 7, '#3a2a10'); let nm = f.cs; while (textW(nm, FS) > 60 && nm.length > 3) nm = nm.slice(0, -1); text(`${pl}. ${nm}`, 10, yy, f.local ? COL.gold : COL.cream, FS); text(f.kills + '', 94, yy, f.local ? COL.gold : COL.ink, FS, 2); });
   }
   drawArenaSlots(10, H - 26, slot => { A.pick = slot; });
+  if (!IN.touch) { keycap(94, H - 23, keyLabel('emote')); text('EMOTE', 94 + textW(keyLabel('emote'), FS) + 10, H - 20, COL.mute, FS); }
+  if (A.emo) {
+    const bw = 44, x0 = W / 2 - EMOTES.length * (bw + 3) / 2, y0 = H - 46;
+    EMOTES.forEach((s, i) => { const x = x0 + i * (bw + 3), hov = inBox(x, y0, bw, 18); panel(x, y0, bw, 18, { bg: hov ? COL.void3 : 'rgba(5,6,15,0.9)', bd: hov ? COL.gold : COL.steel, flat: true }); text(s, x + bw / 2, y0 + 8, COL.ink, FS, 1); text(i + 1 + '', x + 3, y0 + 2, COL.mute, FS); if (hov) IN.cursor = 'pointer'; if (clickIn(x, y0, bw, 18)) { arEmote(A.me, i); A.emo = false; } });
+  }
   if (A.banner) { const k = Math.min(1, A.banner.life); ctx.globalAlpha = k; textO(A.banner.t, W / 2, 60, COL.gold, '#000', FB, 1, 2); ctx.globalAlpha = 1; }
   if (button(W - 52, H - 20, 46, 14, 'MENU', { font: FS })) A.menu = !A.menu;
   if (IN.touch || TOUCH.size) { const B = TC.btn; if (B && B.boost) { const b = B.boost; panel(b[0], b[1], b[2], b[3], { bg: 'rgba(5,6,15,0.6)', bd: COL.steel }); text('BOOST', b[0] + b[2] / 2, b[1] + 8, COL.ink, FS, 1); } }
@@ -522,7 +543,7 @@ function duelSearch(ranked, code) {
 }
 function duelTick(dt) {
   if (!DQ.on) return; DQ.t += dt; DQ.poll -= dt;
-  if (DQ.found) { DQ.ft = (DQ.ft || 0) + dt; if (DQ.ft > 2.2) { const f = DQ.found; DQ.on = false; DQ.found = null; arStart({ mode: 'duel', matchId: f.match, ranked: f.ranked, opponent: f.opponent, live: !f.ai, vsAI: !!f.ai, botCard: f.ai ? f.card : null, hostFirst: f.host, seed: f.match }); } return; }
+  if (DQ.found) { DQ.ft = (DQ.ft || 0) + dt; if (DQ.ft > 2.2) { const f = DQ.found; DQ.on = false; DQ.found = null; arStart({ mode: 'duel', matchId: f.match, ranked: f.ranked, opponent: f.opponent, live: true, vsAI: !!f.ai, botCard: f.ai ? f.card : null, hostFirst: f.host, seed: f.match }); } return; }
   if (DQ.code && DQ.t > DQ_FRIEND) { duelCancel(); toast('NOBODY USED THAT CODE. TRY AGAIN WHEN YOUR FRIEND IS ON', COL.coral); return; }
   if (DQ.busy || (DQ.poll > 0 && !DQ.aiNow)) return; DQ.busy = true; DQ.poll = 1.2;
   const giveUp = !DQ.code && (DQ.aiNow || DQ.t > DQ.wait);
@@ -556,6 +577,7 @@ function panelArena(st) {
   panel(14, 30, W - 28, 25, { bg: COL.void0, bd: COL.void3, flat: true });
   drawRankBadge(20, 33, rk, 16);
   text(on ? (NET.callsign || 'NO CALLSIGN') : 'OFFLINE', 42, 34, COL.ink, FB); text(on ? `${rk[0]}  ${fmt(tr)} TROPHIES` : 'SIGN IN FOR REWARDS, TROPHIES AND RANKS', 42, 43, rk[2] === 'RAINBOW' ? rainbow(T_NOW) : rk[2], FS);
+  if (me && me.season) { const s = Math.max(0, (Date.parse(me.season_ends) - Date.now()) / 1000); text(`SEASON ${me.season}`, 150, 35, COL.lilac, FS); text(`ENDS IN ${Math.floor(s / 86400)}D ${Math.floor(s / 3600) % 24}H`, 150, 43, COL.mute, FS); if (inBox(150, 33, 70, 18)) TIP.set('EVERY MONTH THE SEASON ENDS: REWARDS BY RANK GO TO YOUR MAILBOX, THEN TROPHIES DROP BY HALF'); }
   if (me) { text(`KILLS ${fmt(me.kills)}  BEST STREAK ${me.best_streak}`, W - 152, 35, COL.dim, FS, 2); text(`1V1 ${me.duels_won}W ${me.duels_lost}L`, W - 152, 43, COL.dim, FS, 2); }
   text('YOUR', W - 142, 35, COL.mute, FS); text('ARENA', W - 142, 41, COL.mute, FS); text('GUNS', W - 142, 47, COL.mute, FS); drawArenaSlots(W - 106, 32, slot => { st.pick = slot; });
   if (!on && button(W - 214, 33, 90, 16, 'SIGN IN', { kind: 'blue', font: FS })) openStation('social');
@@ -626,6 +648,9 @@ function arenaDuel(st, on) {
   text('PLAY A FRIEND', x + 6, fy + 3, COL.magenta, FS); text('YOU BOTH TYPE THE SAME CODE', x + 6, fy + 11, COL.mute, FS);
   const fc = textField('duelCode', x + 150, fy + 3, 150, 14, { ph: 'ANY CODE, LIKE PALS', max: 12, filter: v => v.toUpperCase().replace(/[^A-Z0-9]/g, ''), label: 'Friend 1v1 code' });
   if (button(x + 306, fy + 3, 140, 14, 'FIND MY FRIEND', { kind: 'primary', font: FS, disabled: !on || fc.value.length < 3 }) || (fc.enter && fc.value.length >= 3 && on)) duelSearch(false, fc.value);
+  // friends playing right now
+  const wl = (typeof PULSE !== 'undefined' ? PULSE.watch : []) || [];
+  if (wl.length) { const wy = H - 30; text('LIVE NOW:', x, wy + 4, '#ff8a9a', FS); wl.slice(0, 2).forEach((w2, i) => { const bx = x + 46 + i * 196; text(`${w2.a} VS ${w2.b}${w2.ranked ? ' (RANKED)' : ''}`, bx, wy + 4, COL.ink, FS); if (button(bx + 136, wy, 50, 13, 'WATCH', { kind: 'blue', font: FS })) arSpectate(w2); }); }
   // rank ladder
   const ly = y + 134; text('RANKS', x, ly, COL.gold, FS);
   AR_RANKS.forEach((r, i) => { const bx = x + i * 56; drawRankBadge(bx, ly + 8, r, 14); text(r[0], bx + 16, ly + 10, r[2] === 'RAINBOW' ? rainbow(T_NOW, i * 40) : r[2], FS); text(fmt(r[1]), bx + 16, ly + 17, COL.mute, FS); });
@@ -698,4 +723,46 @@ function drawArenaSlots(x, y, onClick) {
     keycap(bx - 3, y - 4, String(i + 1));
     if (hov) { IN.cursor = 'pointer'; TIP.set(id ? { item: id } : 'PICK A SECOND WEAPON'); if (clickIn(bx, y, 38, 22)) onClick(i + 1); }
   });
+}
+
+// ---------- quick chat: fixed phrases only, so nobody can say anything mean ----------
+const EMOTES = ['GG', 'NICE!', 'WOW', 'OOPS', 'HI!', 'REMATCH?', ':)', 'LOL'];
+function arEmote(f, i) {
+  const A = AM; if (!A || !f) return;
+  if (f.local) { if (A.emoCd > 0) return; A.emoCd = 1.2; SND.play('click'); }
+  f.emote = { i, t: 2.6 };
+  if (A.room && !A.spec) A.room.send('em', f.local ? { i } : { i, f: f.id });
+}
+// ---------- watching a friend's 1v1 ----------
+function arSpectate(w) {
+  if (NET.st !== 'on') { toast('SIGN IN TO WATCH', COL.coral); return; }
+  arStart({ mode: 'duel', matchId: w.match, seed: w.match, live: true, spec: true, title: `${w.a} VS ${w.b}` });
+}
+function arSpecUpdate(dt) {
+  const A = AM;
+  if (kp('Escape')) { arLeave(); return; }
+  const list = [...A.fighters.values()].filter(f => f.x > -500);
+  if (!A.follow || !A.fighters.has(A.follow)) A.follow = list.length ? list[0].id : null;
+  if ((kp('KeyQ') || IN.pr || kp('Space')) && list.length > 1) { const i = list.findIndex(f => f.id === A.follow); A.follow = list[(i + 1) % list.length].id; IN.pr = false; }
+  if (!A.ended) {
+    const top = list.find(f => f.kills >= AR_DUEL_TO);
+    if (top) { A.ended = true; A.endT = 0; A.result = { spec: true, winner: top.cs }; SND.play('fanfare'); }
+  } else { A.endT += dt; if (A.endT > 8) { arLeave(); return; } }
+  arUpdateShots(dt); arNet(dt); A.fx.update(dt);
+  for (const f of A.feed) f.t -= dt; A.feed = A.feed.filter(f => f.t > 0);
+  const t = A.fighters.get(A.follow), tx = (t ? t.x : A.M.w / 2) - W / 2, ty = (t ? t.y : A.M.h / 2) - H / 2 - 6;
+  A.cam.x = clamp(lerp(A.cam.x, tx, Math.min(1, dt * 6)), -20, A.M.w - W + 20); A.cam.y = clamp(lerp(A.cam.y, ty, Math.min(1, dt * 6)), -30, A.M.h - H + 20);
+  if (A.M.w < W) A.cam.x = (A.M.w - W) / 2; if (A.M.h < H) A.cam.y = (A.M.h - H) / 2 - 8;
+}
+function arSpecHUD() {
+  const A = AM, list = [...A.fighters.values()];
+  panel(W / 2 - 90, 4, 180, 30, { bg: 'rgba(5,6,15,0.8)', bd: COL.cyan });
+  rect(W / 2 - 84, 9, 4, 4, Math.floor(T_NOW * 2) % 2 ? '#ff5a6e' : '#7a2030'); text('WATCHING LIVE', W / 2 - 76, 8, '#ff8a9a', FS);
+  text(A.watchTitle, W / 2 + 84, 8, COL.dim, FS, 2);
+  const [a, b] = list; if (a) { textO(`${a.cs} ${a.kills}`, W / 2 - 6, 19, COL.gold, '#000', FB, 2); } if (b) { textO(`${b.kills} ${b.cs}`, W / 2 + 6, 19, COL.coral, '#000', FB, 0); }
+  if (!list.length) text(A.connecting ? 'CONNECTING...' : 'WAITING FOR THE PILOTS...', W / 2, 120, COL.dim, FB, 1);
+  A.feed.forEach((f, i) => { const s = `${f.k} > ${f.v}`; const w = textW(s, FS) + 8; panel(W - w - 6, 40 + i * 10, w, 9, { bg: 'rgba(5,6,15,0.75)', bd: COL.void3, flat: true }); text(s, W - w - 2, 42 + i * 10, COL.cream, FS); });
+  const t = A.fighters.get(A.follow); if (t) text(`CAMERA: ${t.cs}. CLICK OR Q TO SWITCH`, 8, H - 12, COL.mute, FS);
+  if (button(W - 64, H - 22, 58, 16, 'LEAVE', { font: FS })) { arLeave(); return; }
+  if (A.ended) { ctx.globalAlpha = Math.min(0.7, A.endT); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1; textO(`${A.result.winner} WINS!`, W / 2, 100, COL.gold, '#000', FB, 1, 3); text('BACK TO THE ARENA IN A MOMENT', W / 2, 140, COL.dim, FS, 1); }
 }

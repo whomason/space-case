@@ -8,7 +8,7 @@ import psycopg2, psycopg2.extras
 
 DSN = dict(host='localhost', user='postgres', password='pg')
 HERE = os.path.dirname(os.path.abspath(__file__))
-GAME = os.path.join(HERE, '..', 'index.html')
+GAME = os.path.join(HERE, '..', 'space-case.html')
 
 def setup_db(name='sc_e2e'):
     adm = psycopg2.connect(dbname='postgres', **DSN); adm.autocommit = True
@@ -48,6 +48,13 @@ def make_handler(M):
             p = urlparse(self.path).path
             if p in ('/', '/index.html', '/space-case.html'): return self.send(200, raw=open(GAME, 'rb').read(), ctype='text/html; charset=utf-8')
             self.send(404, {'message': 'not found'})
+        def do_PUT(self):
+            u = urlparse(self.path); n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            uid = M.tokens.get((self.headers.get('Authorization') or '').replace('Bearer ', ''))
+            if u.path == '/auth/v1/user' and uid:
+                for em, rec in list(M.users.items()):
+                    if rec[0] == uid: M.users[em] = (uid, body.get('password')); return self.send(200, {'id': uid, 'email': em})
+            self.send(401, {'msg': 'invalid token'})
         def do_POST(self):
             u = urlparse(self.path); n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             if self.headers.get('apikey') is None: return self.send(401, {'message': 'No API key found in request'})
@@ -69,6 +76,9 @@ def make_handler(M):
                     if not rec: return self.send(400, {'code': 400, 'error_code': 'refresh_token_not_found', 'msg': 'Invalid Refresh Token: Refresh Token Not Found'})
                     return self.send(200, M.session(*rec))
             if u.path == '/auth/v1/logout': return self.send(204)
+            if u.path == '/auth/v1/recover':
+                em = body.get('email', '').lower(); M.recovered = getattr(M, 'recovered', []); M.recovered.append((em, parse_qs(u.query).get('redirect_to', [''])[0]))
+                return self.send(200, {})
             m = re.match(r'^/rest/v1/rpc/(\w+)$', u.path)
             if m:
                 fn = m.group(1); auth = (self.headers.get('Authorization') or '').replace('Bearer ', '')

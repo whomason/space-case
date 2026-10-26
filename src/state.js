@@ -44,14 +44,21 @@ function normalizeSave(o) {
   if (!st.gift2) { st.gift2 = 1; for (const id of [firstOf('g', 'blackhole'), firstOf('p', 'bot')]) { if (!st.inv[id]) { st.inv[id] = { l: 1, p: 0, t: Date.now(), g: 0 }; st.fresh[id] = 1; } const sl = slotOf(getDef(id)); if (sl && !st.eq[sl]) st.eq[sl] = id; } st.giftNote = 1; }
   return st;
 }
+// the save on this device carries a seal. Editing the file by hand breaks the seal, and the game remembers it
+// (the cloud's fair-play check then pauses trading until a moderator looks)
+function saveSeal(s) { let h1 = 0xdeadbeef ^ 77, h2 = 0x41c6ce57 ^ 77; const t = s + '|sc-orbit-7f3'; for (let i = 0; i < t.length; i++) { const ch = t.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36); }
+function readSave(raw) {
+  if (!raw) return null; const i = raw.lastIndexOf('\n#'); const json = i >= 0 ? raw.slice(0, i) : raw, seal = i >= 0 ? raw.slice(i + 2) : null;
+  const o = JSON.parse(json); if (o && o.sgn && seal !== saveSeal(json)) o.tamper = 1; return o;
+}
 function load() {
   try {
-    const t = localStorage.getItem(SAVE_KEY);
-    if (t) { S = normalizeSave(JSON.parse(t)); return true; }
+    const o = readSave(localStorage.getItem(SAVE_KEY));
+    if (o) { S = normalizeSave(o); return true; }
   } catch (e) { }
   S = newState(); return false;
 }
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { } DIRTY = false; }
+function save() { try { S.sgn = 1; const json = JSON.stringify(S); localStorage.setItem(SAVE_KEY, json + '\n#' + saveSeal(json)); } catch (e) { } DIRTY = false; }
 function dirty() { DIRTY = true; }
 setInterval(() => { if (DIRTY && S) save(); }, 3000);
 
@@ -224,7 +231,7 @@ const xpNeed = L => Math.floor(80 * Math.pow(1.22, L - 1));
 function addXP(n) { S.xp += n; let up = 0; while (S.xp >= xpNeed(S.lvl)) { S.xp -= xpNeed(S.lvl); S.lvl++; S.sp++; up++; } if (up) { toast(`LEVEL ${S.lvl}! +${up} SKILL POINT${up > 1 ? 'S' : ''}`, COL.cyan); SND.play('levelup'); } return up; }
 function checkTitles() { for (const t of TITLES) if (!S.titles.earned[t.id] && t.chk(S)) { S.titles.earned[t.id] = 1; toast('TITLE EARNED: ' + t.n, COL.gold); if (!S.titles.eq) S.titles.eq = t.id; dirty(); } }
 function minerSlots() { return Object.keys(S.planet.bosses).map(Number).sort((a, b) => a - b).slice(0, 10); }
-function minerRate(id, p) { return aStats(getDef(id), effL(id)).rate * ORE_VALUE(planetDef(p).ore[1]) / 5; }
+function minerRate(id, p) { return aStats(getDef(id), effL(id)).rate * orePrice(planetDef(p).ore[1]) / 5; }
 function tickMiners() {
   const now = Date.now(); const mins = Math.min(8 * 60, (now - S.miners.last) / 60000); S.miners.last = now;
   for (const p in S.miners.slots) { const id = S.miners.slots[p]; if (id && owned(id)) S.miners.acc[p] = Math.min((S.miners.acc[p] || 0) + minerRate(id, +p) * mins, minerRate(id, +p) * 480); }

@@ -206,4 +206,89 @@ r = call('G', 'select duel_find(false)'); r = call('H', 'select duel_find(false)
 c.execute('reset role'); c.execute("update public.duels set created_at = now() - interval '2 minutes' where id = %s", (mo,))
 r = call('G', 'select duel_find(false)'); ok('stale match is dropped and search goes on', r.get('waiting') is True, r)
 call('G', 'select duel_cancel()')
+# ===================== fair play, moderation, daily, seasons, market, challenges
+def sql(q, args=()): c.execute('reset role'); c.execute(q, args); return c.fetchall() if c.description else None
+def save_of(n): return sql('select data, version from public.saves where user_id = %s', (U[n],))[0]
+# A and B are friends (from above). E is a plain player.
+d, v = save_of('E'); d['coins'] = 1000; d['inv'] = {'w|blaster|1': {'l': 1, 'p': 0, 't': 1}, 'w|rifle|2': {'l': 2, 'p': 0, 't': 1}, 'a|helmet|3': {'l': 1, 'p': 0, 't': 1}}; d['eq'] = {'weapon': 'w|blaster|1'}
+r = call('E', 'select save_game(%s, %s)', (J(d), v)); ok('normal save is fine', r['ok'] and not sql('select flagged from public.moderation where user_id = %s', (U['E'],)), r)
+d['coins'] = 1000; d['lvl'] = 3; v = r['version']
+r = call('E', 'select save_game(%s, %s)', (J(d), v)); v = r['version']
+ok('honest progress is never flagged', not (sql('select flagged from public.moderation where user_id = %s', (U['E'],)) or [[False]])[0][0])
+# F cheats: a billion coins out of nowhere
+d2, v2 = save_of('F'); d2['coins'] = 999999999; d2['inv'] = {'w|blaster|1': {'l': 1, 'p': 0, 't': 1}, 'w|rifle|2': {'l': 1, 'p': 0, 't': 1}}
+r = call('F', 'select save_game(%s, %s)', (J(d2), v2)); ok('cheat save still saves (nothing is deleted)', r['ok'], r)
+ok('impossible coin jump flags the account', sql('select flagged, flag_reason from public.moderation where user_id = %s', (U['F'],))[0][0], sql('select * from public.moderation where user_id = %s', (U['F'],)))
+ok('the flag opens an automatic report', sql("select count(*) from public.reports where target = %s and reason = 'AUTO'", (U['F'],))[0][0] == 1)
+d3, v3 = save_of('G'); d3['inv'] = {'w|blaster|1': {'l': 99, 'p': 0, 't': 1}}
+call('G', 'select save_game(%s, %s)', (J(d3), v3)); ok('an impossible item level flags too', sql('select flagged from public.moderation where user_id = %s', (U['G'],))[0][0])
+d4, v4 = save_of('H'); d4['tamper'] = 1
+call('H', 'select save_game(%s, %s)', (J(d4), v4)); ok('an edited save file flags too', sql('select flag_reason from public.moderation where user_id = %s', (U['H'],))[0][0].startswith('THE SAVE FILE'))
+r = call('F', "select market_list('w|rifle|2', 100)"); ok('flagged player cannot sell on the market', str(r).startswith('ERR') and 'PAUSED' in r, r)
+r = call('F', 'select leaderboard()'); sql("update public.arena_stats set trophies = 9999 where user_id = %s", (U['F'],))
+r = call('A', 'select leaderboard()'); ok('flagged player is hidden from leaderboards', not any(x['callsign'] == 'FOX' for x in r['top']), r['top'][:3])
+# reports + moderators
+r = call('A', "select report_player('fox', 'cheating', 'a billion coins')"); ok('report a player', 'THANKS' in r, r)
+r = call('A', "select report_player('fox', 'cheating', 'again')"); ok('one open report per player', 'ALREADY' in r, r)
+r = call('A', "select report_player('fox', 'because')"); ok('report needs a real reason', str(r).startswith('ERR'), r)
+r = call('A', 'select mod_queue()'); ok('only moderators see the queue', str(r).startswith('ERR') and 'MODERATORS' in r, r)
+sql('insert into public.admins values (%s) on conflict do nothing', (U['A'],))
+r = call('A', 'select mod_queue()'); fx = [p for p in r['players'] if p['callsign'] == 'FOX']; ok('moderator sees the reported player with both reports', fx and fx[0]['n'] == 2 and fx[0]['flagged'] and fx[0]['coins'] == 999999999, r['players'][:1])
+r = call('A', 'select pulse()'); ok('pulse tells a moderator they are one', r['admin'] is True and r['flagged'] is False, r)
+r = call('A', 'select mod_action(%s, %s, %s, %s)', (U['F'], 'ban', 3, 'cheating')); ok('ban for 3 days', r == 'DONE', r)
+r = call('F', 'select my_social()'); ok('a banned player is stopped everywhere', str(r).startswith('ERR') and 'BANNED UNTIL' in r and 'CHEATING' in r, r)
+r = call('A', 'select mod_queue()'); ok('reports are closed after acting', not any(p['callsign'] == 'FOX' for p in r['players']) and any(b['callsign'] == 'FOX' for b in r['banned']), r)
+r = call('A', 'select mod_action(%s, %s)', (U['F'], 'unban')); r = call('F', 'select pulse()'); ok('unban lets them back in, still flagged', r.get('flagged') is True, r)
+r = call('A', 'select mod_action(%s, %s)', (U['F'], 'clear')); r = call('F', 'select pulse()'); ok('clearing the flag', r['flagged'] is False, r)
+r = call('A', 'select mod_action(%s, %s)', (U['G'], 'rename')); ok('rename makes them pick a new callsign', sql('select callsign from public.profiles where id = %s', (U['G'],))[0][0] is None)
+r = call('B', 'select mod_action(%s, %s)', (U['A'], 'ban')); ok('players cannot moderate', str(r).startswith('ERR'), r)
+r = call('A', 'select mod_action(%s, %s)', (U['A'], 'ban')); ok('moderators cannot ban themselves', str(r).startswith('ERR'), r)
+# daily rewards
+r = call('E', 'select daily_status(240)'); ok('daily: first day ready', r['can'] and r['next'] == 1 and len(r['days']) == 7, r)
+r = call('E', 'select daily_claim(240)'); ok('claim day 1: coins by mail', r['day'] == 1 and r['coins'] >= 300, r)
+r = call('E', 'select daily_claim(240)'); ok('only once a day', str(r).startswith('ERR') and 'ALREADY' in r, r)
+r = call('E', 'select daily_claim(-600)'); ok('changing the time zone does not give a second claim', str(r).startswith('ERR'), r)
+sql("update public.daily set last_day = last_day - 1, last_at = now() - interval '1 day' where user_id = %s", (U['E'],))
+r = call('E', 'select daily_claim(240)'); ok('next day: streak 2', r['day'] == 2 and r['streak'] == 2, r)
+sql("update public.daily set last_day = last_day - 1, last_at = now() - interval '1 day' where user_id = %s", (U['E'],))
+r = call('E', 'select daily_claim(240)'); ok('day 3 gives a crate', r['day'] == 3 and len(r['crates']) == 1, r)
+sql("update public.daily set last_day = last_day - 3, last_at = now() - interval '3 days' where user_id = %s", (U['E'],))
+r = call('E', 'select daily_claim(240)'); ok('missing a day restarts the streak', r['day'] == 1 and r['streak'] == 1, r)
+r = call('E', 'select claim_mail()'); ok('daily crate arrives as a DAILY CRATE', any(x.get('title') == 'DAILY CRATE' for x in r['data']['choiceQueue']), r['data'].get('choiceQueue'))
+# seasons
+r = call('A', 'select my_arena()'); ok('season 1 is running', r['season'] == 1 and r['season_ends'] is not None, r)
+sql("update public.arena_stats set trophies = 1200 where user_id = %s", (U['A'],)); sql("update public.arena_stats set trophies = 300 where user_id = %s", (U['B'],))
+sql("update public.season_state set ends_at = now() - interval '1 second'")
+r = call('A', 'select my_arena()'); ok('season rolls over: season 2, trophies halved', r['season'] == 2 and r['trophies'] == 600, r)
+ok('last season result is kept (FOX, cleared, is #1 with 9999)', r['last_season'] and r['last_season']['place'] == 2 and r['last_season']['rank'] == 'PLATINUM', r.get('last_season'))
+r = call('B', 'select claim_mail()'); ok('season rewards by mail', any('season 1 reward' in g['reason'] for g in r['got']), r['got'])
+r = call('A', 'select my_arena()'); ok('it only rolls once', r['season'] == 2 and r['trophies'] == 600, r)
+# market
+dE, vE = save_of('E'); cE = dE['coins']
+r = call('E', "select market_list('w|blaster|1', 500)"); ok('cannot sell what you have equipped', str(r).startswith('ERR') and 'UNEQUIP' in r, r)
+r = call('E', "select market_list('w|rifle|2', 0)"); ok('price must be positive', str(r).startswith('ERR'), r)
+r = call('E', "select market_list('w|rifle|2', 500)"); lid = r['listing']; ok('list an item: it leaves your save', 'w|rifle|2' not in r['data']['inv'], r)
+r = call('B', 'select market_browse()'); ok('everyone sees it, with the seller', any(x['id'] == lid and x['seller'] == 'ECHO' and x['l'] == 2 for x in r), r)
+r = call('E', f'select market_buy({lid})'); ok('cannot buy your own', str(r).startswith('ERR'), r)
+dB, vB = save_of('B'); sql("update public.saves set data = jsonb_set(data, '{coins}', '100') where user_id = %s", (U['B'],))
+r = call('B', f'select market_buy({lid})'); ok('not enough coins', str(r).startswith('ERR') and 'NOT ENOUGH' in r, r)
+sql("update public.saves set data = jsonb_set(data, '{coins}', '2000') where user_id = %s", (U['B'],))
+r = call('B', f'select market_buy({lid})'); ok('buy: item in, coins out', r['data']['inv'].get('w|rifle|2') and r['data']['coins'] == 1500, r)
+r = call('A', f'select market_buy({lid})'); ok('sold items cannot be bought twice', str(r).startswith('ERR'), r)
+r = call('E', 'select claim_mail()'); ok('seller gets the price minus 5%', any(g['reason'] == 'market sale' and g['coins'] == 475 for g in r['got']), r['got'])
+r = call('E', "select market_list('a|helmet|3', 50)"); l2 = r['listing']
+r = call('E', f'select market_cancel({l2})'); r = call('E', 'select claim_mail()'); ok('cancel: the item comes back', 'a|helmet|3' in r['data']['inv'], r['got'])
+# friend challenges + pulse
+r = call('B', 'select pulse()'); ok('pulse: friends online', 'MASON' in r['online'], r)
+r = call('A', "select challenge_send('echo')"); ok('can only challenge friends', str(r).startswith('ERR') and 'FRIENDS' in r, r)
+r = call('A', "select challenge_send('kai-7')"); cid, code = r['id'], r['code']; ok('challenge a friend', code.startswith('C'), r)
+r = call('B', 'select pulse()'); ok('friend sees the challenge', any(x['id'] == cid and x['from'] == 'MASON' for x in r['challenges']), r)
+r = call('B', f'select challenge_respond({cid}, true)'); ok('accepting hands over the shared code', r['code'] == code, r)
+r = call('A', 'select pulse()'); ok('challenger learns it was accepted', any(x['id'] == cid and x['status'] == 'accepted' for x in r['answers']), r)
+r = call('A', "select duel_find(false, %s)", (code,)); r = call('B', "select duel_find(false, %s)", (code,)); mch = r.get('match'); ok('the code matches them', bool(mch), r)
+r = call('E', 'select pulse()'); ok('strangers cannot see the match', not r['watch'], r)
+call('E', "select friend_request('mason')"); call('A', 'select friend_respond(%s, true)', (U['E'],))
+r = call('E', 'select pulse()'); ok('a friend can watch it live', any(x['match'] == mch for x in r['watch']), r['watch'])
+r = call('A', "select challenge_send('kai-7')"); c2 = r['id']; r = call('B', f'select challenge_respond({c2}, false)'); r = call('A', 'select pulse()')
+ok('declines come back too', any(x['id'] == c2 and x['status'] == 'declined' for x in r['answers']), r['answers'])
 print('\nFAILURES:', fails); sys.exit(1 if fails else 0)

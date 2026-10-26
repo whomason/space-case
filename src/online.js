@@ -12,11 +12,11 @@ const NET = {
 (() => { try { const q = new URLSearchParams(location.search).get('api'); if (q && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(q)) NET.url = q; } catch (e) { } })();
 
 // ---------- http ----------
-async function netFetch(path, body, token) {
+async function netFetch(path, body, token, method = 'POST') {
   const h = { apikey: NET_KEY, 'Content-Type': 'application/json' };
   if (token) h.Authorization = 'Bearer ' + token;
   let r;
-  try { r = await fetch(NET.url + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) }); }
+  try { r = await fetch(NET.url + path, { method, headers: h, body: JSON.stringify(body || {}) }); }
   catch (e) { const er = new Error(/whomason\.github\.io|localhost|127\.0\.0\.1/.test(location.hostname) ? "CAN'T REACH THE SERVER. CHECK YOUR INTERNET" : "CAN'T REACH THE SERVER FROM HERE. PLAY ONLINE AT WHOMASON.GITHUB.IO/SPACE-CASE"); er.net = true; throw er; }
   const t = await r.text(); let j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
   if (!r.ok) {
@@ -134,8 +134,9 @@ async function netClaimMail() {
   const r = await netEcon('claim_mail', {});
   NET.mail = 0;
   for (const g of (r && r.got) || []) {
-    const n = g.items.length, what = [n ? `${n} ITEM${n > 1 ? 'S' : ''}` : '', g.coins ? `${fmt(g.coins)} COINS` : ''].filter(Boolean).join(' + ');
-    toast(g.reason === 'trade' ? `TRADE DONE: GOT ${what} FROM ${g.from || 'A FRIEND'}` : `${g.reason.toUpperCase()}: ${what} RETURNED`, COL.gold);
+    const n = g.items.length, what = [n ? `${n} ITEM${n > 1 ? 'S' : ''}` : '', g.coins ? `${fmt(g.coins)} COINS` : '', g.crates ? `${g.crates} CRATE${g.crates > 1 ? 'S' : ''}` : ''].filter(Boolean).join(' + ');
+    const back = /cancel|declin|expire|returned/.test(g.reason);
+    toast(g.reason === 'trade' ? `TRADE DONE: GOT ${what} FROM ${g.from || 'A FRIEND'}` : back ? `${g.reason.toUpperCase()}: ${what} CAME BACK` : `${g.reason.toUpperCase()}: +${what}`, COL.gold);
     if (n) { SND.play('win'); HUB.flashT = 2; HUB.flashCol = COL.gold; }
   }
 }
@@ -161,7 +162,20 @@ function netTick(dt) {
   if (T_NOW - (NET.countsT || -99) > 30) { NET.countsT = T_NOW; rpc('online_counts').then(r => { NET.counts = r; }).catch(() => { }); }
   if (NET.mail > 0 && safe && !NET.claiming && !NET.busy && !NET.choice && !NET.pending) { NET.claiming = true; netClaimMail().catch(e => { NET.err = e.message; }).finally(() => { NET.claiming = false; }); }
 }
+// a password reset email links back here with a one-time sign-in in the address
+function netRecoveryFromUrl() {
+  try {
+    const h = new URLSearchParams((location.hash || '').slice(1)); if (!h.toString()) return;
+    if (h.get('error_description')) toast(('RESET LINK: ' + h.get('error_description')).toUpperCase().slice(0, 80), COL.coral);
+    else if (h.get('type') === 'recovery' && h.get('access_token')) {
+      const at = h.get('access_token'); let p = {}; try { p = JSON.parse(atob(at.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { }
+      NET.recovery = { at, rt: h.get('refresh_token'), exp: Date.now() + (+h.get('expires_in') || 3600) * 1000, uid: p.sub, email: p.email };
+    }
+    if (h.get('access_token') || h.get('error')) history.replaceState(null, '', location.pathname + location.search);
+  } catch (e) { }
+}
 function netBoot() {
+  netRecoveryFromUrl();
   try { NET.sess = JSON.parse(localStorage.getItem(NET_SESS_KEY) || 'null'); } catch (e) { NET.sess = null; }
   if (NET.sess && NET.sess.at) netConnect(); else NET.sess = null;
   document.addEventListener('visibilitychange', () => { if (document.hidden) netSync(); });
@@ -174,6 +188,16 @@ async function netSignIn(email, pw, create) {
   if (!j || !j.access_token) throw new Error(create ? 'ACCOUNT MADE. CONFIRM YOUR EMAIL, THEN SIGN IN' : 'SIGN IN FAILED');
   netSaveSess(sessFrom(j)); await netConnect();
   if (NET.st !== 'on') throw new Error(NET.err || 'COULD NOT CONNECT');
+}
+async function netForgot(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('TYPE YOUR EMAIL ABOVE FIRST');
+  await netFetch('/auth/v1/recover?redirect_to=' + encodeURIComponent(location.origin + location.pathname), { email });
+}
+async function netSetPassword(pw) {
+  if (String(pw || '').length < 6) throw new Error('PASSWORDS NEED AT LEAST 6 CHARACTERS');
+  const r = NET.recovery; await netFetch('/auth/v1/user', { password: pw }, r.at, 'PUT');
+  NET.recovery = null; netSaveSess({ at: r.at, rt: r.rt, exp: r.exp, uid: r.uid, email: r.email }); await netConnect();
 }
 async function netSignOut() {
   try { await netFlush(); } catch (e) { }
@@ -231,7 +255,8 @@ function shownOnline(c) { return ((c && c.online) || 0) * 3 + 600; }
 function panelSocial(st) {
   if (panelFrame('ONLINE', COL.cyan)) return;
   if (NET.st === 'off' || NET.st === 'connecting' || (NET.st === 'error' && !NET.social)) return socialSignIn(st);
-  st.tab = tabs(92, 9, ['FRIENDS', 'CREW', 'TRADES', 'ACCOUNT'], st.tab || 0, 58);
+  const TB = [[0, 'FRIENDS'], [1, 'CREW'], [2, 'TRADES'], [4, 'MARKET'], [3, 'ACCOUNT']].concat(PULSE.admin ? [[5, 'MOD']] : []);
+  const vi = Math.max(0, TB.findIndex(t => t[0] === (st.tab || 0))); st.tab = TB[tabs(92, 9, TB.map(t => t[1]), vi, 50)][0];
   const so = NET.social;
   if (!NET.callsign && st.tab !== 3) {
     text('PICK A CALLSIGN SO FRIENDS CAN FIND YOU', W / 2, 110, COL.ink, FB, 1);
@@ -242,10 +267,24 @@ function panelSocial(st) {
   if (st.tab === 0) socialFriends(st, so);
   else if (st.tab === 1) socialCrew(st, so);
   else if (st.tab === 2) socialTrades(st, so);
+  else if (st.tab === 4) socialMarket(st, so);
+  else if (st.tab === 5 && PULSE.admin) socialMod(st);
   else socialAccount(st);
   if (NET.act) text('WORKING...', W - 74, 32, COL.dim, FS);
+  if (NET.report) reportOverlay();
+}
+function socialNewPassword(st) {
+  const x = 120, w = 240; let y = 50;
+  textO('PICK A NEW PASSWORD', W / 2, y, COL.cyan, '#000', FB, 1, 2); y += 24;
+  text(`FOR ${(NET.recovery.email || 'YOUR ACCOUNT').toUpperCase()}`, W / 2, y, COL.dim, FS, 1); y += 16;
+  text('NEW PASSWORD (6+ CHARACTERS)', x, y, COL.mute, FS); y += 7;
+  const pw = textField('newpw', x, y, w, 16, { type: 'password', auto: 'new-password', caps: false, max: 72, label: 'New password' }); y += 26;
+  if (button(x, y, w, 18, 'SAVE AND SIGN IN', { kind: 'primary', disabled: NET.act }) || (pw.enter && !NET.act)) { NET.act = true; NET.err = ''; netSetPassword(pw.value).then(() => { setField('newpw', ''); SND.play('fanfare'); toast('PASSWORD CHANGED. YOU ARE SIGNED IN', COL.mint); }).catch(e => { NET.err = e.message; SND.play('deny'); }).finally(() => { NET.act = false; }); }
+  y += 26; if (NET.err) wrap(NET.err, 300, FS).forEach((l, i) => text(l, W / 2, y + i * 8, COL.coral, FS, 1));
+  if (button(W / 2 - 30, H - 34, 60, 14, 'CANCEL', { font: FS })) NET.recovery = null;
 }
 function socialSignIn(st) {
+  if (NET.recovery) return socialNewPassword(st);
   const x = 120, w = 240; let y = 40;
   textO('PLAY ONLINE', W / 2, y, COL.cyan, '#000', FB, 1, 2); y += 22;
   ['YOUR SAVE IN THE CLOUD, ON ANY DEVICE', 'FRIENDS, CREWS AND TRADING'].forEach(l => { text(l, W / 2, y, COL.dim, FS, 1); y += 8; }); y += 6;
@@ -256,11 +295,12 @@ function socialSignIn(st) {
   const go = create => { if (NET.act) return; NET.act = true; NET.err = ''; netSignIn(em.value, pw.value, create).then(() => { setField('pw', ''); SND.play('fanfare'); }).catch(e => { NET.err = e.message; SND.play('deny'); }).finally(() => { NET.act = false; }); };
   if (button(x, y, 116, 18, 'SIGN IN', { kind: 'primary', disabled: NET.act }) || ((em.enter || pw.enter) && !NET.act)) go(false);
   if (button(x + 124, y, 116, 18, 'CREATE ACCOUNT', { kind: 'blue', disabled: NET.act, font: FS })) go(true);
-  y += 26;
+  if (button(x + w - 92, y + 21, 92, 11, 'FORGOT PASSWORD?', { font: FS, disabled: NET.act })) { NET.act = true; NET.err = ''; netForgot(em.value).then(() => { NET.err = ''; toast('IF THAT EMAIL HAS AN ACCOUNT, A RESET LINK IS ON ITS WAY', COL.mint); }).catch(e => { NET.err = e.message; }).finally(() => { NET.act = false; }); }
+  y += 34;
   if (NET.act || NET.st === 'connecting') text('CONNECTING...', W / 2, y, COL.dim, FS, 1);
   else if (NET.err) wrap(NET.err, 300, FS).forEach((l, i) => text(l, W / 2, y + i * 8, COL.coral, FS, 1));
   y += 20;
-  ['THE FIRST TIME YOU SIGN IN, YOUR PROGRESS ON THIS DEVICE', 'MOVES INTO YOUR ACCOUNT. NO EMAILS ARE SENT.'].forEach(l => { text(l, W / 2, y, COL.mute, FS, 1); y += 8; });
+  ['THE FIRST TIME YOU SIGN IN, YOUR PROGRESS ON THIS DEVICE', 'MOVES INTO YOUR ACCOUNT. WE ONLY EMAIL YOU FOR PASSWORD RESETS.'].forEach(l => { text(l, W / 2, y, COL.mute, FS, 1); y += 8; });
 }
 // list row helper
 function sRow(x, y, w, h, sel) { const hov = inBox(x, y, w, h); panel(x, y, w, h, { bg: sel ? COL.void3 : hov ? COL.void2 : COL.void0, bd: sel ? COL.cyan : COL.void3, flat: true }); if (hov) IN.cursor = 'pointer'; return hov; }
@@ -296,6 +336,9 @@ function socialFriends(st, so) {
   const acts = [];
   if (p && p.friend === 'friends') {
     acts.push(['TRADE', 'primary', () => { st.tab = 2; tradeStart(st, p.callsign); }]);
+    const wm = watchOf(p.callsign);
+    if (wm) acts.push(['WATCH 1V1', 'blue', () => arSpectate(wm)]);
+    else if (p.online) acts.push(['1V1', 'blue', () => challengeFriend(p.callsign)]);
     const cr = so.crew; if (cr && (cr.my_role === 'leader' || cr.my_role === 'officer') && !p.crew) acts.push(['INVITE TO CREW', 'blue', () => netDo(() => rpc('crew_invite', { p_callsign: p.callsign }), r => r === 'joined' ? `${p.callsign} JOINED YOUR CREW` : `CREW INVITE SENT TO ${p.callsign}`)]);
     acts.push([st.rmConfirm ? 'SURE?' : 'UNFRIEND', 'danger', () => { if (!st.rmConfirm) { st.rmConfirm = true; return; } st.rmConfirm = false; const id = p.id; netDo(() => rpc('friend_remove', { p_other: id }), 'FRIEND REMOVED'); st.sel = null; }]);
   }
@@ -309,6 +352,7 @@ function drawProfileCard(p, x, y, w, h, acts, cs) {
   shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78); if (eq.pet) drawPetAt(eq.pet, x + 66, y + 94, 1, true);
   const tx = x + 80;
   textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2);
+  if (p.callsign && p.callsign !== NET.callsign && button(x + w - 44, y + 4, 40, 11, 'REPORT', { font: FS, kind: 'def', tip: 'TELL A MODERATOR ABOUT THIS PLAYER' })) NET.report = { cs: p.callsign, why: null };
   const tt = p.title && TITLES.find(t => t.id === p.title);
   text(tt ? tt.n : 'ASTRONAUT', tx, y + 24, COL.lilac, FS);
   if (p.crew) text(`CREW [${p.crew.tag}] ${p.crew.name}`, tx, y + 32, COL.cyan, FS);
@@ -443,6 +487,7 @@ function socialTrades(st, so) {
   const f = textField('tradeWith', LX, 38, LW - 58, 15, { ph: 'FRIEND OR CREWMATE', max: 12, filter: cleanName, label: 'Trade with callsign' });
   if ((button(LX + LW - 54, 38, 54, 15, 'START', { kind: 'primary', font: FS, disabled: !f.value.trim() }) || (f.enter && f.value.trim()))) { tradeStart(st, f.value.trim()); setField('tradeWith', ''); return; }
   const list = so.trades || [];
+  if (PULSE.flagged) text('TRADING IS PAUSED WHILE A MODERATOR CHECKS YOUR ACCOUNT', 14, H - 10, COL.coral, FS);
   const y0 = 58, RH = 21, LH = H - 14 - y0, off = listScroll(st, 'tscroll', LX, y0, LW, LH, RH, list.length);
   if (!list.length) ['NO OPEN OFFERS.', 'OFFERS LAST 3 DAYS. ITEMS YOU OFFER', 'ARE HELD SAFE UNTIL THE TRADE ENDS.'].forEach((l, i) => text(l, LX + LW / 2, y0 + 16 + i * 8, COL.mute, FS, 1));
   list.slice(off, off + Math.floor(LH / RH)).forEach((t, i) => {

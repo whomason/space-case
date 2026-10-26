@@ -56,7 +56,7 @@ function drawCrateBay(dt) {
         text(nm, LX + 16, y + 4, sel ? COL.ink : COL.cream, FS);
         if (S.track && S.track.k === 'dream' && (r.k === 'weapon' || r.k === 'galaxy')) text('*', LX + 16 + textW(nm, FS) + 2, y + 4, COL.pink, FS);
         const own = poolOwned(r.k), tot = poolSize(r.k); text(r.k.startsWith('finisher:') ? `${tot} LEFT` : `${own}/${tot}`, LX + LW - 6, y + 4, COL.mute, FS, 2);
-        if (hov) { IN.cursor = 'pointer'; if (clickIn(LX + 2, y, LW - 4, RH - 1)) { BAY.kind = r.k; SND.play('click'); BAY.tier = bestTier(r.k); } }
+        if (hov) { IN.cursor = 'pointer'; if (clickIn(LX + 2, y, LW - 4, RH - 1)) { BAY.kind = r.k; SND.play('click'); BAY.manual = false; BAY.tier = bestTier(r.k); } }
       }
     }
     y += RH;
@@ -65,7 +65,8 @@ function drawCrateBay(dt) {
   if (maxS > 0) { const sh = (LH - 4) * (LH - 6) / total; rect(LX + LW - 3, LY + 2 + (LH - 4 - sh) * (BAY.scroll / maxS), 2, sh, COL.steel); }
   // ---- center: the crate
   if (BAY.kind.startsWith('finisher:') && poolSize(BAY.kind) === 0) BAY.kind = 'weapon';
-  if (BAY.auto) { BAY.auto = false; BAY.tier = bestTier(BAY.kind); }
+  if (BAY.auto) { BAY.auto = false; BAY.manual = false; }
+  if (!BAY.manual) BAY.tier = bestTier(BAY.kind);   // always the best crate you can buy, unless you picked one yourself
   if (!tierUnlocked(BAY.tier)) BAY.tier = 0;
   const kind = BAY.kind, tier = BAY.tier, ki = kindInfo(kind);
   const cx = 222; const cost = crateCost(kind, tier); const tc = tierColor(tier);
@@ -118,7 +119,7 @@ function drawCrateBay(dt) {
     if (ok) { let bx = RX + 86; const bw = 34; for (let r = 0; r < 7; r++) { const w2 = o[r] / 100 * bw; if (w2 <= 0) continue; rect(bx, by + 5, Math.max(1, Math.round(w2)), 4, rcol(r)); bx += w2; } text(fmt(crateCost(kind, t)), RX + RW - 6, by + 5, sel ? COL.gold : COL.dim, FS, 2); }
     else { const lx = RX + RW - 6 - textW(TIERS[t].unlock === 'nova' ? 'AFTER SUPERNOVA' : 'REACH PLANET ' + TIERS[t].unlock, FS); rect(lx - 8, by + 4, 5, 4, COL.mute); rect(lx - 7, by + 2, 3, 2, COL.mute); text(TIERS[t].unlock === 'nova' ? 'AFTER SUPERNOVA' : 'REACH PLANET ' + TIERS[t].unlock, RX + RW - 6, by + 5, COL.mute, FS, 2); }
     if (hov) { IN.cursor = ok ? 'pointer' : 'default'; TIP.set(ok ? `${TIERS[t].n}: ${fmt(crateCost(kind, t))} COINS. LEGENDARY OR BETTER ${fmtPct(o[4] + o[5] + o[6])}` : `${TIERS[t].n} UNLOCKS ${TIERS[t].unlock === 'nova' ? 'AFTER YOUR FIRST SUPERNOVA' : 'WHEN YOU REACH PLANET ' + TIERS[t].unlock}`); }
-    if (clickIn(RX + 2, by, RW - 4, 14)) { if (ok) { BAY.tier = t; SND.play('click'); } else SND.play('deny'); }
+    if (clickIn(RX + 2, by, RW - 4, 14)) { if (ok) { BAY.tier = t; BAY.manual = t !== bestTier(BAY.kind); SND.play('click'); } else SND.play('deny'); }
   }
   let yy = RY + 136; rect(RX + 6, yy - 3, RW - 12, 1, COL.steel);
   text(`EXACT ODDS: ${TIERS[tier].n}`, RX + 6, yy, COL.gold, FS); yy += 9;
@@ -534,7 +535,7 @@ function drawAfterCollect(O, r, d, bx) {
   if (isW || isG) { if (button(bx, y, 176, 20, 'TEST IT', { kind: 'blue', tip: 'GROUPED ALIENS, MOVING TARGETS AND A DUMMY THAT SHOWS YOUR DPS' })) { startRange(id, 'open'); return; } y += 24; }
   const opts = trackOptionsFor(id);
   if (opts.length) { const o = opts[0]; const on = S.track && S.track.k === o.k && (S.track.pg === o.pg && S.track.s === o.s && S.track.id === o.id && S.track.dk === o.dk); if (button(bx, y, 176, 20, on ? 'TRACKING IT' : 'TRACK: ' + o.n, { kind: on ? 'def' : 'outline', font: FS, disabled: on, tip: 'SHOWS ITS PROGRESS ON YOUR STATION AND HUD' })) setTrack(o); y += 24; }
-  if (!O.haul) { const tr = Math.min(BAY.tier, 7), cost = crateCost(O.kind, tr), ok = S.coins >= cost; if (button(bx, y, 176, 18, `OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'def', font: FS })) { startOpen(O.kind, tr, 1); return; } y += 22; }
+  if (!O.haul) { const tr = BAY.manual ? Math.min(BAY.tier, 7) : bestTier(O.kind), cost = crateCost(O.kind, tr), ok = S.coins >= cost; if (button(bx, y, 176, 18, `OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'def', font: FS })) { startOpen(O.kind, tr, 1); return; } y += 22; }
   if (button(bx, Math.min(y, H - 22), 176, 18, 'DONE', { font: FS }) || ((kp('Enter') || kp('Escape') || kp('Space')) && O.afterT > 0.2)) finishOpen();
 }
 function cardFrame(x, y, w, h, r, glow = true) {
@@ -623,7 +624,7 @@ function drawShow(O, i, single) {
     const canD = d.r < 6 && !r.lost;
     if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
     if (!O.haul) {
-      const tr = Math.min(BAY.tier, 7), cost = crateCost(O.kind, tr), ok = S.coins >= cost && (!O.kind.startsWith('finisher') || poolSize(O.kind) > 1);
+      const tr = BAY.manual ? Math.min(BAY.tier, 7) : bestTier(O.kind), cost = crateCost(O.kind, tr), ok = S.coins >= cost && (!O.kind.startsWith('finisher') || poolSize(O.kind) > 1);
       if (button(bx, 198, 176, 20, `${r.lost ? '' : 'COLLECT + '}OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'blue', font: FS, tip: ok ? '' : 'NOT ENOUGH COINS' })) { collectOpen(); const k = O.kind; startOpen(k, tr, 1); return; }
     }
     if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 222, 176, 18, 'TEST IT IN THE RANGE FIRST', { font: FS, tip: 'TRY IT ON TARGETS, THEN COME BACK' })) { startRange(id, 'open'); return; }

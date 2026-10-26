@@ -251,7 +251,7 @@ function onRunKill(e) {
     if (!e.nest) { w.combo = (w.comboT > 0 ? w.combo + 1 : 1); w.comboT = w.comboMax; }
     const mult = Math.min(10, 1 + Math.floor(w.combo / 3));
     R.bestCombo = Math.max(R.bestCombo, mult);
-    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * mult * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1));
+    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * mult * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN);
     R.coins += val; R.kills++; R.xp += e.xp;
     for (let i = 0; i < Math.min(6, 1 + (val >> 2)); i++) R.chunks.push({ x: e.x, y: e.y - 4, vx: (R0() - 0.5) * 120, vy: -R0() * 100, t: 0, coin: true, delay: 0.25 + R0() * 0.2 });
     if (pl.perks.sprint) pl.sprintT = 1.2;
@@ -271,7 +271,7 @@ function onRunKill(e) {
     const first = !S.planet.bosses[R.pi];
     const nC = first ? 3 : 1;
     S.planet.bosses[R.pi] = (S.planet.bosses[R.pi] || 0) + 1; S.planet.bossCd[R.pi] = 2;
-    R.coins += Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * 5); R.xp += e.xp;
+    R.coins += Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * 5 * ENEMY_COIN); R.xp += e.xp;
     ensureBossPool(R.pi);
     for (let i = 0; i < nC; i++) addHaulCrate('boss:' + R.pi, Math.min(7, R.haulTier + 1), e.x, e.y - 10);
     banner(first ? `${R.p.boss[0]} DEFEATED! +3 ARSENAL CRATES FOR YOUR HAUL` : `${R.p.boss[0]} DEFEATED! +1 ARSENAL CRATE`, COL.gold);
@@ -308,7 +308,7 @@ function finishRun() {
   const R = RUN; const L = R.L;
   const lines = []; let total = 0;
   const keys = Object.keys(R.cargo).map(Number).sort((a, b) => planetDef(b).ore[1] - planetDef(a).ore[1]);
-  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = ORE_VALUE(planetDef(k).ore[1]); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
+  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
   const kc = Math.round(R.coins); total += kc;
   earn(total); S.stats.ore += R.cargoN; S.stats.maxHaul = Math.max(S.stats.maxHaul, R.cargoN); S.stats.bestCombo = Math.max(S.stats.bestCombo, R.bestCombo);
   const xp = Math.round(R.xp + R.cargoN * 2 + 10); const lvBefore = S.lvl; addXP(xp);
@@ -653,7 +653,7 @@ function drawRunHUD(R) {
   panel(W - 112, H - 30, 108, 26, { bg: 'rgba(5,6,15,0.82)', bd: R.cargoN >= L.cargo ? COL.gold : COL.steel });
   text('CARGO', W - 106, H - 26, COL.dim, FS); text(`${R.cargoN}/${L.cargo}`, W - 10, H - 26, R.cargoN >= L.cargo ? COL.gold : COL.ink, FS, 2);
   bar(W - 106, H - 18, 96, 4, R.cargoN / L.cargo, COL.gold, COL.void2);
-  let val = 0; for (const k in R.cargo) val += R.cargo[k] * ORE_VALUE(planetDef(+k).ore[1]); val = Math.round(val * L.oreMul + R.coins);
+  let val = 0; for (const k in R.cargo) val += R.cargo[k] * orePrice(planetDef(+k).ore[1]); val = Math.round(val * L.oreMul + R.coins);
   drawCoinIcon(W - 106, H - 12); text(fmt(val), W - 96, H - 11, COL.gold, FS);
   const nCr = R.crates.length + R.choices; if (nCr) { miniCrate(W - 52, H - 14, R.haulTier); text('X' + nCr, W - 37, H - 11, COL.gold, FS); }
   drawEventHUD(R);

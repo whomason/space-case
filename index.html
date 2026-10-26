@@ -11,6 +11,7 @@ canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edge
 <canvas id="game" tabindex="0" aria-label="Space Case game"></canvas>
 <input id="nameIn" hidden maxlength="12" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Callsign">
 <script>
+(() => {
 'use strict';
 // ===== CORE: canvas, input, math, rng, color, font, drawing, particles =====
 const W = 480, H = 270, TAU = Math.PI * 2;
@@ -280,14 +281,22 @@ cvs.addEventListener('pointerdown', e => {
 addEventListener('pointerup', e => { if (e.button === 2) { if (IN.rdown) IN.rrl = true; IN.rdown = false; } else { if (IN.down) IN.rl = true; IN.down = false; } });
 cvs.addEventListener('contextmenu', e => e.preventDefault());
 cvs.addEventListener('wheel', e => { IN.wheel += Math.sign(e.deltaY); e.preventDefault(); }, { passive: false });
+// rebindable controls: the game reads the default keys; a rebound key is translated into its action's default
+const BIND_DEF = { up: 'KeyW', left: 'KeyA', down: 'KeyS', right: 'KeyD', boost: 'Space', interact: 'KeyE', gadget: 'KeyF', swap: 'KeyQ', emote: 'KeyT', pause: 'KeyP' };
+let KEY_TR = {}, KEY_BINDS = null;
+const KEYCAP = { wait: null, got: null };   // the controls screen waiting for a key
+function applyBinds(b) { KEY_BINDS = b; KEY_TR = {}; if (!b) return; for (const a in BIND_DEF) { const p = b[a]; if (p && p !== BIND_DEF[a]) KEY_TR[p] = BIND_DEF[a]; } }
+const remapKey = c => KEY_TR[c] || c;
 addEventListener('keydown', e => {
   if (e.target && e.target.tagName === 'INPUT') { if (['Enter', 'NumpadEnter', 'Escape', 'Tab'].includes(e.code)) IN.kp.add(e.code); if (typeof SND !== 'undefined') SND.unlock(); return; } // typing in a text box
-  if (!IN.keys.has(e.code)) IN.kp.add(e.code);
-  IN.keys.add(e.code);
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+  if (KEYCAP.wait) { KEYCAP.got = e.code; e.preventDefault(); return; }
+  const c = remapKey(e.code);
+  if (!IN.keys.has(c)) IN.kp.add(c);
+  IN.keys.add(c);
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code) || c !== e.code) e.preventDefault();
   if (typeof SND !== 'undefined') SND.unlock();
 });
-addEventListener('keyup', e => IN.keys.delete(e.code));
+addEventListener('keyup', e => IN.keys.delete(remapKey(e.code)));
 addEventListener('blur', () => { IN.keys.clear(); IN.down = false; IN.rdown = false; });
 const key = c => IN.keys.has(c);
 const kp = c => IN.kp.has(c);
@@ -571,6 +580,7 @@ const TIERS = [
   { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
 ];
 const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
+const ENEMY_COIN = 2.5; // aliens drop this many times their old coins
 const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
@@ -712,7 +722,9 @@ const PLANETS = [
 ];
 PLANETS.forEach((p, i) => { p.i = i + 1; });
 const PLANET_REQ = n => n <= 1 ? 0 : Math.round(600 + 100 * Math.pow(n - 1, 1.15)); // early planets need a real upgrade each, late ones need top-tier parts
-const ORE_VALUE = tier => Math.round(5 * Math.pow(1.42, tier - 1));
+const ORE_VALUE = tier => Math.round(5 * Math.pow(1.42, tier - 1));   // base scale (alien coins use it too)
+const ORE_PAY = 3;                                                     // ore sells for this many times the base
+const orePrice = tier => ORE_VALUE(tier) * ORE_PAY;
 const LIQ_SOLID = { swamp: 1, ice: 1, lava: 1, brine: 1, cloud: 1, darkwater: 1, tide: 1, oil: 1, slime: 1, sludge: 1, water: 1, glass: 1, puddle: 1, light: 1, trench: 1, magma: 1, void: 1, starlight: 1 };
 
 const TRAIT_TXT = { 'HEAT': 'O2 DRAINS FASTER. SHIELDS REDUCE IT', 'LOW GRAVITY': 'YOU MOVE FASTER BUT SLIDE', 'DARKNESS': 'YOU ONLY SEE AS FAR AS YOUR HELMET LIGHT', 'HEAVY GRAVITY': 'YOU MOVE SLOWER', 'SPORE CLOUDS': 'SPORE CLOUDS SLOW YOU DOWN', 'LIGHTNING': 'LIGHTNING STRIKES NEAR YOU', 'METEORS': 'METEORS RAIN DOWN' };
@@ -2256,14 +2268,21 @@ function normalizeSave(o) {
   if (!st.gift2) { st.gift2 = 1; for (const id of [firstOf('g', 'blackhole'), firstOf('p', 'bot')]) { if (!st.inv[id]) { st.inv[id] = { l: 1, p: 0, t: Date.now(), g: 0 }; st.fresh[id] = 1; } const sl = slotOf(getDef(id)); if (sl && !st.eq[sl]) st.eq[sl] = id; } st.giftNote = 1; }
   return st;
 }
+// the save on this device carries a seal. Editing the file by hand breaks the seal, and the game remembers it
+// (the cloud's fair-play check then pauses trading until a moderator looks)
+function saveSeal(s) { let h1 = 0xdeadbeef ^ 77, h2 = 0x41c6ce57 ^ 77; const t = s + '|sc-orbit-7f3'; for (let i = 0; i < t.length; i++) { const ch = t.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36); }
+function readSave(raw) {
+  if (!raw) return null; const i = raw.lastIndexOf('\n#'); const json = i >= 0 ? raw.slice(0, i) : raw, seal = i >= 0 ? raw.slice(i + 2) : null;
+  const o = JSON.parse(json); if (o && o.sgn && seal !== saveSeal(json)) o.tamper = 1; return o;
+}
 function load() {
   try {
-    const t = localStorage.getItem(SAVE_KEY);
-    if (t) { S = normalizeSave(JSON.parse(t)); return true; }
+    const o = readSave(localStorage.getItem(SAVE_KEY));
+    if (o) { S = normalizeSave(o); return true; }
   } catch (e) { }
   S = newState(); return false;
 }
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { } DIRTY = false; }
+function save() { try { S.sgn = 1; const json = JSON.stringify(S); localStorage.setItem(SAVE_KEY, json + '\n#' + saveSeal(json)); } catch (e) { } DIRTY = false; }
 function dirty() { DIRTY = true; }
 setInterval(() => { if (DIRTY && S) save(); }, 3000);
 
@@ -2436,7 +2455,7 @@ const xpNeed = L => Math.floor(80 * Math.pow(1.22, L - 1));
 function addXP(n) { S.xp += n; let up = 0; while (S.xp >= xpNeed(S.lvl)) { S.xp -= xpNeed(S.lvl); S.lvl++; S.sp++; up++; } if (up) { toast(`LEVEL ${S.lvl}! +${up} SKILL POINT${up > 1 ? 'S' : ''}`, COL.cyan); SND.play('levelup'); } return up; }
 function checkTitles() { for (const t of TITLES) if (!S.titles.earned[t.id] && t.chk(S)) { S.titles.earned[t.id] = 1; toast('TITLE EARNED: ' + t.n, COL.gold); if (!S.titles.eq) S.titles.eq = t.id; dirty(); } }
 function minerSlots() { return Object.keys(S.planet.bosses).map(Number).sort((a, b) => a - b).slice(0, 10); }
-function minerRate(id, p) { return aStats(getDef(id), effL(id)).rate * ORE_VALUE(planetDef(p).ore[1]) / 5; }
+function minerRate(id, p) { return aStats(getDef(id), effL(id)).rate * orePrice(planetDef(p).ore[1]) / 5; }
 function tickMiners() {
   const now = Date.now(); const mins = Math.min(8 * 60, (now - S.miners.last) / 60000); S.miners.last = now;
   for (const p in S.miners.slots) { const id = S.miners.slots[p]; if (id && owned(id)) S.miners.acc[p] = Math.min((S.miners.acc[p] || 0) + minerRate(id, +p) * mins, minerRate(id, +p) * 480); }
@@ -4856,7 +4875,7 @@ function onRunKill(e) {
     if (!e.nest) { w.combo = (w.comboT > 0 ? w.combo + 1 : 1); w.comboT = w.comboMax; }
     const mult = Math.min(10, 1 + Math.floor(w.combo / 3));
     R.bestCombo = Math.max(R.bestCombo, mult);
-    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * mult * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1));
+    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * mult * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN);
     R.coins += val; R.kills++; R.xp += e.xp;
     for (let i = 0; i < Math.min(6, 1 + (val >> 2)); i++) R.chunks.push({ x: e.x, y: e.y - 4, vx: (R0() - 0.5) * 120, vy: -R0() * 100, t: 0, coin: true, delay: 0.25 + R0() * 0.2 });
     if (pl.perks.sprint) pl.sprintT = 1.2;
@@ -4876,7 +4895,7 @@ function onRunKill(e) {
     const first = !S.planet.bosses[R.pi];
     const nC = first ? 3 : 1;
     S.planet.bosses[R.pi] = (S.planet.bosses[R.pi] || 0) + 1; S.planet.bossCd[R.pi] = 2;
-    R.coins += Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * 5); R.xp += e.xp;
+    R.coins += Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * 5 * ENEMY_COIN); R.xp += e.xp;
     ensureBossPool(R.pi);
     for (let i = 0; i < nC; i++) addHaulCrate('boss:' + R.pi, Math.min(7, R.haulTier + 1), e.x, e.y - 10);
     banner(first ? `${R.p.boss[0]} DEFEATED! +3 ARSENAL CRATES FOR YOUR HAUL` : `${R.p.boss[0]} DEFEATED! +1 ARSENAL CRATE`, COL.gold);
@@ -4913,7 +4932,7 @@ function finishRun() {
   const R = RUN; const L = R.L;
   const lines = []; let total = 0;
   const keys = Object.keys(R.cargo).map(Number).sort((a, b) => planetDef(b).ore[1] - planetDef(a).ore[1]);
-  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = ORE_VALUE(planetDef(k).ore[1]); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
+  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
   const kc = Math.round(R.coins); total += kc;
   earn(total); S.stats.ore += R.cargoN; S.stats.maxHaul = Math.max(S.stats.maxHaul, R.cargoN); S.stats.bestCombo = Math.max(S.stats.bestCombo, R.bestCombo);
   const xp = Math.round(R.xp + R.cargoN * 2 + 10); const lvBefore = S.lvl; addXP(xp);
@@ -5258,7 +5277,7 @@ function drawRunHUD(R) {
   panel(W - 112, H - 30, 108, 26, { bg: 'rgba(5,6,15,0.82)', bd: R.cargoN >= L.cargo ? COL.gold : COL.steel });
   text('CARGO', W - 106, H - 26, COL.dim, FS); text(`${R.cargoN}/${L.cargo}`, W - 10, H - 26, R.cargoN >= L.cargo ? COL.gold : COL.ink, FS, 2);
   bar(W - 106, H - 18, 96, 4, R.cargoN / L.cargo, COL.gold, COL.void2);
-  let val = 0; for (const k in R.cargo) val += R.cargo[k] * ORE_VALUE(planetDef(+k).ore[1]); val = Math.round(val * L.oreMul + R.coins);
+  let val = 0; for (const k in R.cargo) val += R.cargo[k] * orePrice(planetDef(+k).ore[1]); val = Math.round(val * L.oreMul + R.coins);
   drawCoinIcon(W - 106, H - 12); text(fmt(val), W - 96, H - 11, COL.gold, FS);
   const nCr = R.crates.length + R.choices; if (nCr) { miniCrate(W - 52, H - 14, R.haulTier); text('X' + nCr, W - 37, H - 11, COL.gold, FS); }
   drawEventHUD(R);
@@ -5761,7 +5780,7 @@ function drawCrateBay(dt) {
         text(nm, LX + 16, y + 4, sel ? COL.ink : COL.cream, FS);
         if (S.track && S.track.k === 'dream' && (r.k === 'weapon' || r.k === 'galaxy')) text('*', LX + 16 + textW(nm, FS) + 2, y + 4, COL.pink, FS);
         const own = poolOwned(r.k), tot = poolSize(r.k); text(r.k.startsWith('finisher:') ? `${tot} LEFT` : `${own}/${tot}`, LX + LW - 6, y + 4, COL.mute, FS, 2);
-        if (hov) { IN.cursor = 'pointer'; if (clickIn(LX + 2, y, LW - 4, RH - 1)) { BAY.kind = r.k; SND.play('click'); BAY.tier = bestTier(r.k); } }
+        if (hov) { IN.cursor = 'pointer'; if (clickIn(LX + 2, y, LW - 4, RH - 1)) { BAY.kind = r.k; SND.play('click'); BAY.manual = false; BAY.tier = bestTier(r.k); } }
       }
     }
     y += RH;
@@ -5770,7 +5789,8 @@ function drawCrateBay(dt) {
   if (maxS > 0) { const sh = (LH - 4) * (LH - 6) / total; rect(LX + LW - 3, LY + 2 + (LH - 4 - sh) * (BAY.scroll / maxS), 2, sh, COL.steel); }
   // ---- center: the crate
   if (BAY.kind.startsWith('finisher:') && poolSize(BAY.kind) === 0) BAY.kind = 'weapon';
-  if (BAY.auto) { BAY.auto = false; BAY.tier = bestTier(BAY.kind); }
+  if (BAY.auto) { BAY.auto = false; BAY.manual = false; }
+  if (!BAY.manual) BAY.tier = bestTier(BAY.kind);   // always the best crate you can buy, unless you picked one yourself
   if (!tierUnlocked(BAY.tier)) BAY.tier = 0;
   const kind = BAY.kind, tier = BAY.tier, ki = kindInfo(kind);
   const cx = 222; const cost = crateCost(kind, tier); const tc = tierColor(tier);
@@ -5823,7 +5843,7 @@ function drawCrateBay(dt) {
     if (ok) { let bx = RX + 86; const bw = 34; for (let r = 0; r < 7; r++) { const w2 = o[r] / 100 * bw; if (w2 <= 0) continue; rect(bx, by + 5, Math.max(1, Math.round(w2)), 4, rcol(r)); bx += w2; } text(fmt(crateCost(kind, t)), RX + RW - 6, by + 5, sel ? COL.gold : COL.dim, FS, 2); }
     else { const lx = RX + RW - 6 - textW(TIERS[t].unlock === 'nova' ? 'AFTER SUPERNOVA' : 'REACH PLANET ' + TIERS[t].unlock, FS); rect(lx - 8, by + 4, 5, 4, COL.mute); rect(lx - 7, by + 2, 3, 2, COL.mute); text(TIERS[t].unlock === 'nova' ? 'AFTER SUPERNOVA' : 'REACH PLANET ' + TIERS[t].unlock, RX + RW - 6, by + 5, COL.mute, FS, 2); }
     if (hov) { IN.cursor = ok ? 'pointer' : 'default'; TIP.set(ok ? `${TIERS[t].n}: ${fmt(crateCost(kind, t))} COINS. LEGENDARY OR BETTER ${fmtPct(o[4] + o[5] + o[6])}` : `${TIERS[t].n} UNLOCKS ${TIERS[t].unlock === 'nova' ? 'AFTER YOUR FIRST SUPERNOVA' : 'WHEN YOU REACH PLANET ' + TIERS[t].unlock}`); }
-    if (clickIn(RX + 2, by, RW - 4, 14)) { if (ok) { BAY.tier = t; SND.play('click'); } else SND.play('deny'); }
+    if (clickIn(RX + 2, by, RW - 4, 14)) { if (ok) { BAY.tier = t; BAY.manual = t !== bestTier(BAY.kind); SND.play('click'); } else SND.play('deny'); }
   }
   let yy = RY + 136; rect(RX + 6, yy - 3, RW - 12, 1, COL.steel);
   text(`EXACT ODDS: ${TIERS[tier].n}`, RX + 6, yy, COL.gold, FS); yy += 9;
@@ -6239,7 +6259,7 @@ function drawAfterCollect(O, r, d, bx) {
   if (isW || isG) { if (button(bx, y, 176, 20, 'TEST IT', { kind: 'blue', tip: 'GROUPED ALIENS, MOVING TARGETS AND A DUMMY THAT SHOWS YOUR DPS' })) { startRange(id, 'open'); return; } y += 24; }
   const opts = trackOptionsFor(id);
   if (opts.length) { const o = opts[0]; const on = S.track && S.track.k === o.k && (S.track.pg === o.pg && S.track.s === o.s && S.track.id === o.id && S.track.dk === o.dk); if (button(bx, y, 176, 20, on ? 'TRACKING IT' : 'TRACK: ' + o.n, { kind: on ? 'def' : 'outline', font: FS, disabled: on, tip: 'SHOWS ITS PROGRESS ON YOUR STATION AND HUD' })) setTrack(o); y += 24; }
-  if (!O.haul) { const tr = Math.min(BAY.tier, 7), cost = crateCost(O.kind, tr), ok = S.coins >= cost; if (button(bx, y, 176, 18, `OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'def', font: FS })) { startOpen(O.kind, tr, 1); return; } y += 22; }
+  if (!O.haul) { const tr = BAY.manual ? Math.min(BAY.tier, 7) : bestTier(O.kind), cost = crateCost(O.kind, tr), ok = S.coins >= cost; if (button(bx, y, 176, 18, `OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'def', font: FS })) { startOpen(O.kind, tr, 1); return; } y += 22; }
   if (button(bx, Math.min(y, H - 22), 176, 18, 'DONE', { font: FS }) || ((kp('Enter') || kp('Escape') || kp('Space')) && O.afterT > 0.2)) finishOpen();
 }
 function cardFrame(x, y, w, h, r, glow = true) {
@@ -6328,7 +6348,7 @@ function drawShow(O, i, single) {
     const canD = d.r < 6 && !r.lost;
     if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
     if (!O.haul) {
-      const tr = Math.min(BAY.tier, 7), cost = crateCost(O.kind, tr), ok = S.coins >= cost && (!O.kind.startsWith('finisher') || poolSize(O.kind) > 1);
+      const tr = BAY.manual ? Math.min(BAY.tier, 7) : bestTier(O.kind), cost = crateCost(O.kind, tr), ok = S.coins >= cost && (!O.kind.startsWith('finisher') || poolSize(O.kind) > 1);
       if (button(bx, 198, 176, 20, `${r.lost ? '' : 'COLLECT + '}OPEN ANOTHER: ${fmt(cost)} COINS`, { disabled: !ok, kind: 'blue', font: FS, tip: ok ? '' : 'NOT ENOUGH COINS' })) { collectOpen(); const k = O.kind; startOpen(k, tr, 1); return; }
     }
     if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 222, 176, 18, 'TEST IT IN THE RANGE FIRST', { font: FS, tip: 'TRY IT ON TARGETS, THEN COME BACK' })) { startRange(id, 'open'); return; }
@@ -6591,7 +6611,8 @@ function drawHubTop() {
   tog(W - 54, !SND.muted, (x, y, w, h, c) => { rect(x + 4, y + 6, 2, 4, c); ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + 10, y + 3); ctx.lineTo(x + 10, y + 13); ctx.lineTo(x + 6, y + 10); ctx.fill(); }, SND.muted ? 'SOUND IS OFF' : 'SOUND IS ON', () => { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); });
   tog(W - 36, SND.musicOn, (x, y, w, h, c) => { rect(x + 5, y + 4, 1, 7, c); rect(x + 10, y + 3, 1, 7, c); rect(x + 5, y + 3, 6, 2, c); rect(x + 3, y + 10, 3, 2, c); rect(x + 8, y + 9, 3, 2, c); }, SND.musicOn ? 'MUSIC IS ON' : 'MUSIC IS OFF. CLICK TO TURN IT ON', () => { SND.setMusic(!SND.musicOn); S.settings.music = SND.musicOn; if (SND.musicOn) SND.playSong('hub'); dirty(); });
   drawOnlinePill(Math.max(168, 60 + textW((S.name ? S.name + ' ' : '') + (t ? t.n : 'ASTRONAUT'), FS) + 14), 5);
-  if (button(W - 18, 4, 14, 16, '?', { font: FS, tip: 'W/S OR ARROWS TO PICK, ENTER TO OPEN. NUMBER KEYS JUMP STRAIGHT TO A ROOM' })) { }
+  if (button(W - 18, 4, 14, 16, '', { tip: 'SETTINGS: FULLSCREEN AND CONTROLS', icon: (x, y, w, h, c) => { const cx = x + 7, cy = y + 8; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; rect(cx + Math.round(Math.cos(a) * 4) - 1, cy + Math.round(Math.sin(a) * 4) - 1, 2, 2, c); } rect(cx - 2, cy - 2, 4, 4, c); rect(cx - 1, cy - 1, 2, 2, '#05020c'); } })) openStation('settings');
+  drawDailyButton(W - 92 - cw, 4);
 }
 function drawNav(dimmed) {
   const x = 10, w = 162;
@@ -6690,6 +6711,8 @@ function drawPanel() {
   if (p === 'mining') return panelMining(st);
   if (p === 'social') return panelSocial(st);
   if (p === 'arena') return panelArena(st);
+  if (p === 'daily') return panelDaily(st);
+  if (p === 'settings') return panelSettings(st);
 }
 function ownedFor(slot) {
   const want = slot; const ids = Object.keys(S.inv).filter(id => { const d = getDef(id); return slotOf(d) === want; });
@@ -6994,7 +7017,7 @@ function drawMap(dt) {
   drawRings(p, 40, 229, 28, false); ctx.drawImage(big, 40 - 28 - big.pad, 229 - 28 - big.pad); drawRings(p, 40, 229, 28, true);
   textO(`${n}. ${p.name}`, 78, 197, COL.ink, '#000', FB); text(p.look, 78, 207, COL.dim, FS);
   text(p.trait ? `HAZARD: ${p.trait}. ${TRAIT_TXT[p.trait]}` : 'NO HAZARDS', 78, 215, p.trait ? COL.orange : COL.mute, FS);
-  oreIcon(n, 78, 221); text(`${p.ore[0]}  TIER ${p.ore[1]} ORE  ${ORE_VALUE(p.ore[1])} COINS EACH`, 94, 226, COL.ink, FS);
+  oreIcon(n, 78, 221); text(`${p.ore[0]}  TIER ${p.ore[1]} ORE  ${orePrice(p.ore[1])} COINS EACH`, 94, 226, COL.ink, FS);
   text(`BOSS: ${p.boss[0]}${S.planet.bosses[n] ? (S.planet.bossCd[n] > 0 ? ` (BACK IN ${S.planet.bossCd[n]} LANDINGS)` : ' (READY AGAIN)') : ' (DROPS 3 CRATES)'}`, 78, 236, S.planet.bosses[n] ? COL.mint : COL.coral, FS);
   text(`ALIENS: ${p.alien[0]}S  THREAT ${'!'.repeat(Math.min(10, Math.ceil(n / 2)))}`, 78, 244, COL.dim, FS);
   const evk = S.tutorial.planet && S.planet.landings > 0 ? S.planet.ev[n] : null; if (evk) { const E = EVENTS[evk]; text(`EVENT: ${E.n} (${E.tag})  +${E.rw} CRATE${E.rw > 1 ? 'S' : ''}`, 78, 252, E.c, FS); text(E.txt, 78, 259, COL.dim, FS); }
@@ -7093,11 +7116,11 @@ const NET = {
 (() => { try { const q = new URLSearchParams(location.search).get('api'); if (q && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(q)) NET.url = q; } catch (e) { } })();
 
 // ---------- http ----------
-async function netFetch(path, body, token) {
+async function netFetch(path, body, token, method = 'POST') {
   const h = { apikey: NET_KEY, 'Content-Type': 'application/json' };
   if (token) h.Authorization = 'Bearer ' + token;
   let r;
-  try { r = await fetch(NET.url + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) }); }
+  try { r = await fetch(NET.url + path, { method, headers: h, body: JSON.stringify(body || {}) }); }
   catch (e) { const er = new Error(/whomason\.github\.io|localhost|127\.0\.0\.1/.test(location.hostname) ? "CAN'T REACH THE SERVER. CHECK YOUR INTERNET" : "CAN'T REACH THE SERVER FROM HERE. PLAY ONLINE AT WHOMASON.GITHUB.IO/SPACE-CASE"); er.net = true; throw er; }
   const t = await r.text(); let j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
   if (!r.ok) {
@@ -7215,8 +7238,9 @@ async function netClaimMail() {
   const r = await netEcon('claim_mail', {});
   NET.mail = 0;
   for (const g of (r && r.got) || []) {
-    const n = g.items.length, what = [n ? `${n} ITEM${n > 1 ? 'S' : ''}` : '', g.coins ? `${fmt(g.coins)} COINS` : ''].filter(Boolean).join(' + ');
-    toast(g.reason === 'trade' ? `TRADE DONE: GOT ${what} FROM ${g.from || 'A FRIEND'}` : `${g.reason.toUpperCase()}: ${what} RETURNED`, COL.gold);
+    const n = g.items.length, what = [n ? `${n} ITEM${n > 1 ? 'S' : ''}` : '', g.coins ? `${fmt(g.coins)} COINS` : '', g.crates ? `${g.crates} CRATE${g.crates > 1 ? 'S' : ''}` : ''].filter(Boolean).join(' + ');
+    const back = /cancel|declin|expire|returned/.test(g.reason);
+    toast(g.reason === 'trade' ? `TRADE DONE: GOT ${what} FROM ${g.from || 'A FRIEND'}` : back ? `${g.reason.toUpperCase()}: ${what} CAME BACK` : `${g.reason.toUpperCase()}: +${what}`, COL.gold);
     if (n) { SND.play('win'); HUB.flashT = 2; HUB.flashCol = COL.gold; }
   }
 }
@@ -7242,7 +7266,20 @@ function netTick(dt) {
   if (T_NOW - (NET.countsT || -99) > 30) { NET.countsT = T_NOW; rpc('online_counts').then(r => { NET.counts = r; }).catch(() => { }); }
   if (NET.mail > 0 && safe && !NET.claiming && !NET.busy && !NET.choice && !NET.pending) { NET.claiming = true; netClaimMail().catch(e => { NET.err = e.message; }).finally(() => { NET.claiming = false; }); }
 }
+// a password reset email links back here with a one-time sign-in in the address
+function netRecoveryFromUrl() {
+  try {
+    const h = new URLSearchParams((location.hash || '').slice(1)); if (!h.toString()) return;
+    if (h.get('error_description')) toast(('RESET LINK: ' + h.get('error_description')).toUpperCase().slice(0, 80), COL.coral);
+    else if (h.get('type') === 'recovery' && h.get('access_token')) {
+      const at = h.get('access_token'); let p = {}; try { p = JSON.parse(atob(at.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) { }
+      NET.recovery = { at, rt: h.get('refresh_token'), exp: Date.now() + (+h.get('expires_in') || 3600) * 1000, uid: p.sub, email: p.email };
+    }
+    if (h.get('access_token') || h.get('error')) history.replaceState(null, '', location.pathname + location.search);
+  } catch (e) { }
+}
 function netBoot() {
+  netRecoveryFromUrl();
   try { NET.sess = JSON.parse(localStorage.getItem(NET_SESS_KEY) || 'null'); } catch (e) { NET.sess = null; }
   if (NET.sess && NET.sess.at) netConnect(); else NET.sess = null;
   document.addEventListener('visibilitychange', () => { if (document.hidden) netSync(); });
@@ -7255,6 +7292,16 @@ async function netSignIn(email, pw, create) {
   if (!j || !j.access_token) throw new Error(create ? 'ACCOUNT MADE. CONFIRM YOUR EMAIL, THEN SIGN IN' : 'SIGN IN FAILED');
   netSaveSess(sessFrom(j)); await netConnect();
   if (NET.st !== 'on') throw new Error(NET.err || 'COULD NOT CONNECT');
+}
+async function netForgot(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('TYPE YOUR EMAIL ABOVE FIRST');
+  await netFetch('/auth/v1/recover?redirect_to=' + encodeURIComponent(location.origin + location.pathname), { email });
+}
+async function netSetPassword(pw) {
+  if (String(pw || '').length < 6) throw new Error('PASSWORDS NEED AT LEAST 6 CHARACTERS');
+  const r = NET.recovery; await netFetch('/auth/v1/user', { password: pw }, r.at, 'PUT');
+  NET.recovery = null; netSaveSess({ at: r.at, rt: r.rt, exp: r.exp, uid: r.uid, email: r.email }); await netConnect();
 }
 async function netSignOut() {
   try { await netFlush(); } catch (e) { }
@@ -7312,7 +7359,8 @@ function shownOnline(c) { return ((c && c.online) || 0) * 3 + 600; }
 function panelSocial(st) {
   if (panelFrame('ONLINE', COL.cyan)) return;
   if (NET.st === 'off' || NET.st === 'connecting' || (NET.st === 'error' && !NET.social)) return socialSignIn(st);
-  st.tab = tabs(92, 9, ['FRIENDS', 'CREW', 'TRADES', 'ACCOUNT'], st.tab || 0, 58);
+  const TB = [[0, 'FRIENDS'], [1, 'CREW'], [2, 'TRADES'], [4, 'MARKET'], [3, 'ACCOUNT']].concat(PULSE.admin ? [[5, 'MOD']] : []);
+  const vi = Math.max(0, TB.findIndex(t => t[0] === (st.tab || 0))); st.tab = TB[tabs(92, 9, TB.map(t => t[1]), vi, 50)][0];
   const so = NET.social;
   if (!NET.callsign && st.tab !== 3) {
     text('PICK A CALLSIGN SO FRIENDS CAN FIND YOU', W / 2, 110, COL.ink, FB, 1);
@@ -7323,10 +7371,24 @@ function panelSocial(st) {
   if (st.tab === 0) socialFriends(st, so);
   else if (st.tab === 1) socialCrew(st, so);
   else if (st.tab === 2) socialTrades(st, so);
+  else if (st.tab === 4) socialMarket(st, so);
+  else if (st.tab === 5 && PULSE.admin) socialMod(st);
   else socialAccount(st);
   if (NET.act) text('WORKING...', W - 74, 32, COL.dim, FS);
+  if (NET.report) reportOverlay();
+}
+function socialNewPassword(st) {
+  const x = 120, w = 240; let y = 50;
+  textO('PICK A NEW PASSWORD', W / 2, y, COL.cyan, '#000', FB, 1, 2); y += 24;
+  text(`FOR ${(NET.recovery.email || 'YOUR ACCOUNT').toUpperCase()}`, W / 2, y, COL.dim, FS, 1); y += 16;
+  text('NEW PASSWORD (6+ CHARACTERS)', x, y, COL.mute, FS); y += 7;
+  const pw = textField('newpw', x, y, w, 16, { type: 'password', auto: 'new-password', caps: false, max: 72, label: 'New password' }); y += 26;
+  if (button(x, y, w, 18, 'SAVE AND SIGN IN', { kind: 'primary', disabled: NET.act }) || (pw.enter && !NET.act)) { NET.act = true; NET.err = ''; netSetPassword(pw.value).then(() => { setField('newpw', ''); SND.play('fanfare'); toast('PASSWORD CHANGED. YOU ARE SIGNED IN', COL.mint); }).catch(e => { NET.err = e.message; SND.play('deny'); }).finally(() => { NET.act = false; }); }
+  y += 26; if (NET.err) wrap(NET.err, 300, FS).forEach((l, i) => text(l, W / 2, y + i * 8, COL.coral, FS, 1));
+  if (button(W / 2 - 30, H - 34, 60, 14, 'CANCEL', { font: FS })) NET.recovery = null;
 }
 function socialSignIn(st) {
+  if (NET.recovery) return socialNewPassword(st);
   const x = 120, w = 240; let y = 40;
   textO('PLAY ONLINE', W / 2, y, COL.cyan, '#000', FB, 1, 2); y += 22;
   ['YOUR SAVE IN THE CLOUD, ON ANY DEVICE', 'FRIENDS, CREWS AND TRADING'].forEach(l => { text(l, W / 2, y, COL.dim, FS, 1); y += 8; }); y += 6;
@@ -7337,11 +7399,12 @@ function socialSignIn(st) {
   const go = create => { if (NET.act) return; NET.act = true; NET.err = ''; netSignIn(em.value, pw.value, create).then(() => { setField('pw', ''); SND.play('fanfare'); }).catch(e => { NET.err = e.message; SND.play('deny'); }).finally(() => { NET.act = false; }); };
   if (button(x, y, 116, 18, 'SIGN IN', { kind: 'primary', disabled: NET.act }) || ((em.enter || pw.enter) && !NET.act)) go(false);
   if (button(x + 124, y, 116, 18, 'CREATE ACCOUNT', { kind: 'blue', disabled: NET.act, font: FS })) go(true);
-  y += 26;
+  if (button(x + w - 92, y + 21, 92, 11, 'FORGOT PASSWORD?', { font: FS, disabled: NET.act })) { NET.act = true; NET.err = ''; netForgot(em.value).then(() => { NET.err = ''; toast('IF THAT EMAIL HAS AN ACCOUNT, A RESET LINK IS ON ITS WAY', COL.mint); }).catch(e => { NET.err = e.message; }).finally(() => { NET.act = false; }); }
+  y += 34;
   if (NET.act || NET.st === 'connecting') text('CONNECTING...', W / 2, y, COL.dim, FS, 1);
   else if (NET.err) wrap(NET.err, 300, FS).forEach((l, i) => text(l, W / 2, y + i * 8, COL.coral, FS, 1));
   y += 20;
-  ['THE FIRST TIME YOU SIGN IN, YOUR PROGRESS ON THIS DEVICE', 'MOVES INTO YOUR ACCOUNT. NO EMAILS ARE SENT.'].forEach(l => { text(l, W / 2, y, COL.mute, FS, 1); y += 8; });
+  ['THE FIRST TIME YOU SIGN IN, YOUR PROGRESS ON THIS DEVICE', 'MOVES INTO YOUR ACCOUNT. WE ONLY EMAIL YOU FOR PASSWORD RESETS.'].forEach(l => { text(l, W / 2, y, COL.mute, FS, 1); y += 8; });
 }
 // list row helper
 function sRow(x, y, w, h, sel) { const hov = inBox(x, y, w, h); panel(x, y, w, h, { bg: sel ? COL.void3 : hov ? COL.void2 : COL.void0, bd: sel ? COL.cyan : COL.void3, flat: true }); if (hov) IN.cursor = 'pointer'; return hov; }
@@ -7377,6 +7440,9 @@ function socialFriends(st, so) {
   const acts = [];
   if (p && p.friend === 'friends') {
     acts.push(['TRADE', 'primary', () => { st.tab = 2; tradeStart(st, p.callsign); }]);
+    const wm = watchOf(p.callsign);
+    if (wm) acts.push(['WATCH 1V1', 'blue', () => arSpectate(wm)]);
+    else if (p.online) acts.push(['1V1', 'blue', () => challengeFriend(p.callsign)]);
     const cr = so.crew; if (cr && (cr.my_role === 'leader' || cr.my_role === 'officer') && !p.crew) acts.push(['INVITE TO CREW', 'blue', () => netDo(() => rpc('crew_invite', { p_callsign: p.callsign }), r => r === 'joined' ? `${p.callsign} JOINED YOUR CREW` : `CREW INVITE SENT TO ${p.callsign}`)]);
     acts.push([st.rmConfirm ? 'SURE?' : 'UNFRIEND', 'danger', () => { if (!st.rmConfirm) { st.rmConfirm = true; return; } st.rmConfirm = false; const id = p.id; netDo(() => rpc('friend_remove', { p_other: id }), 'FRIEND REMOVED'); st.sel = null; }]);
   }
@@ -7390,6 +7456,7 @@ function drawProfileCard(p, x, y, w, h, acts, cs) {
   shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78); if (eq.pet) drawPetAt(eq.pet, x + 66, y + 94, 1, true);
   const tx = x + 80;
   textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2);
+  if (p.callsign && p.callsign !== NET.callsign && button(x + w - 44, y + 4, 40, 11, 'REPORT', { font: FS, kind: 'def', tip: 'TELL A MODERATOR ABOUT THIS PLAYER' })) NET.report = { cs: p.callsign, why: null };
   const tt = p.title && TITLES.find(t => t.id === p.title);
   text(tt ? tt.n : 'ASTRONAUT', tx, y + 24, COL.lilac, FS);
   if (p.crew) text(`CREW [${p.crew.tag}] ${p.crew.name}`, tx, y + 32, COL.cyan, FS);
@@ -7524,6 +7591,7 @@ function socialTrades(st, so) {
   const f = textField('tradeWith', LX, 38, LW - 58, 15, { ph: 'FRIEND OR CREWMATE', max: 12, filter: cleanName, label: 'Trade with callsign' });
   if ((button(LX + LW - 54, 38, 54, 15, 'START', { kind: 'primary', font: FS, disabled: !f.value.trim() }) || (f.enter && f.value.trim()))) { tradeStart(st, f.value.trim()); setField('tradeWith', ''); return; }
   const list = so.trades || [];
+  if (PULSE.flagged) text('TRADING IS PAUSED WHILE A MODERATOR CHECKS YOUR ACCOUNT', 14, H - 10, COL.coral, FS);
   const y0 = 58, RH = 21, LH = H - 14 - y0, off = listScroll(st, 'tscroll', LX, y0, LW, LH, RH, list.length);
   if (!list.length) ['NO OPEN OFFERS.', 'OFFERS LAST 3 DAYS. ITEMS YOU OFFER', 'ARE HELD SAFE UNTIL THE TRADE ENDS.'].forEach((l, i) => text(l, LX + LW / 2, y0 + 16 + i * 8, COL.mute, FS, 1));
   list.slice(off, off + Math.floor(LH / RH)).forEach((t, i) => {
@@ -7665,7 +7733,7 @@ async function rtJoin(topic, me, on) {
     ch.subscribe(async status => {
       if (status === 'SUBSCRIBED' && !settled) {
         settled = true; clearTimeout(to);
-        try { await ch.track({ cs: me.cs, j: me.j }); } catch (e) { }
+        if (!me.watch) try { await ch.track({ cs: me.cs, j: me.j }); } catch (e) { }
         res({ live: true, send(e, d) { try { ch.send({ type: 'broadcast', event: 'm', payload: { e, d, f: me.id } }); } catch (er) { } }, leave() { try { ch.untrack(); RT.client.removeChannel(ch); } catch (er) { } } });
       } else if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') && !settled) { settled = true; clearTimeout(to); rej(new Error('LIVE CONNECTION FAILED')); }
     });
@@ -7677,6 +7745,7 @@ function rtJoinLocal(topic, me, on) {
   const hello = ask => bc.postMessage({ k: 'p', f: me.id, cs: me.cs, j: me.j, ask });
   bc.onmessage = ev => {
     const m = ev.data; if (!m || m.f === me.id) return;
+    if (m.w) { if (m.k === 'm') on.msg(m.e, m.d, m.f); return; }   // a spectator: hear them, never count them
     if (m.k === 'bye') { if (peers.delete(m.f)) emit(); return; }
     const old = peers.get(m.f);
     peers.set(m.f, { id: m.f, cs: m.cs || (old && old.cs) || '?', j: m.j !== undefined ? m.j : (old ? old.j : 0), t: performance.now() });
@@ -7684,9 +7753,9 @@ function rtJoinLocal(topic, me, on) {
     if (m.k === 'p' && m.ask) hello(false);
     if (m.k === 'm') on.msg(m.e, m.d, m.f);
   };
-  const iv = setInterval(() => { hello(false); const now = performance.now(); let ch = false; for (const [k, p] of peers) if (now - p.t > 4500) { peers.delete(k); ch = true; } if (ch) emit(); }, 1000);
-  hello(true); emit();
-  return Promise.resolve({ live: false, send(e, d) { bc.postMessage({ k: 'm', e, d, f: me.id, cs: me.cs, j: me.j }); }, leave() { clearInterval(iv); try { bc.postMessage({ k: 'bye', f: me.id }); bc.close(); } catch (e) { } } });
+  const iv = setInterval(() => { if (!me.watch) hello(false); const now = performance.now(); let ch = false; for (const [k, p] of peers) if (now - p.t > 4500) { peers.delete(k); ch = true; } if (ch) emit(); }, 1000);
+  if (!me.watch) { hello(true); emit(); }
+  return Promise.resolve({ live: false, send(e, d) { bc.postMessage({ k: 'm', e, d, f: me.id, cs: me.cs, j: me.j, w: !!me.watch }); }, leave() { clearInterval(iv); try { if (!me.watch) bc.postMessage({ k: 'bye', f: me.id }); bc.close(); } catch (e) { } } });
 }
 
 // ===== ARENA: FFA servers, private servers and 1v1 duels =====
@@ -7784,25 +7853,27 @@ function arMakeBot(id, R, skill, o = {}) {
 function arStart(o) {
   const duel = o.mode === 'duel', seed = hashStr(String(o.seed || (o.server && o.server.id) || o.matchId || 'practice'));
   const M = arMap(seed, duel), theme = o.theme || (o.server && o.server.theme) || 1 + (seed % 20);
-  const me = myFighter();
+  const me = o.spec ? arFighter({ id: 'w' + Math.random().toString(36).slice(2, 8), cs: '', alive: false, x: -999, y: -999, wpn: arenaWeapon(null, 0) }) : myFighter();
   AM = { mode: o.mode, practice: !!o.practice, server: o.server || null, matchId: o.matchId || null, ranked: !!o.ranked, M, F: arFloor(M, theme), theme, me, fighters: new Map([[me.id, me]]),
     shots: [], fx: new Particles(900), t: 0, cam: { x: 0, y: 0 }, room: null, host: true, peers: [], sendT: 0, hiT: 0, feed: [], banner: null,
     rk: 0, rhk: 0, rd: 0, best: 0, reportT: 0, pingT: 0, humans: 1, menu: false, ended: false, result: null, timer: duel ? AR_DUEL_TIME : 0, count: duel ? 3 : 0, botSeq: 0, botR: RNG(seed ^ 0x5bd1e995),
     opp: o.opponent || null, vsAI: !!o.vsAI, oppSeenT: 0, connecting: !!o.live, liveErr: '', skill: o.skill ?? 0.5, joinedAt: Date.now() };
   if (duel) AM.host = !!(o.vsAI || o.practice || o.hostFirst);
-  arRespawn(me, true);
+  if (o.spec) { AM.spec = true; AM.host = false; AM.fighters.clear(); AM.count = 0; AM.watchTitle = o.title || 'LIVE 1V1'; AM.needT = 0; }
+  else arRespawn(me, true);
   if (duel && o.vsAI) arAddDuelBot(o.botCard);
   if (o.mode === 'ffa' || o.mode === 'practice') arFillBots();
   if (o.live) {
     const topic = (duel ? 'duel-' + o.matchId : 'arena-' + o.server.id);
-    rtJoin(topic, { id: me.id, cs: me.cs, j: o.hostFirst ? 1 : AM.joinedAt }, { msg: arOnMsg, peers: arOnPeers })
+    rtJoin(topic, { id: me.id, cs: me.cs, j: o.hostFirst ? 1 : AM.joinedAt, watch: !!o.spec }, { msg: arOnMsg, peers: o.spec ? () => { } : arOnPeers })
       .then(room => { if (!AM) { room.leave(); return; } AM.room = room; AM.connecting = false; arSendHi(); })
-      .catch(e => { if (!AM) return; AM.connecting = false; AM.liveErr = e.message; if (duel) arDuelFallback(); });
+      .catch(e => { if (!AM) return; AM.connecting = false; AM.liveErr = e.message; if (AM.spec) { toast("COULD NOT CONNECT TO THAT MATCH", COL.coral); arLeave(); return; } if (duel) arDuelFallback(); });
   }
   SND.playSong('boss'); setScene('arena');
 }
 function arLeave(quiet) {
   const A = AM; if (!A) return;
+  if (A.spec) { if (A.room) try { A.room.leave(); } catch (e) { } AM = null; goHub(); if (!quiet) { openStation('arena'); HUB.ps.arena.tab = 1; } return; }
   const rep = A.mode !== 'duel' && !A.practice ? arReport(true) : null;
   if (A.mode === 'duel' && !A.ended && !A.practice) { arDuelReport(false); }
   if (A.room) { try { A.room.send('bye', {}); A.room.leave(); } catch (e) { } }
@@ -7922,6 +7993,7 @@ function arDie(o, by, broadcast) {
   const A = AM; if (!o.alive) return; o.alive = false; o.hp = 0; o.respT = 3; o.deaths++; o.streak = 0;
   const k = A.fighters.get(by); if (k && k !== o) { k.kills++; k.streak++; if (k.local) { A.rk++; if (o.human) A.rhk++; A.best = Math.max(A.best, k.streak); arStreakBanner(k.streak); arKillFx(o); } }
   if (o.local) { A.rd++; SND.play('lose'); }
+  if (A.host && !A.spec) { if (k && k.bot && o.human && Math.random() < 0.3) arEmote(k, [0, 6, 7][Math.floor(Math.random() * 3)]); else if (o.bot && k && k.human && Math.random() < 0.18) arEmote(o, [3, 1, 2][Math.floor(Math.random() * 3)]); }
   A.feed.unshift({ k: k ? k.cs : '?', v: o.cs, t: 5, me: (k && k.local) || o.local }); if (A.feed.length > 5) A.feed.pop();
   A.fx.burst(o.x, o.y - 8, 34, { c: [o.wpn.col.mid, '#fff', '#ff5a6e', o.wpn.col.core], sp: 150, life: 0.7, s: 2, g: 120 });
   A.fx.add({ x: o.x, y: o.y - 8, life: 0.45, c: '#ffffff', s: 34, t: 'ring' }); A.fx.add({ x: o.x, y: o.y - 8, life: 0.6, c: o.wpn.col.mid, s: 52, t: 'ring' });
@@ -7958,6 +8030,7 @@ function arUpdateShots(dt) {
 }
 // ---------- network ----------
 function arSendHi() {
+  if (!AM || AM.spec || !AM.room) return;   // spectators never announce themselves
   const A = AM; if (!A.room) return; const me = A.me;
   const eq = {}; for (const k of ['weapon', 'helmet', 'chest', 'boots', 'jetpack', 'o2', 'eyewear', 'headgear', 'back', 'trail', 'skin_armor', 'skin_weapon']) if (me.eq[k]) eq[k] = me.eq[k];
   const msg = { cs: me.cs, eq, w: [me.wpn.cls, +me.wpn.dmg.toFixed(2), me.wpn.rate, me.wpn.spd, me.wpn.rng, me.wpn.pellets, me.wpn.spread, me.wpn.aoe, arColPack(me.wpn.col)], mh: me.maxHp, k: me.kills, dd: me.deaths, lv: me.lvl };
@@ -7987,11 +8060,13 @@ function arOnMsg(ev, d, from) {
   if (ev === 's') {
     const f = A.fighters.get(from); if (f && f.wpn) arApplyF(f, d.p, now); else if (!f) arSendHiSoon();
     if (A.mode === 'duel' && f && f.human) A.oppSeenT = now;
-    if (d.b && from === A.hostId && !A.host) for (const bs of d.b) { const b = A.fighters.get(bs[0]); if (b) arApplyF(b, bs.slice(1), now); }
+    if (d.b && (from === A.hostId || A.spec) && !A.host) for (const bs of d.b) { const b = A.fighters.get(bs[0]); if (b) arApplyF(b, bs.slice(1), now); }
     return;
   }
   if (ev === 'd') { const v = A.fighters.get(d.v); if (v && !v.local && !(v.bot && A.host)) { v.alive = true; arDie(v, d.by, false); } return; }
   if (ev === 'bye') { A.fighters.delete(from); return; }
+  if (ev === 'need') { if (!A.spec) { A.specT = A.t; arSendHiSoon(); } return; }
+  if (ev === 'em') { const f = A.fighters.get(d.f || from); if (f && (d.i | 0) >= 0 && (d.i | 0) < EMOTES.length) f.emote = { i: d.i | 0, t: 2.6 }; return; }
 }
 let AR_HI_SOON = 0; function arSendHiSoon() { if (AM && AM.t - AR_HI_SOON > 1) { AR_HI_SOON = AM.t; arSendHi(); } }
 function arOnPeers(list) {
@@ -8006,10 +8081,13 @@ function arOnPeers(list) {
 function arNet(dt) {
   const A = AM; if (!A.room) return;
   A.sendT -= dt; A.hiT -= dt;
-  if (A.hiT <= 0) { A.hiT = 6; arSendHi(); }
+  const watched = A.t - (A.specT ?? -99) < 12, quiet = A.spec || (A.mode === 'duel' && A.vsAI && !watched);
+  if (A.spec) { A.needT -= dt; if (A.needT <= 0) { A.needT = A.fighters.size < 2 ? 1.5 : 6; A.room.send('need', {}); } }
+  if (A.hiT <= 0 && !quiet) { A.hiT = 6; arSendHi(); }
+  if (A.sendT <= 0 && quiet) { A.sendT = AR_SEND; A.me.fired = []; for (const b of arBots()) b.fired = []; }
   if (A.sendT <= 0) {
     A.sendT = AR_SEND; const msg = { p: arPackF(A.me) };
-    if (A.host && A.humans > 1) msg.b = arBots().map(b => [b.id].concat(arPackF(b)));
+    if (A.host && (A.humans > 1 || watched)) msg.b = arBots().map(b => [b.id].concat(arPackF(b)));
     else for (const b of arBots()) b.fired = [];
     A.room.send('s', msg);
   }
@@ -8022,7 +8100,7 @@ function arNet(dt) {
 }
 // ---------- duel flow ----------
 function arDuelCheck() {
-  const A = AM; if (A.ended) return; const me = A.me, opp = [...A.fighters.values()].find(f => f !== me);
+  const A = AM; if (A.ended || A.spec) return; const me = A.me, opp = [...A.fighters.values()].find(f => f !== me);
   if (!opp) return;
   if (me.kills >= AR_DUEL_TO || opp.kills >= AR_DUEL_TO) arDuelEnd(me.kills > opp.kills);
 }
@@ -8054,12 +8132,17 @@ function arUpdate(dt) {
   if (A.hitT > 0) A.hitT -= dt; if (A.kPop > 0) A.kPop -= dt; if (A.killHit > 0) A.killHit -= dt;
   if (A.slow > 0) { A.slow -= dt; dt *= 0.3; }
   A.t += dt;
-  if (kp('Escape')) { if (A.pick) A.pick = 0; else A.menu = !A.menu; SND.play('click'); }
-  if (!A.menu && !A.pick && me.alive) { if (kp('KeyQ') || IN.wheel) arSwap(1 - me.wi); if (kp('Digit1')) arSwap(0); if (kp('Digit2')) arSwap(1); }
+  for (const f of A.fighters.values()) if (f.emote) { f.emote.t -= dt; if (f.emote.t <= 0) f.emote = null; }
+  if (A.spec) return arSpecUpdate(dt);
+  if (A.emoCd > 0) A.emoCd -= dt;
+  if (kp('Escape')) { if (A.emo) A.emo = false; else if (A.pick) A.pick = 0; else A.menu = !A.menu; SND.play('click'); }
+  if (kp('KeyT') && !A.menu && !A.pick && !A.ended) { A.emo = !A.emo; SND.play('click'); }
+  if (A.emo) { for (let i = 0; i < EMOTES.length; i++) if (kp('Digit' + (i + 1))) { arEmote(me, i); A.emo = false; break; } }
+  else if (!A.menu && !A.pick && me.alive) { if (kp('KeyQ') || IN.wheel) arSwap(1 - me.wi); if (kp('Digit1')) arSwap(0); if (kp('Digit2')) arSwap(1); }
   if (A.ended) { A.endT += dt; arUpdateShots(dt); A.fx.update(dt); return; }
   if (A.count > 0) { const c0 = Math.ceil(A.count); A.count -= dt; if (Math.ceil(A.count) !== c0 && A.count > 0) SND.play('tick'); if (A.count <= 0) SND.play('fanfare'); }
   // me
-  const inp = { mx: (key('KeyD') || key('ArrowRight') ? 1 : 0) - (key('KeyA') || key('ArrowLeft') ? 1 : 0), my: (key('KeyS') || key('ArrowDown') ? 1 : 0) - (key('KeyW') || key('ArrowUp') ? 1 : 0), fire: IN.down && !A.menu && !A.pick && IN.my > 20 && !(IN.my > H - 34 && IN.mx < 92), boost: kp('Space') || kp('ShiftLeft') };
+  const inp = { mx: (key('KeyD') || key('ArrowRight') ? 1 : 0) - (key('KeyA') || key('ArrowLeft') ? 1 : 0), my: (key('KeyS') || key('ArrowDown') ? 1 : 0) - (key('KeyW') || key('ArrowUp') ? 1 : 0), fire: IN.down && !A.menu && !A.pick && !A.emo && IN.my > 20 && !(IN.my > H - 34 && IN.mx < 92), boost: kp('Space') || kp('ShiftLeft') };
   let ax = IN.mx + A.cam.x, ay = IN.my + A.cam.y;
   if (IN.touch || TOUCH.size) { const t = touchInput(me, A.cam, { player: me }); inp.mx = t.mx; inp.my = t.my; inp.fire = t.fire; inp.boost = t.boost; ax = t.ax; ay = t.ay; }
   const frozen = A.count > 0 || A.menu && false;
@@ -8100,6 +8183,7 @@ function arDraw(dt) {
     const f = o; drawPlayer(wf, f, cx, cy, f.eq || {}, {});
     const nx = Math.floor(f.x - cx), ny = Math.floor(f.y - cy) - 34;
     const tag = f.cs; const tw = textW(tag, FS) + 4; ctx.globalAlpha = 0.6; rect(nx - tw / 2, ny - 1, tw, 7, '#000'); ctx.globalAlpha = 1; text(tag, nx, ny, f.local ? COL.gold : COL.cream, FS, 1);
+    if (f.emote) { const s = EMOTES[f.emote.i], ew = textW(s, FS) + 8, k = Math.min(1, f.emote.t * 2), pop = Math.max(0, f.emote.t - 2.4) * 10; ctx.globalAlpha = k; panel(nx - ew / 2, ny - 13 - pop, ew, 10, { bg: '#fff6c2', bd: '#05020c', flat: true }); px(nx - 1, ny - 3 - pop, '#05020c'); text(s, nx, ny - 11 - pop, '#1c0f2e', FS, 1); ctx.globalAlpha = 1; }
     const bw = f.local ? 26 : 20; rect(nx - bw / 2 - 1, ny + 6, bw + 2, 4, '#000'); bar(nx - bw / 2, ny + 7, bw, 2, f.hp / f.maxHp, f.hp < f.maxHp * 0.3 ? COL.coral : f.local ? COL.gold : '#7dffb0', '#300');
   }
   // shots
@@ -8113,7 +8197,8 @@ function arDraw(dt) {
   A.fx.draw(cx, cy); arDrawKillFeel(cx, cy, dt);
   // dead overlay
   const me = A.me;
-  if (!me.alive && !A.ended) { ctx.globalAlpha = 0.45; rect(0, 0, W, H, '#200008'); ctx.globalAlpha = 1; textO('DOWN!', W / 2, 100, COL.coral, '#000', FB, 1, 3); text(`BACK IN ${Math.ceil(me.respT)}`, W / 2, 130, COL.cream, FB, 1); const k = A.fighters.get(me.lastBy); if (k) text(`BY ${k.cs}`, W / 2, 142, COL.dim, FS, 1); }
+  if (!me.alive && !A.ended && !A.spec) { ctx.globalAlpha = 0.45; rect(0, 0, W, H, '#200008'); ctx.globalAlpha = 1; textO('DOWN!', W / 2, 100, COL.coral, '#000', FB, 1, 3); text(`BACK IN ${Math.ceil(me.respT)}`, W / 2, 130, COL.cream, FB, 1); const k = A.fighters.get(me.lastBy); if (k) text(`BY ${k.cs}`, W / 2, 142, COL.dim, FS, 1); }
+  if (A.spec) { arSpecHUD(); return; }
   arHUD(); arDrawKillPop(dt);
   if (A.pick) { drawWeaponPicker(A.pickSt = A.pickSt || {}, A.pick, () => { A.pick = 0; }); }
   else if (A.menu && !A.ended) arMenu();
@@ -8155,6 +8240,11 @@ function arHUD() {
     top.forEach((f, i) => { const yy = 51 + i * 8; const pl = list.indexOf(f) + 1; if (f.local) rect(7, yy - 1, 90, 7, '#3a2a10'); let nm = f.cs; while (textW(nm, FS) > 60 && nm.length > 3) nm = nm.slice(0, -1); text(`${pl}. ${nm}`, 10, yy, f.local ? COL.gold : COL.cream, FS); text(f.kills + '', 94, yy, f.local ? COL.gold : COL.ink, FS, 2); });
   }
   drawArenaSlots(10, H - 26, slot => { A.pick = slot; });
+  if (!IN.touch) { keycap(94, H - 23, keyLabel('emote')); text('EMOTE', 94 + textW(keyLabel('emote'), FS) + 10, H - 20, COL.mute, FS); }
+  if (A.emo) {
+    const bw = 44, x0 = W / 2 - EMOTES.length * (bw + 3) / 2, y0 = H - 46;
+    EMOTES.forEach((s, i) => { const x = x0 + i * (bw + 3), hov = inBox(x, y0, bw, 18); panel(x, y0, bw, 18, { bg: hov ? COL.void3 : 'rgba(5,6,15,0.9)', bd: hov ? COL.gold : COL.steel, flat: true }); text(s, x + bw / 2, y0 + 8, COL.ink, FS, 1); text(i + 1 + '', x + 3, y0 + 2, COL.mute, FS); if (hov) IN.cursor = 'pointer'; if (clickIn(x, y0, bw, 18)) { arEmote(A.me, i); A.emo = false; } });
+  }
   if (A.banner) { const k = Math.min(1, A.banner.life); ctx.globalAlpha = k; textO(A.banner.t, W / 2, 60, COL.gold, '#000', FB, 1, 2); ctx.globalAlpha = 1; }
   if (button(W - 52, H - 20, 46, 14, 'MENU', { font: FS })) A.menu = !A.menu;
   if (IN.touch || TOUCH.size) { const B = TC.btn; if (B && B.boost) { const b = B.boost; panel(b[0], b[1], b[2], b[3], { bg: 'rgba(5,6,15,0.6)', bd: COL.steel }); text('BOOST', b[0] + b[2] / 2, b[1] + 8, COL.ink, FS, 1); } }
@@ -8213,7 +8303,7 @@ function duelSearch(ranked, code) {
 }
 function duelTick(dt) {
   if (!DQ.on) return; DQ.t += dt; DQ.poll -= dt;
-  if (DQ.found) { DQ.ft = (DQ.ft || 0) + dt; if (DQ.ft > 2.2) { const f = DQ.found; DQ.on = false; DQ.found = null; arStart({ mode: 'duel', matchId: f.match, ranked: f.ranked, opponent: f.opponent, live: !f.ai, vsAI: !!f.ai, botCard: f.ai ? f.card : null, hostFirst: f.host, seed: f.match }); } return; }
+  if (DQ.found) { DQ.ft = (DQ.ft || 0) + dt; if (DQ.ft > 2.2) { const f = DQ.found; DQ.on = false; DQ.found = null; arStart({ mode: 'duel', matchId: f.match, ranked: f.ranked, opponent: f.opponent, live: true, vsAI: !!f.ai, botCard: f.ai ? f.card : null, hostFirst: f.host, seed: f.match }); } return; }
   if (DQ.code && DQ.t > DQ_FRIEND) { duelCancel(); toast('NOBODY USED THAT CODE. TRY AGAIN WHEN YOUR FRIEND IS ON', COL.coral); return; }
   if (DQ.busy || (DQ.poll > 0 && !DQ.aiNow)) return; DQ.busy = true; DQ.poll = 1.2;
   const giveUp = !DQ.code && (DQ.aiNow || DQ.t > DQ.wait);
@@ -8247,6 +8337,7 @@ function panelArena(st) {
   panel(14, 30, W - 28, 25, { bg: COL.void0, bd: COL.void3, flat: true });
   drawRankBadge(20, 33, rk, 16);
   text(on ? (NET.callsign || 'NO CALLSIGN') : 'OFFLINE', 42, 34, COL.ink, FB); text(on ? `${rk[0]}  ${fmt(tr)} TROPHIES` : 'SIGN IN FOR REWARDS, TROPHIES AND RANKS', 42, 43, rk[2] === 'RAINBOW' ? rainbow(T_NOW) : rk[2], FS);
+  if (me && me.season) { const s = Math.max(0, (Date.parse(me.season_ends) - Date.now()) / 1000); text(`SEASON ${me.season}`, 150, 35, COL.lilac, FS); text(`ENDS IN ${Math.floor(s / 86400)}D ${Math.floor(s / 3600) % 24}H`, 150, 43, COL.mute, FS); if (inBox(150, 33, 70, 18)) TIP.set('EVERY MONTH THE SEASON ENDS: REWARDS BY RANK GO TO YOUR MAILBOX, THEN TROPHIES DROP BY HALF'); }
   if (me) { text(`KILLS ${fmt(me.kills)}  BEST STREAK ${me.best_streak}`, W - 152, 35, COL.dim, FS, 2); text(`1V1 ${me.duels_won}W ${me.duels_lost}L`, W - 152, 43, COL.dim, FS, 2); }
   text('YOUR', W - 142, 35, COL.mute, FS); text('ARENA', W - 142, 41, COL.mute, FS); text('GUNS', W - 142, 47, COL.mute, FS); drawArenaSlots(W - 106, 32, slot => { st.pick = slot; });
   if (!on && button(W - 214, 33, 90, 16, 'SIGN IN', { kind: 'blue', font: FS })) openStation('social');
@@ -8317,6 +8408,9 @@ function arenaDuel(st, on) {
   text('PLAY A FRIEND', x + 6, fy + 3, COL.magenta, FS); text('YOU BOTH TYPE THE SAME CODE', x + 6, fy + 11, COL.mute, FS);
   const fc = textField('duelCode', x + 150, fy + 3, 150, 14, { ph: 'ANY CODE, LIKE PALS', max: 12, filter: v => v.toUpperCase().replace(/[^A-Z0-9]/g, ''), label: 'Friend 1v1 code' });
   if (button(x + 306, fy + 3, 140, 14, 'FIND MY FRIEND', { kind: 'primary', font: FS, disabled: !on || fc.value.length < 3 }) || (fc.enter && fc.value.length >= 3 && on)) duelSearch(false, fc.value);
+  // friends playing right now
+  const wl = (typeof PULSE !== 'undefined' ? PULSE.watch : []) || [];
+  if (wl.length) { const wy = H - 30; text('LIVE NOW:', x, wy + 4, '#ff8a9a', FS); wl.slice(0, 2).forEach((w2, i) => { const bx = x + 46 + i * 196; text(`${w2.a} VS ${w2.b}${w2.ranked ? ' (RANKED)' : ''}`, bx, wy + 4, COL.ink, FS); if (button(bx + 136, wy, 50, 13, 'WATCH', { kind: 'blue', font: FS })) arSpectate(w2); }); }
   // rank ladder
   const ly = y + 134; text('RANKS', x, ly, COL.gold, FS);
   AR_RANKS.forEach((r, i) => { const bx = x + i * 56; drawRankBadge(bx, ly + 8, r, 14); text(r[0], bx + 16, ly + 10, r[2] === 'RAINBOW' ? rainbow(T_NOW, i * 40) : r[2], FS); text(fmt(r[1]), bx + 16, ly + 17, COL.mute, FS); });
@@ -8389,6 +8483,351 @@ function drawArenaSlots(x, y, onClick) {
     keycap(bx - 3, y - 4, String(i + 1));
     if (hov) { IN.cursor = 'pointer'; TIP.set(id ? { item: id } : 'PICK A SECOND WEAPON'); if (clickIn(bx, y, 38, 22)) onClick(i + 1); }
   });
+}
+
+// ---------- quick chat: fixed phrases only, so nobody can say anything mean ----------
+const EMOTES = ['GG', 'NICE!', 'WOW', 'OOPS', 'HI!', 'REMATCH?', ':)', 'LOL'];
+function arEmote(f, i) {
+  const A = AM; if (!A || !f) return;
+  if (f.local) { if (A.emoCd > 0) return; A.emoCd = 1.2; SND.play('click'); }
+  f.emote = { i, t: 2.6 };
+  if (A.room && !A.spec) A.room.send('em', f.local ? { i } : { i, f: f.id });
+}
+// ---------- watching a friend's 1v1 ----------
+function arSpectate(w) {
+  if (NET.st !== 'on') { toast('SIGN IN TO WATCH', COL.coral); return; }
+  arStart({ mode: 'duel', matchId: w.match, seed: w.match, live: true, spec: true, title: `${w.a} VS ${w.b}` });
+}
+function arSpecUpdate(dt) {
+  const A = AM;
+  if (kp('Escape')) { arLeave(); return; }
+  const list = [...A.fighters.values()].filter(f => f.x > -500);
+  if (!A.follow || !A.fighters.has(A.follow)) A.follow = list.length ? list[0].id : null;
+  if ((kp('KeyQ') || IN.pr || kp('Space')) && list.length > 1) { const i = list.findIndex(f => f.id === A.follow); A.follow = list[(i + 1) % list.length].id; IN.pr = false; }
+  if (!A.ended) {
+    const top = list.find(f => f.kills >= AR_DUEL_TO);
+    if (top) { A.ended = true; A.endT = 0; A.result = { spec: true, winner: top.cs }; SND.play('fanfare'); }
+  } else { A.endT += dt; if (A.endT > 8) { arLeave(); return; } }
+  arUpdateShots(dt); arNet(dt); A.fx.update(dt);
+  for (const f of A.feed) f.t -= dt; A.feed = A.feed.filter(f => f.t > 0);
+  const t = A.fighters.get(A.follow), tx = (t ? t.x : A.M.w / 2) - W / 2, ty = (t ? t.y : A.M.h / 2) - H / 2 - 6;
+  A.cam.x = clamp(lerp(A.cam.x, tx, Math.min(1, dt * 6)), -20, A.M.w - W + 20); A.cam.y = clamp(lerp(A.cam.y, ty, Math.min(1, dt * 6)), -30, A.M.h - H + 20);
+  if (A.M.w < W) A.cam.x = (A.M.w - W) / 2; if (A.M.h < H) A.cam.y = (A.M.h - H) / 2 - 8;
+}
+function arSpecHUD() {
+  const A = AM, list = [...A.fighters.values()];
+  panel(W / 2 - 90, 4, 180, 30, { bg: 'rgba(5,6,15,0.8)', bd: COL.cyan });
+  rect(W / 2 - 84, 9, 4, 4, Math.floor(T_NOW * 2) % 2 ? '#ff5a6e' : '#7a2030'); text('WATCHING LIVE', W / 2 - 76, 8, '#ff8a9a', FS);
+  text(A.watchTitle, W / 2 + 84, 8, COL.dim, FS, 2);
+  const [a, b] = list; if (a) { textO(`${a.cs} ${a.kills}`, W / 2 - 6, 19, COL.gold, '#000', FB, 2); } if (b) { textO(`${b.kills} ${b.cs}`, W / 2 + 6, 19, COL.coral, '#000', FB, 0); }
+  if (!list.length) text(A.connecting ? 'CONNECTING...' : 'WAITING FOR THE PILOTS...', W / 2, 120, COL.dim, FB, 1);
+  A.feed.forEach((f, i) => { const s = `${f.k} > ${f.v}`; const w = textW(s, FS) + 8; panel(W - w - 6, 40 + i * 10, w, 9, { bg: 'rgba(5,6,15,0.75)', bd: COL.void3, flat: true }); text(s, W - w - 2, 42 + i * 10, COL.cream, FS); });
+  const t = A.fighters.get(A.follow); if (t) text(`CAMERA: ${t.cs}. CLICK OR Q TO SWITCH`, 8, H - 12, COL.mute, FS);
+  if (button(W - 64, H - 22, 58, 16, 'LEAVE', { font: FS })) { arLeave(); return; }
+  if (A.ended) { ctx.globalAlpha = Math.min(0.7, A.endT); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1; textO(`${A.result.winner} WINS!`, W / 2, 100, COL.gold, '#000', FB, 1, 3); text('BACK TO THE ARENA IN A MOMENT', W / 2, 140, COL.dim, FS, 1); }
+}
+
+// ===== LIVE: daily rewards, friend pulse + challenges, market, reports + moderation, settings =====
+
+// ---------- pulse: friends coming online, 1v1 challenges, matches you can watch ----------
+const PULSE = { t: -1e9, busy: false, online: null, watch: [], admin: false, flagged: false, seen: new Set(), popup: null, sent: null, off: false };
+function pulseTick() {
+  if (NET.st !== 'on' || PULSE.busy || PULSE.off) return;
+  if (T_NOW - PULSE.t < (PULSE.sent || HUB.panel === 'social' || HUB.panel === 'arena' ? 4 : 8)) return;
+  PULSE.t = T_NOW; PULSE.busy = true;
+  rpc('pulse').then(r => {
+    const now = new Set(r.online || []);
+    if (PULSE.online) for (const cs of now) if (!PULSE.online.has(cs)) { toast(`${cs} IS ONLINE`, '#7dffb0'); SND.play('click'); }
+    PULSE.online = now; PULSE.watch = r.watch || []; PULSE.admin = !!r.admin; PULSE.flagged = !!r.flagged;
+    if ((r.mail | 0) > NET.mail) NET.mail = r.mail | 0;
+    for (const c of r.challenges || []) if (!PULSE.seen.has(c.id)) { PULSE.seen.add(c.id); PULSE.popup = { id: c.id, from: c.from, t0: T_NOW }; SND.play('upgradeHint'); }
+    for (const a of r.answers || []) if (PULSE.sent && a.id === PULSE.sent.id) {
+      if (a.status === 'declined') { toast(`${a.to} SAID NOT RIGHT NOW`, COL.coral); if (DQ.on && DQ.code === PULSE.sent.code) duelCancel(); }
+      else toast(`${a.to} ACCEPTED! FINDING EACH OTHER...`, '#7dffb0');
+      PULSE.sent = null;
+    }
+  }).catch(e => { if (e.code === 'PGRST202') PULSE.off = true; }).finally(() => { PULSE.busy = false; });
+}
+function challengeFriend(cs) {
+  netDo(() => rpc('challenge_send', { p_callsign: cs }).then(r => { PULSE.sent = { id: r.id, code: r.code, to: cs }; duelSearch(false, r.code); return r; }), `CHALLENGE SENT. WAITING FOR ${cs}`);
+}
+function watchOf(cs) { return PULSE.watch.find(w => w.a === cs || w.b === cs); }
+// the challenge popup sits on top of the station screens
+const POP = { x: W / 2 - 120, y: 26, w: 240, h: 36 };
+function livePopupUp() { return PULSE.popup && (SCENE === 'hub' || SCENE === 'crates' || SCENE === 'map') && !NAMEUI.open && !NET.choice; }
+function liveGrab() { if (livePopupUp() && inBox(POP.x, POP.y, POP.w, POP.h) && IN.pr) { IN.pr = false; return true; } return false; }
+function liveOverlay(grabbed) {
+  const p = PULSE.popup; if (!p) return;
+  const left = 60 - (T_NOW - p.t0); if (left <= 0) { PULSE.popup = null; return; }
+  if (!livePopupUp()) return;
+  const pr = IN.pr; IN.pr = grabbed; IN.used = false;
+  const { x, y, w, h } = POP, pulse = (Math.sin(T_NOW * 6) + 1) / 2;
+  ctx.globalAlpha = 0.25 + pulse * 0.25; rect(x - 3, y - 3, w + 6, h + 6, COL.coral); ctx.globalAlpha = 1;
+  panel(x, y, w, h, { bg: '#1c0f2e', bd: COL.coral });
+  textO(`${p.from} CHALLENGES YOU TO A 1V1!`, x + 8, y + 5, COL.ink, '#000', FB);
+  bar(x + 8, y + 30, w - 16, 2, left / 60, COL.coral, COL.void0);
+  if (button(x + 8, y + 15, 70, 13, 'ACCEPT', { kind: 'primary', font: FS })) {
+    const id = p.id; PULSE.popup = null;
+    rpc('challenge_respond', { p_id: id, p_accept: true }).then(r => { if (r.code) { if (RUN) { RUN = null; } duelSearch(false, r.code); } }).catch(e => toast(e.message, COL.coral));
+  }
+  if (button(x + 84, y + 15, 60, 13, 'NOT NOW', { font: FS })) { const id = p.id; PULSE.popup = null; rpc('challenge_respond', { p_id: id, p_accept: false }).catch(() => { }); }
+  IN.pr = pr;
+}
+
+// ---------- daily rewards: a 7-day streak ----------
+const DAILY_BASE = [[300, 0], [500, 0], [150, 1], [800, 0], [250, 2], [1200, 0], [2000, 3]];   // coins, crate (0 none, else tier step)
+const DAILY = { st: null, t: -1e9, busy: false, shown: false, local: false };
+function localDay(d = new Date()) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function dailyDays() {
+  const pl = Math.max(1, S.planet.reached || 1), k = clamp(pl / 2.5, 1, 8), t = Math.min(5, 1 + Math.floor(pl / 4));
+  return DAILY_BASE.map(([c, cr]) => ({ coins: Math.round(c * k / 50) * 50, crates: cr ? [Math.min(6, t + cr - 1)] : [] }));
+}
+// signed in: the server keeps the streak. Not signed in: this device does
+function dailyInfo() {
+  if (NET.st === 'on' && !DAILY.local) return DAILY.st;
+  const d = S.daily || {}, today = localDay(), y = localDay(new Date(Date.now() - 864e5));
+  const streak = d.last === today || d.last === y ? d.streak || 0 : 0, can = d.last !== today;
+  return { streak, can, next: can ? (streak % 7) + 1 : null, today_done: !can, days: dailyDays() };
+}
+function dailyRefresh(force) {
+  if (NET.st !== 'on' || DAILY.local || DAILY.busy || (!force && T_NOW - DAILY.t < 120)) return;
+  DAILY.busy = true; DAILY.t = T_NOW;
+  rpc('daily_status', { p_tz: new Date().getTimezoneOffset() }).then(r => { DAILY.st = r; }).catch(e => { if (e.code === 'PGRST202') DAILY.local = true; }).finally(() => { DAILY.busy = false; });
+}
+function dailyClaim() {
+  const info = dailyInfo(); if (!info || !info.can) return;
+  if (NET.st === 'on' && !DAILY.local) {
+    netDo(() => rpc('daily_claim', { p_tz: new Date().getTimezoneOffset() }).then(r => { NET.mail = Math.max(NET.mail, 1); DAILY.t = -99; dailyRefresh(true); DAILY.flash = 1; return r; }),
+      r => `DAY ${r.day}: +${fmt(r.coins)} COINS${r.crates.length ? ' + A CRATE' : ''}. IT IS IN YOUR MAILBOX`);
+    return;
+  }
+  const d = S.daily || {}, today = localDay(), y = localDay(new Date(Date.now() - 864e5));
+  const streak = d.last === y ? (d.streak || 0) + 1 : 1, day = ((streak - 1) % 7) + 1, rw = dailyDays()[day - 1];
+  S.daily = { last: today, streak }; S.coins += rw.coins; S.stats.earned = (S.stats.earned || 0) + rw.coins;
+  for (const t of rw.crates) S.choiceQueue.push({ tier: t, title: 'DAILY CRATE' });
+  dirty(); SND.play('fanfare'); DAILY.flash = 1; toast(`DAY ${day}: +${fmt(rw.coins)} COINS${rw.crates.length ? ' + A CRATE' : ''}`, COL.gold);
+}
+function dailyCan() { const i = dailyInfo(); return !!(i && i.can); }
+function drawDailyButton(x, y) {
+  const can = dailyCan(), pulse = can && Math.floor(T_NOW * 3) % 2;
+  if (button(x, y, 16, 16, '', { tip: can ? 'DAILY REWARD READY!' : 'DAILY REWARDS', icon: (bx, by, w, h, c) => { rect(bx + 3, by + 6, 10, 7, can ? COL.gold : c); rect(bx + 2, by + 4, 12, 3, can ? '#ffe36b' : c); rect(bx + 7, by + 4, 2, 9, can ? COL.coral : '#05020c'); rect(bx + 5, by + 2, 2, 2, can ? COL.coral : c); rect(bx + 9, by + 2, 2, 2, can ? COL.coral : c); } })) openStation('daily');
+  if (pulse) { rect(x + 12, y - 2, 6, 6, COL.coral); text('!', x + 15, y - 1, '#fff', FS, 1); }
+}
+function panelDaily(st) {
+  if (panelFrame('DAILY REWARDS', COL.gold)) return;
+  const info = dailyInfo();
+  if (!info) { text('LOADING...', W / 2, 120, COL.dim, FS, 1); dailyRefresh(true); return; }
+  const days = info.days || dailyDays(), cur = info.can ? info.next : ((info.streak - 1) % 7) + 1;
+  text(`STREAK: ${info.streak || 0} DAY${info.streak === 1 ? '' : 'S'}`, W / 2, 34, COL.gold, FB, 1);
+  text('COME BACK EVERY DAY. MISS ONE AND THE STREAK STARTS OVER. DAY 7 IS THE BIG ONE', W / 2, 46, COL.dim, FS, 1);
+  const cw = 60, gap = 4, x0 = Math.floor(W / 2 - (7 * cw + 6 * gap) / 2), y0 = 60;
+  days.forEach((d, i) => {
+    const n = i + 1, x = x0 + i * (cw + gap), got = n < cur || (n === cur && !info.can), now = n === cur && info.can, big = n === 7;
+    const ch = big ? 104 : 96, y = y0 + (big ? -4 : 0);
+    if (now) { ctx.globalAlpha = 0.3 + 0.3 * Math.sin(T_NOW * 5); rect(x - 2, y - 2, cw + 4, ch + 4, COL.gold); ctx.globalAlpha = 1; }
+    panel(x, y, cw, ch, { bg: got ? '#132018' : now ? '#2a2310' : COL.void1, bd: now ? COL.gold : got ? '#7dffb0' : big ? COL.magenta : COL.steel });
+    text('DAY ' + n, x + cw / 2, y + 5, now ? COL.gold : got ? '#7dffb0' : COL.ink, FB, 1);
+    drawCoinIcon(x + 8, y + 22); text(fmt(d.coins), x + 18, y + 23, COL.gold, FS);
+    if (d.crates && d.crates.length) { miniCrate(x + cw / 2 - 6, y + 40, d.crates[0]); text(TIERS[d.crates[0]] ? TIERS[d.crates[0]].n : 'CRATE', x + cw / 2, y + 58, COL.lilac, FS, 1); }
+    if (got) { text('CLAIMED', x + cw / 2, y + ch - 12, '#7dffb0', FS, 1); line(x + cw / 2 - 5, y + 74, x + cw / 2 - 2, y + 77, '#7dffb0'); line(x + cw / 2 - 2, y + 77, x + cw / 2 + 5, y + 70, '#7dffb0'); }
+    else if (now) text('TODAY', x + cw / 2, y + ch - 12, COL.gold, FS, 1);
+  });
+  const by = 176;
+  if (info.can) { if (button(W / 2 - 80, by, 160, 22, 'CLAIM DAY ' + cur, { kind: 'primary', disabled: NET.act })) dailyClaim(); }
+  else {
+    const t = new Date(); t.setHours(24, 0, 0, 0); const s = Math.max(0, Math.floor((t - Date.now()) / 1000));
+    text(`NEXT REWARD IN ${Math.floor(s / 3600)}H ${Math.floor(s / 60) % 60}M`, W / 2, by + 6, COL.dim, FB, 1);
+  }
+  text(NET.st === 'on' ? 'YOUR STREAK IS SAVED ON YOUR ACCOUNT' : 'SIGN IN TO KEEP YOUR STREAK ON EVERY DEVICE', W / 2, by + 32, COL.mute, FS, 1);
+  if (DAILY.flash > 0) { DAILY.flash -= 1 / 60; ctx.globalAlpha = DAILY.flash * 0.5; rect(0, 0, W, H, COL.gold); ctx.globalAlpha = 1; }
+}
+
+// ---------- the market (a tab of the ONLINE panel) ----------
+const MK = { list: null, t: -1e9, busy: false, err: '' };
+const MK_CATS = [['ALL', null], ['WEAPONS', ['w', 'u', 'e']], ['ARMOR', ['a']], ['SHIP', ['s']], ['LOOKS', ['c', 'k', 'b']], ['OTHER', ['t', 'g', 'p']]];
+function mkRefresh(force) {
+  if (MK.busy || (!force && T_NOW - MK.t < 15)) return; MK.busy = true; MK.t = T_NOW;
+  rpc('market_browse', {}).then(r => { MK.list = (r || []).filter(x => netValid(x.item)); MK.err = ''; }).catch(e => { MK.err = e.code === 'PGRST202' ? 'THE MARKET OPENS AFTER THE SERVER UPDATE' : e.message; }).finally(() => { MK.busy = false; });
+}
+function mkCat(id) { const c = id.split('|')[0]; return c; }
+function socialMarket(st, so) {
+  mkRefresh(false);
+  if (st.msell) return marketSell(st);
+  const LX = 14, LW = 290;
+  MK_CATS.forEach(([n], i) => { if (button(LX + i * 46, 30, 44, 12, n, { font: FS, kind: (st.mcat || 0) === i ? 'primary' : 'def' })) { st.mcat = i; st.mscroll = 0; } });
+  const q = textField('mkFind', LX, 45, 150, 13, { ph: 'SEARCH BY NAME', max: 20, label: 'Search the market' });
+  if (button(LX + 156, 45, 64, 13, st.mmine ? 'ALL LISTINGS' : 'MY LISTINGS', { font: FS, kind: st.mmine ? 'cream' : 'def' })) { st.mmine = !st.mmine; st.mscroll = 0; }
+  if (button(LX + 224, 45, 66, 13, 'SELL AN ITEM', { font: FS, kind: 'blue', disabled: PULSE.flagged })) { st.msell = { id: null }; setField('mkPrice', ''); }
+  if (PULSE.flagged) text('TRADING IS PAUSED WHILE A MODERATOR CHECKS YOUR ACCOUNT', LX, H - 10, COL.coral, FS);
+  if (MK.err) { wrap(MK.err, LW, FS).forEach((l, i) => text(l, LX + LW / 2, 120 + i * 8, COL.coral, FS, 1)); return; }
+  if (!MK.list) { text('LOADING THE MARKET...', LX + LW / 2, 120, COL.dim, FS, 1); return; }
+  const cat = MK_CATS[st.mcat || 0][1], qs = (q.value || '').trim().toUpperCase();
+  const rows = MK.list.filter(m => (!st.mmine || m.mine) && (!cat || cat.includes(mkCat(m.item))) && (!qs || getDef(m.item).name.includes(qs)));
+  const y0 = 62, RH = 20, LH = H - 22 - y0, off = listScroll(st, 'mscroll', LX, y0, LW, LH, RH, rows.length);
+  if (!rows.length) text(st.mmine ? 'YOU ARE NOT SELLING ANYTHING' : 'NOTHING FOR SALE HERE YET. BE THE FIRST!', LX + LW / 2, y0 + 30, COL.mute, FS, 1);
+  rows.slice(off, off + Math.floor(LH / RH)).forEach((m, i) => {
+    const y = y0 + i * RH, d = getDef(m.item), sel = st.msel === m.id, hov = sRow(LX, y, LW - 4, RH - 2, sel);
+    tradeTile(m.item, LX + 2, y + 1, 26, 16, { lv: m.l });
+    let nm = d.name; while (textW(nm, FS) > 150 && nm.length > 4) nm = nm.slice(0, -1);
+    text(nm, LX + 32, y + 3, d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c, FS); text(`${RAR[d.r].n}${m.l > 1 ? '  LV ' + m.l : ''}  ${m.mine ? 'YOURS' : m.seller}`, LX + 32, y + 11, COL.mute, FS);
+    drawCoinIcon(LX + LW - 58, y + 5); text(fmt(m.price), LX + LW - 8, y + 6, COL.gold, FS, 2);
+    if (hov && clickIn(LX, y, LW - 4, RH - 2)) { st.msel = m.id; st.mconf = false; SND.play('click'); }
+  });
+  // right: the chosen listing
+  const RX = 310, RW = W - 14 - RX; panel(RX, 30, RW, H - 44, { bg: '#05070f', bd: COL.steel });
+  const m = MK.list.find(x => x.id === st.msel);
+  if (!m) { ['PICK SOMETHING TO SEE IT.', 'SELLERS GET PAID WHEN IT SELLS,', 'MINUS A 5% MARKET FEE.', 'LISTINGS LAST 7 DAYS.'].forEach((l, i) => text(l, RX + RW / 2, 100 + i * 9, COL.mute, FS, 1)); return; }
+  const d = getDef(m.item);
+  panel(RX + 8, 38, RW - 16, 46, { bg: COL.void0, bd: d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c, flat: true }); drawItemIn(m.item, RX + 9, 39, RW - 18, 44, { maxSc: 3 });
+  if (inBox(RX + 8, 38, RW - 16, 46)) TIP.set({ item: m.item });
+  wrap(d.name, RW - 16, FS).slice(0, 2).forEach((l, i) => text(l, RX + 8, 90 + i * 8, d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c, FS));
+  text(`${RAR[d.r].n}  LV ${m.l || 1}${m.g ? '  ' + (TIERS[m.g] ? TIERS[m.g].n + ' GRADE' : '') : ''}`, RX + 8, 108, COL.dim, FS);
+  text(`SELLER: ${m.mine ? 'YOU' : m.seller}`, RX + 8, 118, COL.mute, FS); text(`LISTED ${ago(m.at)}`, RX + 8, 127, COL.mute, FS);
+  drawCoinIcon(RX + 8, 140); textO(fmt(m.price), RX + 18, 139, COL.gold, '#000', FB);
+  if (owned(m.item) && !m.mine) text('YOU ALREADY OWN ONE (IT WOULD LEVEL UP)', RX + 8, 154, COL.lilac, FS);
+  const by = H - 38;
+  if (m.mine) { if (button(RX + 8, by, RW - 16, 18, 'TAKE IT DOWN', { kind: 'danger', font: FS, disabled: NET.act })) { const id = m.id; st.msel = null; netDo(() => rpc('market_cancel', { p_id: id }).then(r => { NET.mail = Math.max(NET.mail, 1); MK.t = -99; return r; }), 'TAKEN DOWN. IT IS ON ITS WAY BACK'); } }
+  else {
+    const can = S.coins >= m.price && !PULSE.flagged;
+    if (S.coins < m.price) text('NOT ENOUGH COINS', RX + 8, by - 10, COL.coral, FS);
+    if (button(RX + 8, by, RW - 16, 18, st.mconf ? `CONFIRM: ${fmt(m.price)}` : 'BUY', { kind: 'primary', disabled: NET.act || !can })) {
+      if (!st.mconf) st.mconf = true;
+      else { st.mconf = false; const id = m.id; st.msel = null; netDo(() => netEcon('market_buy', { p_id: id }).then(r => { MK.t = -99; SND.play('fanfare'); HUB.flashT = 2; HUB.flashCol = COL.gold; return r; }), 'BOUGHT! IT IS IN YOUR LOCKER'); }
+    }
+  }
+}
+function marketSell(st) {
+  const b = st.msell;
+  textO('SELL AN ITEM ON THE MARKET', 14, 31, COL.gold, '#000', FB);
+  if (button(W - 76, 30, 62, 14, '< BACK', { font: FS })) { st.msell = null; return; }
+  const mine = Object.keys(S.inv).filter(netValid).sort(byRarity), eqd = mine.filter(id => isEquipped(id));
+  const sel = b.id ? [b.id] : [];
+  tradeGrid(st, 'msgrid', mine, 14, 46, 300, H - 60, sel, { locked: eqd, lv: id => lvl(id), empty: 'NO ITEMS' });
+  if (sel[0] !== b.id) b.id = sel.length ? sel[sel.length - 1] : null; if (sel.length > 1) b.id = sel[sel.length - 1];
+  const RX = 320, RW = W - 14 - RX; panel(RX, 46, RW, H - 60, { bg: '#05070f', bd: COL.steel });
+  if (!b.id) { ['PICK WHAT TO SELL.', 'EQUIPPED GEAR CANNOT', 'BE SOLD. UNEQUIP IT FIRST.'].forEach((l, i) => text(l, RX + RW / 2, 100 + i * 9, COL.mute, FS, 1)); return; }
+  const d = getDef(b.id);
+  drawItemIn(b.id, RX + 6, 52, RW - 12, 40, { maxSc: 3 });
+  wrap(d.name, RW - 12, FS).slice(0, 2).forEach((l, i) => text(l, RX + 6, 96 + i * 8, d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c, FS));
+  text(`${RAR[d.r].n}  LV ${lvl(b.id)}`, RX + 6, 114, COL.dim, FS);
+  text(`SELLS TO THE SHOP FOR ${fmt(sellValue(b.id))}`, RX + 6, 124, COL.mute, FS);
+  text('YOUR PRICE', RX + 6, 138, COL.mute, FS);
+  const pf = textField('mkPrice', RX + 6, 146, RW - 12, 15, { ph: fmt(sellValue(b.id) * 3), max: 10, filter: v => v.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, ''), mode: 'numeric', label: 'Price in coins' });
+  const price = +pf.value || 0;
+  if (price) text(`YOU GET ${fmt(price - Math.floor(price / 20))} AFTER THE 5% FEE`, RX + 6, 166, '#7dffb0', FS);
+  if (button(RX + 6, H - 36, RW - 12, 18, 'LIST FOR SALE', { kind: 'primary', disabled: NET.act || !price || PULSE.flagged })) {
+    const id = b.id; netDo(() => netEcon('market_list', { p_item: id, p_price: price }).then(r => { st.msell = null; st.mmine = true; MK.t = -99; return r; }), 'LISTED! YOU GET PAID WHEN IT SELLS');
+  }
+}
+
+// ---------- reporting a player ----------
+const REPORT_WHY = [['NAME', 'BAD CALLSIGN'], ['CHEATING', 'CHEATING'], ['MEAN', 'BEING MEAN'], ['SPAM', 'SPAMMING'], ['OTHER', 'SOMETHING ELSE']];
+function reportOverlay() {
+  const r = NET.report; if (!r) return;
+  ctx.globalAlpha = 0.7; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
+  const x = W / 2 - 120, y = 50, w = 240, h = 160; panel(x, y, w, h, { bg: COL.void1, bd: COL.coral });
+  textO(`REPORT ${r.cs}`, x + 10, y + 8, COL.coral, '#000', FB);
+  text('WHAT IS WRONG?', x + 10, y + 22, COL.dim, FS);
+  REPORT_WHY.forEach(([k, n], i) => { if (button(x + 10 + (i % 2) * 112, y + 32 + Math.floor(i / 2) * 18, 108, 15, n, { font: FS, kind: r.why === k ? 'primary' : 'def' })) r.why = k; });
+  const note = textField('reportNote', x + 10, y + 92, w - 20, 15, { ph: 'MORE DETAIL (OPTIONAL)', max: 140, label: 'Report details' });
+  text('A MODERATOR WILL LOOK. THEY WILL NOT SEE WHO REPORTED.', x + 10, y + 112, COL.mute, FS);
+  if (button(x + 10, y + h - 26, 100, 18, 'SEND REPORT', { kind: 'danger', font: FS, disabled: !r.why || NET.act })) { const a = { p_callsign: r.cs, p_reason: r.why, p_note: note.value || '' }; NET.report = null; setField('reportNote', ''); netDo(() => rpc('report_player', a), x2 => x2); }
+  if (button(x + w - 90, y + h - 26, 80, 18, 'CANCEL', { font: FS }) || kp('Escape')) { NET.report = null; setField('reportNote', ''); }
+}
+
+// ---------- moderators: reports, flags, bans ----------
+const MODQ = { data: null, t: -1e9, busy: false, err: '' };
+function socialMod(st) {
+  if (!MODQ.busy && T_NOW - MODQ.t > 10) { MODQ.busy = true; MODQ.t = T_NOW; rpc('mod_queue').then(r => { MODQ.data = r; MODQ.err = ''; }).catch(e => { MODQ.err = e.message; }).finally(() => { MODQ.busy = false; }); }
+  const refresh = () => { MODQ.t = -99; };
+  if (MODQ.err) { text(MODQ.err, W / 2, 120, COL.coral, FS, 1); return; }
+  const q = MODQ.data; if (!q) { text('LOADING...', W / 2, 120, COL.dim, FS, 1); return; }
+  const LX = 14, LW = 170; text(`REPORTED (${q.players.length})`, LX, 31, COL.coral, FS);
+  const rows = q.players.map(p => ({ k: 'r', p })).concat(q.banned.filter(b => !q.players.some(p => p.id === b.id)).map(b => ({ k: 'b', p: b })));
+  const y0 = 40, RH = 22, LH = H - 14 - y0, off = listScroll(st, 'modscroll', LX, y0, LW, LH, RH, rows.length);
+  if (!rows.length) text('ALL CLEAR. NOTHING TO REVIEW', LX + LW / 2, y0 + 20, '#7dffb0', FS, 1);
+  rows.slice(off, off + Math.floor(LH / RH)).forEach((r, i) => {
+    const y = y0 + i * RH, p = r.p, sel = st.modsel === p.id, hov = sRow(LX, y, LW - 4, RH - 2, sel);
+    text(p.callsign || '(NO CALLSIGN)', LX + 5, y + 3, COL.ink, FB);
+    text(r.k === 'b' ? 'BANNED' : `${p.n} REPORT${p.n > 1 ? 'S' : ''}${p.flagged ? '  FLAGGED' : ''}${p.banned_until ? '  BANNED' : ''}`, LX + 5, y + 13, r.k === 'b' || p.flagged ? COL.coral : COL.mute, FS);
+    if (hov && clickIn(LX, y, LW - 4, RH - 2)) { st.modsel = p.id; st.modconf = null; SND.play('click'); }
+  });
+  const RX = 190, RW = W - 14 - RX; panel(RX, 31, RW, H - 45, { bg: '#05070f', bd: COL.steel });
+  const row = rows.find(r => r.p.id === st.modsel); if (!row) { text('PICK A PLAYER', RX + RW / 2, 120, COL.mute, FS, 1); return; }
+  const p = row.p; let y = 37;
+  textO(p.callsign || '(NO CALLSIGN)', RX + 8, y, COL.ink, '#000', FB); y += 12;
+  if (row.k === 'r') { text(`LV ${p.level}  ${fmt(p.coins || 0)} COINS  ${p.items} ITEMS`, RX + 8, y, COL.dim, FS); y += 9; }
+  if (p.flagged) { text('FLAGGED: ' + (p.flag_reason || ''), RX + 8, y, COL.coral, FS); y += 9; }
+  const bu = p.banned_until || p.until; if (bu) { text(`BANNED UNTIL ${new Date(bu).getFullYear() > 2100 ? 'FOREVER' : new Date(bu).toLocaleDateString()}: ${(p.ban_reason || p.reason || '').toUpperCase()}`, RX + 8, y, COL.coral, FS); y += 9; }
+  y += 3;
+  (p.reports || []).slice(0, 6).forEach(rp => { wrap(`${rp.reason}${rp.by ? ' (BY ' + rp.by + ')' : ' (AUTO)'}: ${(rp.note || '').toUpperCase()}`, RW - 16, FS).slice(0, 2).forEach(l => { text(l, RX + 8, y, COL.cream, FS); y += 8; }); y += 2; });
+  const act = (label, kind, a, days, why) => [label, kind, () => {
+    if (a === 'ban' && days === 0 && st.modconf !== label) { st.modconf = label; return; }
+    st.modconf = null; netDo(() => rpc('mod_action', { p_target: p.id, p_action: a, p_days: days || 0, p_reason: why || (p.reports && p.reports[0] ? p.reports[0].reason : '') }).then(r => { refresh(); return r; }), `${label}: DONE`);
+  }];
+  const acts = [act('DISMISS', 'def', 'dismiss'), act('BAN 1 DAY', 'danger', 'ban', 1), act('BAN 7 DAYS', 'danger', 'ban', 7), act(st.modconf === 'BAN FOREVER' ? 'SURE?' : 'BAN FOREVER', 'danger', 'ban', 0),
+    act('UNBAN', 'blue', 'unban'), act(p.flagged ? 'CLEAR FLAG' : 'FLAG', 'blue', p.flagged ? 'clear' : 'flag'), act('FORCE RENAME', 'def', 'rename')];
+  if (st.modconf === 'BAN FOREVER') acts[3][0] = 'SURE?';
+  let bx = RX + 8, by = H - 56;
+  acts.forEach(([label, kind, fn]) => { const bw = textW(label, FS) + 12; if (bx + bw > RX + RW - 6) { bx = RX + 8; by += 18; } if (button(bx, by, bw, 15, label, { kind, font: FS, disabled: NET.act })) fn(); bx += bw + 4; });
+}
+
+// ---------- settings: fullscreen + controls ----------
+const BIND_LABEL = { up: 'MOVE UP', left: 'MOVE LEFT', down: 'MOVE DOWN', right: 'MOVE RIGHT', boost: 'BOOST', interact: 'USE / MINE', gadget: 'GADGET', swap: 'SWAP WEAPON', emote: 'ARENA EMOTES', pause: 'PAUSE' };
+function keyName(c) {
+  if (!c) return '?'; if (/^Key[A-Z]$/.test(c)) return c.slice(3); if (/^Digit\d$/.test(c)) return c.slice(5); if (/^Numpad\d$/.test(c)) return 'NUM ' + c.slice(6);
+  return ({ Space: 'SPACE', ShiftLeft: 'L SHIFT', ShiftRight: 'R SHIFT', ControlLeft: 'L CTRL', ControlRight: 'R CTRL', AltLeft: 'L ALT', AltRight: 'R ALT', Tab: 'TAB', CapsLock: 'CAPS', Enter: 'ENTER', Backspace: 'BKSP',
+    ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\' })[c] || c.toUpperCase().slice(0, 6);
+}
+function keyOf(a) { return (S.settings.binds && S.settings.binds[a]) || BIND_DEF[a]; }
+function keyLabel(a) { return keyName(keyOf(a)); }
+function setBind(a, code) {
+  const b = Object.assign({}, S.settings.binds || {}), old = keyOf(a);
+  for (const o in BIND_DEF) if (o !== a && keyOf(o) === code) b[o] = old;   // that key was taken: the two swap
+  b[a] = code; for (const k in b) if (b[k] === BIND_DEF[k]) delete b[k];
+  S.settings.binds = b; applyBinds(b); dirty();
+}
+function isFull() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function toggleFullscreen() {
+  const d = document, el = d.documentElement;
+  try {
+    if (isFull()) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else { const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el); if (r && r.catch) r.catch(() => toast('FULLSCREEN IS NOT ALLOWED HERE. PRESS F11', COL.coral)); }
+  } catch (e) { toast('FULLSCREEN IS NOT ALLOWED HERE. PRESS F11', COL.coral); }
+}
+function panelSettings(st) {
+  if (panelFrame('SETTINGS', COL.blueL)) { KEYCAP.wait = null; return; }
+  const x = 24; let y = 34;
+  text('SCREEN', x, y, COL.gold, FS); y += 10;
+  if (button(x, y, 120, 18, isFull() ? 'EXIT FULLSCREEN' : 'FULLSCREEN', { kind: 'primary', font: FS })) toggleFullscreen();
+  y += 28;
+  text('SOUND', x, y, COL.gold, FS); y += 10;
+  if (button(x, y, 58, 16, SND.muted ? 'SOUND OFF' : 'SOUND ON', { font: FS, kind: SND.muted ? 'def' : 'blue' })) { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); }
+  if (button(x + 62, y, 58, 16, SND.musicOn ? 'MUSIC ON' : 'MUSIC OFF', { font: FS, kind: SND.musicOn ? 'blue' : 'def' })) { SND.setMusic(!SND.musicOn); S.settings.music = SND.musicOn; if (SND.musicOn) SND.playSong('hub'); dirty(); }
+  y += 28;
+  text('MOUSE: AIM AND SHOOT', x, y, COL.mute, FS); text('WHEEL OR 1/2/3: SWITCH SLOT', x, y + 8, COL.mute, FS); text('ARROW KEYS ALWAYS MOVE TOO', x, y + 16, COL.mute, FS);
+  // controls
+  const cx = 170; let cy = 34;
+  text('CONTROLS: CLICK ONE, THEN PRESS THE NEW KEY', cx, cy, COL.gold, FS); cy += 11;
+  if (KEYCAP.wait && KEYCAP.got) { const g = KEYCAP.got; KEYCAP.got = null; if (g !== 'Escape') { setBind(KEYCAP.wait, g); SND.play('pickup'); } KEYCAP.wait = null; }
+  Object.keys(BIND_DEF).forEach((a, i) => {
+    const ry = cy + i * 17, waiting = KEYCAP.wait === a, changed = keyOf(a) !== BIND_DEF[a];
+    text(BIND_LABEL[a], cx, ry + 4, COL.ink, FS);
+    const lbl = waiting ? (Math.floor(T_NOW * 3) % 2 ? 'PRESS A KEY' : '') : keyLabel(a);
+    if (button(cx + 110, ry, 90, 14, lbl, { font: FS, kind: waiting ? 'primary' : changed ? 'blue' : 'def', tip: waiting ? 'ESC TO CANCEL' : 'CLICK TO CHANGE' })) { KEYCAP.wait = waiting ? null : a; KEYCAP.got = null; }
+    if (changed) text('WAS ' + keyName(BIND_DEF[a]), cx + 206, ry + 4, COL.mute, FS);
+  });
+  if (button(cx, cy + 10 * 17 + 4, 110, 15, 'RESET CONTROLS', { font: FS, disabled: !S.settings.binds || !Object.keys(S.settings.binds).length })) { S.settings.binds = {}; applyBinds({}); KEYCAP.wait = null; dirty(); toast('CONTROLS RESET', COL.mint); }
+}
+
+// ---------- every frame ----------
+function liveTick(dt) {
+  if (S && S.settings && S.settings.binds !== KEY_BINDS) applyBinds(S.settings.binds);
+  if (KEYCAP.wait && HUB.panel !== 'settings') KEYCAP.wait = null;
+  pulseTick(); if (SCENE === 'hub') dailyRefresh(false);
+  if (NET.recovery && SCENE === 'hub' && HUB.panel !== 'social' && !NET.recoveryOpened) { NET.recoveryOpened = true; openStation('social'); }
+  // offer the daily reward once per visit, after the first landing
+  if (!DAILY.shown && SCENE === 'hub' && !HUB.panel && !HUB.choice && !NAMEUI.open && !NET.choice && S.nameAsked && S.planet.landings >= 1 && dailyCan() && HUB.launch === null) { DAILY.shown = true; openStation('daily'); }
 }
 
 // ===== TITLE: the first thing anyone sees =====
@@ -8603,7 +9042,8 @@ function frame(now) {
   T_NOW += dt; IN.cursor = 'default';
   let gdt = dt; if (FX.hitstop > 0) { FX.hitstop -= dt; gdt = dt * 0.05; } else if (FX.slowmo > 0) { FX.slowmo -= dt; gdt = dt * 0.35; }
   FX.shake = Math.max(0, FX.shake - dt * 18);
-  try { netTick(dt); duelTick(dt); } catch (e) { console.error(e); }
+  try { netTick(dt); duelTick(dt); liveTick(dt); } catch (e) { console.error(e); }
+  const popGrab = liveGrab();
   const modal = NAMEUI.open || !!NET.choice;
   let held = null; if (modal) { held = { pr: IN.pr, kp: new Set(IN.kp), mx: IN.mx, my: IN.my, wheel: IN.wheel, down: IN.down }; IN.pr = false; IN.kp.clear(); IN.wheel = 0; IN.mx = -999; IN.my = -999; IN.down = false; }
   ctx.save();
@@ -8624,6 +9064,7 @@ function frame(now) {
   } catch (e) { console.error(e); if (!ERR || ERR.message !== e.message) ERR_T = 0; ERR = e; }
   ctx.restore();
   if (held) { IN.pr = held.pr; IN.kp = held.kp; IN.mx = held.mx; IN.my = held.my; IN.wheel = held.wheel; IN.down = held.down; IN.used = false; IN.cursor = 'default'; TIP.v = null; try { if (NET.choice) drawNetChoice(dt); else drawNameUI(dt); } catch (e) { console.error(e); ERR = e; ERR_T = 0; } }
+  try { liveOverlay(popGrab); } catch (e) { console.error(e); }
   endFields(modal);
   if (FX.flash > 0) { ctx.globalAlpha = Math.min(1, FX.flash); rect(0, 0, W, H, FX.flashCol); ctx.globalAlpha = 1; FX.flash -= dt * 2.8; }
   if (SCENE !== 'title') { GOAL_T -= dt; if (GOAL_T <= 0) { GOAL_T = 0.4; try { checkGoal(); checkContracts(); } catch (e) { console.error(e); } } }
@@ -8645,4 +9086,5 @@ function boot() {
 }
 boot();
 
+})();
 </script>

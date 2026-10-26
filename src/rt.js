@@ -33,7 +33,7 @@ async function rtJoin(topic, me, on) {
     ch.subscribe(async status => {
       if (status === 'SUBSCRIBED' && !settled) {
         settled = true; clearTimeout(to);
-        try { await ch.track({ cs: me.cs, j: me.j }); } catch (e) { }
+        if (!me.watch) try { await ch.track({ cs: me.cs, j: me.j }); } catch (e) { }
         res({ live: true, send(e, d) { try { ch.send({ type: 'broadcast', event: 'm', payload: { e, d, f: me.id } }); } catch (er) { } }, leave() { try { ch.untrack(); RT.client.removeChannel(ch); } catch (er) { } } });
       } else if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') && !settled) { settled = true; clearTimeout(to); rej(new Error('LIVE CONNECTION FAILED')); }
     });
@@ -45,6 +45,7 @@ function rtJoinLocal(topic, me, on) {
   const hello = ask => bc.postMessage({ k: 'p', f: me.id, cs: me.cs, j: me.j, ask });
   bc.onmessage = ev => {
     const m = ev.data; if (!m || m.f === me.id) return;
+    if (m.w) { if (m.k === 'm') on.msg(m.e, m.d, m.f); return; }   // a spectator: hear them, never count them
     if (m.k === 'bye') { if (peers.delete(m.f)) emit(); return; }
     const old = peers.get(m.f);
     peers.set(m.f, { id: m.f, cs: m.cs || (old && old.cs) || '?', j: m.j !== undefined ? m.j : (old ? old.j : 0), t: performance.now() });
@@ -52,7 +53,7 @@ function rtJoinLocal(topic, me, on) {
     if (m.k === 'p' && m.ask) hello(false);
     if (m.k === 'm') on.msg(m.e, m.d, m.f);
   };
-  const iv = setInterval(() => { hello(false); const now = performance.now(); let ch = false; for (const [k, p] of peers) if (now - p.t > 4500) { peers.delete(k); ch = true; } if (ch) emit(); }, 1000);
-  hello(true); emit();
-  return Promise.resolve({ live: false, send(e, d) { bc.postMessage({ k: 'm', e, d, f: me.id, cs: me.cs, j: me.j }); }, leave() { clearInterval(iv); try { bc.postMessage({ k: 'bye', f: me.id }); bc.close(); } catch (e) { } } });
+  const iv = setInterval(() => { if (!me.watch) hello(false); const now = performance.now(); let ch = false; for (const [k, p] of peers) if (now - p.t > 4500) { peers.delete(k); ch = true; } if (ch) emit(); }, 1000);
+  if (!me.watch) { hello(true); emit(); }
+  return Promise.resolve({ live: false, send(e, d) { bc.postMessage({ k: 'm', e, d, f: me.id, cs: me.cs, j: me.j, w: !!me.watch }); }, leave() { clearInterval(iv); try { if (!me.watch) bc.postMessage({ k: 'bye', f: me.id }); bc.close(); } catch (e) { } } });
 }

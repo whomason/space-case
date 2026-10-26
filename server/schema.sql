@@ -151,10 +151,15 @@ drop policy if exists "see your own mailbox" on public.deliveries;
 create policy "see your own mailbox" on public.deliveries for select to authenticated using (user_id = (select auth.uid()));
 
 -- ------------------------------------------------------------ helpers
+-- who is calling. Banned players are stopped here, at the door of every server function
 create or replace function sc_private.me() returns uuid language plpgsql stable set search_path = '' as $$
-declare v uuid := auth.uid();
+declare v uuid := auth.uid(); b record;
 begin
   if v is null then raise exception 'SIGN IN FIRST'; end if;
+  select banned_until, ban_reason into b from public.moderation where user_id = v and banned_until > now();
+  if found then
+    raise exception 'THIS ACCOUNT IS BANNED %. %', case when b.banned_until > now() + interval '50 years' then 'FOR GOOD' else 'UNTIL ' || to_char(b.banned_until, 'MON DD') end, upper(coalesce(b.ban_reason, ''));
+  end if;
   return v;
 end $$;
 
@@ -319,7 +324,7 @@ end $$;
 drop function if exists public.save_game(jsonb, bigint);
 create or replace function public.save_game(p_data jsonb, p_base bigint, p_force boolean default false) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare uid uuid := sc_private.me(); s record; cs text;
+declare uid uuid := sc_private.me(); s record; cs text; why text;
 begin
   perform sc_private.check_save(p_data);
   select * into s from public.saves where user_id = uid for update;
@@ -332,6 +337,8 @@ begin
   end if;
   select callsign into cs from public.profiles where id = uid;
   if cs is not null then p_data := jsonb_set(p_data, '{name}', to_jsonb(cs)); end if;
+  why := sc_private.audit_save(s.data, p_data, extract(epoch from now() - s.updated_at));
+  if why is not null then perform sc_private.flag(uid, why); end if;
   update public.saves set data = p_data, version = s.version + 1, updated_at = now() where user_id = uid;
   perform sc_private.sync_profile(uid, p_data);
   return jsonb_build_object('ok', true, 'version', s.version + 1,
@@ -598,6 +605,8 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_to); s record; their jsonb; r record; tid uuid; k text;
 begin
   perform sc_private.expire_trades();
+  perform sc_private.need_clean(uid);
+  if sc_private.flagged(them) then raise exception 'THEIR TRADING IS PAUSED RIGHT NOW'; end if;
   if them = uid then raise exception 'YOU CANNOT TRADE WITH YOURSELF'; end if;
   if not sc_private.can_trade(uid, them) then raise exception 'YOU CAN ONLY TRADE WITH FRIENDS OR CREWMATES'; end if;
   if coalesce(array_length(p_give, 1), 0) > 6 or coalesce(array_length(p_want, 1), 0) > 6 then raise exception 'UP TO 6 ITEMS EACH WAY'; end if;
@@ -624,6 +633,8 @@ begin
   select * into t from public.trades where id = p_id and to_user = uid for update;
   if not found or t.status <> 'open' then raise exception 'THAT OFFER IS NO LONGER OPEN'; end if;
   if t.created_at < now() - interval '3 days' then raise exception 'THAT OFFER EXPIRED'; end if;
+  perform sc_private.need_clean(uid);
+  if sc_private.flagged(t.from_user) then raise exception 'THAT OFFER IS ON HOLD WHILE A MODERATOR CHECKS THE SENDER'; end if;
   select coalesce(array_agg(x), '{}') into want from jsonb_array_elements_text(t.want_items) as x;
   select * into s from public.saves where user_id = uid for update;
   select * into r from sc_private.take_items(s.data, want, t.want_coins);
@@ -671,7 +682,7 @@ begin
     d := sc_private.grant_items(d, m.items, m.coins);
     if jsonb_array_length(coalesce(m.crates, '[]'::jsonb)) > 0 then
       if jsonb_typeof(d -> 'choiceQueue') is distinct from 'array' then d := jsonb_set(d, '{choiceQueue}', '[]'::jsonb); end if;
-      d := jsonb_set(d, '{choiceQueue}', (d -> 'choiceQueue') || (select coalesce(jsonb_agg(jsonb_build_object('tier', least(7, greatest(0, (t #>> '{}')::int)), 'title', 'ARENA CRATE')), '[]'::jsonb) from jsonb_array_elements(m.crates) t));
+      d := jsonb_set(d, '{choiceQueue}', (d -> 'choiceQueue') || (select coalesce(jsonb_agg(jsonb_build_object('tier', least(7, greatest(0, (t #>> '{}')::int)), 'title', case when m.reason like 'daily%' then 'DAILY CRATE' when m.reason like 'season%' then 'SEASON CRATE' else 'ARENA CRATE' end)), '[]'::jsonb) from jsonb_array_elements(m.crates) t));
     end if;
     update public.deliveries set claimed_at = now() where id = m.id;
     got := got || jsonb_build_array(jsonb_build_object('items', (select coalesce(jsonb_agg(k), '[]'::jsonb) from jsonb_object_keys(m.items) k),
@@ -799,6 +810,7 @@ $$;
 create or replace function sc_private.astats(uid uuid) returns public.arena_stats language plpgsql volatile set search_path = '' as $$
 declare r public.arena_stats;
 begin
+  perform sc_private.season();
   insert into public.arena_stats (user_id) values (uid) on conflict (user_id) do nothing;
   select * into r from public.arena_stats where user_id = uid for update;
   return r;
@@ -1036,17 +1048,19 @@ declare uid uuid := sc_private.me(); col text := case p_kind when 'kills' then '
 begin
   execute format($q$select coalesce(jsonb_agg(jsonb_build_object('callsign', p.callsign, 'value', a.%1$I, 'rank', sc_private.rank_of(a.trophies),
       'crew', (select c.tag from public.crew_members m join public.crews c on c.id = m.crew_id where m.user_id = a.user_id), 'me', a.user_id = $1) order by a.%1$I desc, a.updated_at), '[]'::jsonb)
-    from (select * from public.arena_stats order by %1$I desc, updated_at limit 50) a join public.profiles p on p.id = a.user_id where p.callsign is not null$q$, col) into top using uid;
+    from (select * from public.arena_stats x where not sc_private.flagged(x.user_id) order by %1$I desc, updated_at limit 50) a join public.profiles p on p.id = a.user_id where p.callsign is not null$q$, col) into top using uid;
   execute format($q$select jsonb_build_object('value', a.%1$I, 'place', (select count(*) + 1 from public.arena_stats b where b.%1$I > a.%1$I)) from public.arena_stats a where a.user_id = $1$q$, col) into me using uid;
   return jsonb_build_object('kind', col, 'top', top, 'me', me);
 end $$;
 
 create or replace function public.my_arena() returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare uid uuid := sc_private.me(); st public.arena_stats;
+declare uid uuid := sc_private.me(); st public.arena_stats; ss record;
 begin
-  st := sc_private.astats(uid);
-  return to_jsonb(st) - 'user_id' || jsonb_build_object('rank', sc_private.rank_of(st.trophies), 'rank_idx', sc_private.rank_idx(st.trophies));
+  st := sc_private.astats(uid); select * into ss from sc_private.season();
+  return to_jsonb(st) - 'user_id' || jsonb_build_object('rank', sc_private.rank_of(st.trophies), 'rank_idx', sc_private.rank_idx(st.trophies),
+    'season', ss.season, 'season_ends', ss.ends_at,
+    'last_season', (select jsonb_build_object('season', r.season, 'place', r.place, 'rank', r.rank, 'trophies', r.trophies) from public.season_results r where r.user_id = uid order by r.season desc limit 1));
 end $$;
 
 -- how busy it is: real players online, plus the AI pilots flying in arenas that are running right now
@@ -1058,6 +1072,345 @@ language sql security definer set search_path = '' as $$
     'ai', (select coalesce(sum(least(5, greatest(0, 10 - h))), 0) from (select count(*) as h from public.arena_presence where last_seen > now() - interval '25 seconds' group by server_id) x)
          + (select count(*) from public.duels where b is null and not done and created_at > now() - interval '5 minutes'))
 $$;
+
+-- =====================================================================
+-- FAIR PLAY, MODERATION, DAILY REWARDS, SEASONS, MARKET, CHALLENGES
+-- =====================================================================
+-- private per-player records (nobody reads these tables directly)
+create table if not exists public.moderation (
+  user_id      uuid primary key references public.profiles(id) on delete cascade,
+  flagged      boolean not null default false,     -- a save looked impossible: trading, market and leaderboards pause until a moderator checks
+  flag_reason  text,
+  flagged_at   timestamptz,
+  banned_until timestamptz,
+  ban_reason   text
+);
+create table if not exists public.admins (user_id uuid primary key references public.profiles(id) on delete cascade);
+create table if not exists public.reports (
+  id          bigint generated always as identity primary key,
+  reporter    uuid references public.profiles(id) on delete set null,   -- null: the automatic fair-play check
+  target      uuid not null references public.profiles(id) on delete cascade,
+  reason      text not null,
+  note        text not null default '',
+  status      text not null default 'open' check (status in ('open', 'done')),
+  created_at  timestamptz not null default now(),
+  handled_by  uuid,
+  handled_at  timestamptz
+);
+create index if not exists reports_open on public.reports (status, created_at);
+create table if not exists public.mod_log (
+  id bigint generated always as identity primary key, admin uuid, target uuid, action text, detail text, created_at timestamptz not null default now()
+);
+create table if not exists public.daily (
+  user_id  uuid primary key references public.profiles(id) on delete cascade,
+  last_day date, last_at timestamptz, streak int not null default 0
+);
+create table if not exists public.season_state (
+  id int primary key default 1 check (id = 1), season int not null, ends_at timestamptz not null
+);
+create table if not exists public.season_results (
+  season int not null, user_id uuid not null references public.profiles(id) on delete cascade, trophies int not null, rank text not null, place int not null,
+  primary key (season, user_id)
+);
+create table if not exists public.market (
+  id          bigint generated always as identity primary key,
+  seller      uuid not null references public.profiles(id) on delete cascade,
+  item_id     text not null,
+  item        jsonb not null,                       -- {l, p, g}
+  price       bigint not null check (price between 1 and 1000000000),
+  status      text not null default 'open' check (status in ('open', 'sold', 'cancelled', 'expired')),
+  buyer       uuid,
+  created_at  timestamptz not null default now(),
+  closed_at   timestamptz
+);
+create index if not exists market_open on public.market (status, created_at desc);
+create index if not exists market_seller on public.market (seller, status);
+create table if not exists public.challenges (
+  id          bigint generated always as identity primary key,
+  from_user   uuid not null references public.profiles(id) on delete cascade,
+  to_user     uuid not null references public.profiles(id) on delete cascade,
+  code        text not null,
+  status      text not null default 'open' check (status in ('open', 'accepted', 'declined', 'expired')),
+  created_at  timestamptz not null default now(),
+  answered_at timestamptz
+);
+create index if not exists challenges_to on public.challenges (to_user, status);
+do $$ declare t text; begin
+  foreach t in array array['moderation', 'admins', 'reports', 'mod_log', 'daily', 'season_state', 'season_results', 'market', 'challenges'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon, authenticated', t);
+  end loop;
+end $$;
+
+create or replace function sc_private.is_admin(uid uuid) returns boolean language sql stable set search_path = '' as $$
+  select exists (select 1 from public.admins where user_id = uid)
+$$;
+create or replace function sc_private.flagged(uid uuid) returns boolean language sql stable set search_path = '' as $$
+  select coalesce((select flagged from public.moderation where user_id = uid), false)
+$$;
+create or replace function sc_private.flag(uid uuid, why text) returns void language plpgsql volatile set search_path = '' as $$
+begin
+  if sc_private.flagged(uid) then return; end if;
+  insert into public.moderation (user_id, flagged, flag_reason, flagged_at) values (uid, true, why, now())
+    on conflict (user_id) do update set flagged = true, flag_reason = why, flagged_at = now();
+  insert into public.reports (reporter, target, reason, note) values (null, uid, 'AUTO', why);
+end $$;
+create or replace function sc_private.need_clean(uid uuid) returns void language plpgsql stable set search_path = '' as $$
+begin
+  if sc_private.flagged(uid) then raise exception 'TRADING IS PAUSED ON THIS ACCOUNT UNTIL A MODERATOR CHECKS IT'; end if;
+end $$;
+
+-- the fair-play check on every cloud save: generous limits, only impossible jumps trip it.
+-- It never rejects or changes a save; it flags the account for a moderator to look at.
+create or replace function sc_private.audit_save(old jsonb, d jsonb, secs numeric) returns text language plpgsql immutable set search_path = '' as $$
+declare c0 numeric := coalesce(sc_private.num(old -> 'coins'), 0); c1 numeric := coalesce(sc_private.num(d -> 'coins'), 0);
+        n0 int; n1 int; bad text; s numeric := greatest(0, least(coalesce(secs, 0), 86400 * 30));
+begin
+  -- only when the mark first appears, so a moderator's all-clear sticks
+  if coalesce(d ->> 'tamper', '0') not in ('0', 'false') and coalesce(old ->> 'tamper', '0') in ('0', 'false') then return 'THE SAVE FILE WAS EDITED BY HAND'; end if;
+  if c1 > 5e10 then return 'MORE COINS THAN THE GAME CAN GIVE'; end if;
+  if c1 - c0 > 600000 + c0 * 2 + s * 12000 then return 'COINS JUMPED FROM ' || c0::bigint || ' TO ' || c1::bigint; end if;
+  select count(*) into n0 from jsonb_object_keys(coalesce(old -> 'inv', '{}'::jsonb));
+  select count(*) into n1 from jsonb_object_keys(coalesce(d -> 'inv', '{}'::jsonb));
+  if n1 - n0 > 120 + s / 2 then return (n1 - n0) || ' NEW ITEMS AT ONCE'; end if;
+  select k into bad from jsonb_each(coalesce(d -> 'inv', '{}'::jsonb)) as e(k, v)
+    where length(k) > 64 or k !~ '^[a-z0-9|_:#.-]+$' or coalesce(sc_private.num(v -> 'l'), 1) > 10 or coalesce(sc_private.num(v -> 'l'), 1) < 1
+       or coalesce(sc_private.num(v -> 'g'), 0) > 7 or coalesce(sc_private.num(v -> 'g'), 0) < 0 limit 1;
+  if bad is not null then return 'AN ITEM THE GAME CANNOT MAKE: ' || left(bad, 40); end if;
+  if coalesce(sc_private.num(d -> 'lvl'), 1) - coalesce(sc_private.num(old -> 'lvl'), 1) > 15 + s / 120 then return 'LEVEL JUMPED'; end if;
+  if coalesce(sc_private.num(d -> 'lvl'), 1) > 400 then return 'LEVEL TOO HIGH'; end if;
+  return null;
+end $$;
+
+-- ------------------------------------------------------------ reports + moderation
+create or replace function public.report_player(p_callsign text, p_reason text, p_note text default '') returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_callsign); r text := upper(coalesce(p_reason, ''));
+begin
+  if them = uid then raise exception 'YOU CANNOT REPORT YOURSELF'; end if;
+  if r not in ('NAME', 'CHEATING', 'MEAN', 'SPAM', 'OTHER') then raise exception 'PICK A REASON'; end if;
+  if (select count(*) from public.reports where reporter = uid and created_at > now() - interval '1 day') >= 10 then raise exception 'TOO MANY REPORTS TODAY'; end if;
+  if exists (select 1 from public.reports where reporter = uid and target = them and status = 'open') then return 'ALREADY REPORTED. A MODERATOR WILL LOOK'; end if;
+  insert into public.reports (reporter, target, reason, note) values (uid, them, r, left(coalesce(p_note, ''), 140));
+  return 'THANKS. A MODERATOR WILL LOOK';
+end $$;
+
+create or replace function public.mod_queue() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me();
+begin
+  if not sc_private.is_admin(uid) then raise exception 'MODERATORS ONLY'; end if;
+  return jsonb_build_object(
+    'players', (select coalesce(jsonb_agg(x order by x.last desc), '[]'::jsonb) from (
+      select p.id, p.callsign, p.level, max(r.created_at) as last, count(*) as n,
+             jsonb_agg(jsonb_build_object('reason', r.reason, 'note', r.note, 'by', (select callsign from public.profiles q where q.id = r.reporter), 'at', r.created_at) order by r.created_at desc) as reports,
+             coalesce(m.flagged, false) as flagged, m.flag_reason, m.banned_until, m.ban_reason,
+             (select coalesce(sc_private.num(s.data -> 'coins'), 0) from public.saves s where s.user_id = p.id) as coins,
+             (select count(*) from public.saves s, jsonb_object_keys(coalesce(s.data -> 'inv', '{}'::jsonb)) where s.user_id = p.id) as items
+      from public.reports r join public.profiles p on p.id = r.target left join public.moderation m on m.user_id = p.id
+      where r.status = 'open' group by p.id, m.flagged, m.flag_reason, m.banned_until, m.ban_reason limit 60) x),
+    'banned', (select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'callsign', p.callsign, 'until', m.banned_until, 'reason', m.ban_reason)), '[]'::jsonb)
+               from public.moderation m join public.profiles p on p.id = m.user_id where m.banned_until > now()));
+end $$;
+
+-- actions: ban (p_days; 0 = for good), unban, clear (flag), flag, rename (makes them pick a new callsign), dismiss (close reports)
+create or replace function public.mod_action(p_target uuid, p_action text, p_days int default 0, p_reason text default '') returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); a text := lower(coalesce(p_action, ''));
+begin
+  if not sc_private.is_admin(uid) then raise exception 'MODERATORS ONLY'; end if;
+  if p_target = uid and a = 'ban' then raise exception 'YOU CANNOT BAN YOURSELF'; end if;
+  insert into public.moderation (user_id) values (p_target) on conflict (user_id) do nothing;
+  if a = 'ban' then
+    update public.moderation set banned_until = case when coalesce(p_days, 0) <= 0 then now() + interval '100 years' else now() + make_interval(days => p_days) end,
+      ban_reason = left(coalesce(p_reason, ''), 80) where user_id = p_target;
+    update public.duel_queue set seen_at = now() - interval '1 hour' where user_id = p_target;
+    delete from public.arena_presence where user_id = p_target;
+    -- open market listings go back to their mailbox
+    insert into public.deliveries (user_id, items, reason) select seller, jsonb_build_object(item_id, item), 'market listing returned' from public.market where seller = p_target and status = 'open';
+    update public.market set status = 'cancelled', closed_at = now() where seller = p_target and status = 'open';
+  elsif a = 'unban' then update public.moderation set banned_until = null, ban_reason = null where user_id = p_target;
+  elsif a = 'clear' then update public.moderation set flagged = false, flag_reason = null where user_id = p_target;
+  elsif a = 'flag' then update public.moderation set flagged = true, flag_reason = coalesce(nullif(p_reason, ''), 'FLAGGED BY A MODERATOR'), flagged_at = now() where user_id = p_target;
+  elsif a = 'rename' then update public.profiles set callsign = null where id = p_target;
+  elsif a <> 'dismiss' then raise exception 'UNKNOWN ACTION';
+  end if;
+  update public.reports set status = 'done', handled_by = uid, handled_at = now() where target = p_target and status = 'open';
+  insert into public.mod_log (admin, target, action, detail) values (uid, p_target, a, coalesce(p_days, 0) || ' ' || coalesce(p_reason, ''));
+  return 'DONE';
+end $$;
+
+-- ------------------------------------------------------------ daily rewards: a 7-day streak
+-- day:            1     2     3      4     5      6     7
+-- reward:       coins coins crate  coins crate  coins coins + big crate
+create or replace function sc_private.daily_reward(day int, planet int, out coins int, out crates jsonb) language plpgsql immutable set search_path = '' as $$
+declare k numeric := greatest(1, least(8, planet / 2.5)); t int := least(5, 1 + planet / 4);
+begin
+  coins := (round((array[300, 500, 150, 800, 250, 1200, 2000])[day] * k / 50) * 50)::int;
+  crates := case day when 3 then jsonb_build_array(t) when 5 then jsonb_build_array(least(6, t + 1)) when 7 then jsonb_build_array(least(6, t + 2)) else '[]'::jsonb end;
+end $$;
+create or replace function public.daily_status(p_tz int default 0) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); d record; today date := ((now() at time zone 'utc') - make_interval(mins => greatest(-840, least(840, coalesce(p_tz, 0)))))::date;
+        st int; can boolean; pl int := coalesce((select planet from public.profiles where id = uid), 1); days jsonb := '[]'::jsonb; r record;
+begin
+  select * into d from public.daily where user_id = uid;
+  st := case when d.last_day is null then 0 when d.last_day >= today - 1 then d.streak else 0 end;
+  can := d.last_day is null or (d.last_day < today and d.last_at < now() - interval '16 hours');
+  for i in 1..7 loop select * into r from sc_private.daily_reward(i, pl); days := days || jsonb_build_object('coins', r.coins, 'crates', r.crates); end loop;
+  return jsonb_build_object('streak', st, 'can', can, 'next', case when can then (st % 7) + 1 else null end, 'today_done', not can and d.last_day = today, 'days', days);
+end $$;
+create or replace function public.daily_claim(p_tz int default 0) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); d record; today date := ((now() at time zone 'utc') - make_interval(mins => greatest(-840, least(840, coalesce(p_tz, 0)))))::date;
+        st int; day int; r record; pl int := coalesce((select planet from public.profiles where id = uid), 1);
+begin
+  insert into public.daily (user_id) values (uid) on conflict (user_id) do nothing;
+  select * into d from public.daily where user_id = uid for update;
+  if d.last_day is not null and (d.last_day >= today or d.last_at > now() - interval '16 hours') then raise exception 'ALREADY CLAIMED TODAY. COME BACK TOMORROW'; end if;
+  st := case when d.last_day is not null and d.last_day = today - 1 then d.streak + 1 else 1 end;
+  day := ((st - 1) % 7) + 1;
+  select * into r from sc_private.daily_reward(day, pl);
+  update public.daily set last_day = today, last_at = now(), streak = st where user_id = uid;
+  insert into public.deliveries (user_id, coins, crates, reason) values (uid, r.coins, r.crates, 'daily reward day ' || day);
+  return jsonb_build_object('day', day, 'streak', st, 'coins', r.coins, 'crates', r.crates);
+end $$;
+
+-- ------------------------------------------------------------ ranked seasons (one per month)
+-- When a season ends, everyone with trophies gets a reward by rank, and trophies drop by half.
+create or replace function sc_private.season() returns public.season_state language plpgsql volatile set search_path = '' as $$
+declare s public.season_state; a record; pl int := 0; ri int; coins int; cr jsonb;
+begin
+  select * into s from public.season_state where id = 1;
+  if not found then
+    -- the first season runs to the end of this month, or next month if this one is nearly over
+    insert into public.season_state (id, season, ends_at) values (1, 1,
+      case when date_trunc('month', now()) + interval '1 month' - now() < interval '14 days' then date_trunc('month', now()) + interval '2 months' else date_trunc('month', now()) + interval '1 month' end)
+      on conflict (id) do nothing;
+    select * into s from public.season_state where id = 1;
+  end if;
+  if s.ends_at > now() then return s; end if;
+  select * into s from public.season_state where id = 1 for update;
+  if s.ends_at > now() then return s; end if;   -- someone else rolled it while we waited
+  for a in select st.user_id, st.trophies from public.arena_stats st join public.profiles p on p.id = st.user_id
+           where st.trophies > 0 and not sc_private.flagged(st.user_id) order by st.trophies desc, st.updated_at loop
+    pl := pl + 1; ri := sc_private.rank_idx(a.trophies);
+    insert into public.season_results (season, user_id, trophies, rank, place) values (s.season, a.user_id, a.trophies, sc_private.rank_of(a.trophies), pl) on conflict do nothing;
+    coins := least(30000, 300 + a.trophies * 3);
+    cr := case when ri <= 0 then '[]'::jsonb when ri >= 7 then jsonb_build_array(6, 6) when ri = 6 then jsonb_build_array(5, 5) else jsonb_build_array(least(6, ri)) end;
+    if pl <= 3 then cr := cr || jsonb_build_array(6); end if;
+    insert into public.deliveries (user_id, coins, crates, reason) values (a.user_id, coins, cr, 'season ' || s.season || ' reward: #' || pl || ' ' || sc_private.rank_of(a.trophies));
+  end loop;
+  update public.arena_stats set trophies = trophies / 2, updated_at = now() where trophies > 0;
+  update public.season_state set season = s.season + 1, ends_at = date_trunc('month', now()) + interval '1 month' where id = 1 returning * into s;
+  return s;
+end $$;
+
+-- ------------------------------------------------------------ the market: sell to anyone for coins
+create or replace function sc_private.expire_market() returns void language plpgsql volatile set search_path = '' as $$
+declare m record;
+begin
+  for m in select * from public.market where status = 'open' and created_at < now() - interval '7 days' for update skip locked loop
+    update public.market set status = 'expired', closed_at = now() where id = m.id;
+    insert into public.deliveries (user_id, items, reason) values (m.seller, jsonb_build_object(m.item_id, m.item), 'market listing expired');
+  end loop;
+end $$;
+create or replace function public.market_list(p_item text, p_price bigint) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); s record; r record; mid bigint;
+begin
+  perform sc_private.need_clean(uid);
+  if (select callsign from public.profiles where id = uid) is null then raise exception 'SET A CALLSIGN FIRST'; end if;
+  if coalesce(p_price, 0) < 1 or p_price > 1000000000 then raise exception 'PRICE MUST BE 1 TO 1,000,000,000 COINS'; end if;
+  if (select count(*) from public.market where seller = uid and status = 'open') >= 10 then raise exception 'UP TO 10 THINGS FOR SALE AT ONCE'; end if;
+  select * into s from public.saves where user_id = uid for update;
+  select * into r from sc_private.take_items(s.data, array[p_item], 0);
+  update public.saves set data = r.d2, version = s.version + 1, econ_ver = s.version + 1, updated_at = now() where user_id = uid;
+  insert into public.market (seller, item_id, item, price) values (uid, p_item, r.taken -> p_item, p_price) returning id into mid;
+  return jsonb_build_object('listing', mid, 'data', r.d2, 'version', s.version + 1);
+end $$;
+create or replace function public.market_cancel(p_id bigint) returns text
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); m record;
+begin
+  select * into m from public.market where id = p_id and seller = uid for update;
+  if not found or m.status <> 'open' then raise exception 'THAT LISTING IS NOT OPEN'; end if;
+  update public.market set status = 'cancelled', closed_at = now() where id = p_id;
+  insert into public.deliveries (user_id, items, reason) values (uid, jsonb_build_object(m.item_id, m.item), 'market listing cancelled');
+  return 'BACK IN YOUR MAILBOX';
+end $$;
+-- 5% of every sale disappears as a market fee, so coins leave the game too
+create or replace function public.market_buy(p_id bigint) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); m record; s record; r record; d jsonb;
+begin
+  perform sc_private.need_clean(uid);
+  select * into m from public.market where id = p_id for update;
+  if not found or m.status <> 'open' then raise exception 'SOMEONE ELSE GOT IT FIRST'; end if;
+  if m.seller = uid then raise exception 'THAT IS YOUR OWN LISTING'; end if;
+  if sc_private.flagged(m.seller) then raise exception 'THAT LISTING IS ON HOLD'; end if;
+  select * into s from public.saves where user_id = uid for update;
+  select * into r from sc_private.take_items(s.data, '{}', m.price);
+  d := sc_private.grant_items(r.d2, jsonb_build_object(m.item_id, m.item), 0);
+  update public.saves set data = d, version = s.version + 1, econ_ver = s.version + 1, updated_at = now() where user_id = uid;
+  update public.market set status = 'sold', buyer = uid, closed_at = now() where id = p_id;
+  insert into public.deliveries (user_id, coins, reason, from_user) values (m.seller, m.price - m.price / 20, 'market sale', uid);
+  return jsonb_build_object('data', d, 'version', s.version + 1, 'item', m.item_id);
+end $$;
+create or replace function public.market_browse(p_mine boolean default false) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me();
+begin
+  perform sc_private.expire_market();
+  return (select coalesce(jsonb_agg(jsonb_build_object('id', m.id, 'item', m.item_id, 'l', m.item -> 'l', 'g', coalesce(m.item -> 'g', '0'::jsonb), 'price', m.price,
+            'seller', p.callsign, 'mine', m.seller = uid, 'at', m.created_at) order by m.created_at desc), '[]'::jsonb)
+          from (select * from public.market where status = 'open' and (not coalesce(p_mine, false) or seller = uid) and not sc_private.flagged(seller)
+                order by created_at desc limit 300) m join public.profiles p on p.id = m.seller);
+end $$;
+
+-- ------------------------------------------------------------ friend challenges + a quick pulse
+create or replace function public.challenge_send(p_callsign text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); them uuid := sc_private.find_callsign(p_callsign); cd text; cid bigint;
+begin
+  if them = uid then raise exception 'THAT IS YOU'; end if;
+  if not exists (select 1 from public.friendships where a = least(uid, them) and b = greatest(uid, them) and status = 'accepted') then raise exception 'YOU CAN ONLY CHALLENGE FRIENDS'; end if;
+  if (select last_seen from public.profiles where id = them) < now() - interval '90 seconds' then raise exception '% IS NOT ONLINE', sc_private.clean_name(p_callsign); end if;
+  update public.challenges set status = 'expired' where from_user = uid and status = 'open';
+  cd := 'C' || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 7));
+  insert into public.challenges (from_user, to_user, code) values (uid, them, cd) returning id into cid;
+  return jsonb_build_object('id', cid, 'code', cd);
+end $$;
+create or replace function public.challenge_respond(p_id bigint, p_accept boolean) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); c record;
+begin
+  select * into c from public.challenges where id = p_id and to_user = uid for update;
+  if not found or c.status <> 'open' or c.created_at < now() - interval '90 seconds' then raise exception 'THAT CHALLENGE ENDED'; end if;
+  update public.challenges set status = case when p_accept then 'accepted' else 'declined' end, answered_at = now() where id = p_id;
+  return jsonb_build_object('code', case when p_accept then c.code else null end);
+end $$;
+-- polled every few seconds while signed in: who is online, challenges, friends you can watch
+create or replace function public.pulse() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me();
+begin
+  update public.profiles set last_seen = now() where id = uid;
+  return jsonb_build_object(
+    'online', (select coalesce(jsonb_agg(p.callsign), '[]'::jsonb) from public.friendships f join public.profiles p on p.id = case when f.a = uid then f.b else f.a end
+               where uid in (f.a, f.b) and f.status = 'accepted' and p.last_seen > now() - interval '90 seconds' and p.callsign is not null),
+    'challenges', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'from', p.callsign)), '[]'::jsonb) from public.challenges c join public.profiles p on p.id = c.from_user
+                   where c.to_user = uid and c.status = 'open' and c.created_at > now() - interval '60 seconds'),
+    'answers', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'to', p.callsign, 'status', c.status)), '[]'::jsonb) from public.challenges c join public.profiles p on p.id = c.to_user
+                where c.from_user = uid and c.status in ('accepted', 'declined') and c.answered_at > now() - interval '30 seconds'),
+    'watch', (select coalesce(jsonb_agg(jsonb_build_object('match', d.id, 'a', pa.callsign, 'b', coalesce(pb.callsign, 'AI'), 'ai', d.b is null, 'ranked', d.ranked)), '[]'::jsonb)
+              from public.duels d join public.profiles pa on pa.id = d.a left join public.profiles pb on pb.id = d.b
+              where not d.done and d.created_at > now() - interval '4 minutes' and uid not in (d.a, coalesce(d.b, d.a))
+                and exists (select 1 from public.friendships f where f.status = 'accepted' and uid in (f.a, f.b) and (case when f.a = uid then f.b else f.a end) in (d.a, coalesce(d.b, d.a)))),
+    'mail', (select count(*) from public.deliveries where user_id = uid and claimed_at is null),
+    'admin', sc_private.is_admin(uid),
+    'flagged', sc_private.flagged(uid));
+end $$;
 
 -- ------------------------------------------------- who may call what
 do $$
@@ -1074,7 +1427,9 @@ begin
              'crew_set_role', 'crew_transfer', 'crew_invite', 'crew_respond', 'crew_update', 'crew_list', 'crew_view',
              'trade_propose', 'trade_accept', 'trade_decline', 'trade_inventory', 'claim_mail', 'my_social',
              'arena_list', 'arena_create', 'arena_join', 'arena_ping', 'arena_leave', 'arena_report',
-             'duel_find', 'duel_cancel', 'duel_ai', 'duel_report', 'leaderboard', 'my_arena', 'online_counts') loop
+             'duel_find', 'duel_cancel', 'duel_ai', 'duel_report', 'leaderboard', 'my_arena', 'online_counts',
+             'report_player', 'mod_queue', 'mod_action', 'daily_status', 'daily_claim', 'market_list', 'market_cancel', 'market_buy', 'market_browse',
+             'challenge_send', 'challenge_respond', 'pulse') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
   end loop;

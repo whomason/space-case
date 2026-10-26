@@ -178,7 +178,8 @@ function drawHubTop() {
   tog(W - 54, !SND.muted, (x, y, w, h, c) => { rect(x + 4, y + 6, 2, 4, c); ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + 10, y + 3); ctx.lineTo(x + 10, y + 13); ctx.lineTo(x + 6, y + 10); ctx.fill(); }, SND.muted ? 'SOUND IS OFF' : 'SOUND IS ON', () => { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); });
   tog(W - 36, SND.musicOn, (x, y, w, h, c) => { rect(x + 5, y + 4, 1, 7, c); rect(x + 10, y + 3, 1, 7, c); rect(x + 5, y + 3, 6, 2, c); rect(x + 3, y + 10, 3, 2, c); rect(x + 8, y + 9, 3, 2, c); }, SND.musicOn ? 'MUSIC IS ON' : 'MUSIC IS OFF. CLICK TO TURN IT ON', () => { SND.setMusic(!SND.musicOn); S.settings.music = SND.musicOn; if (SND.musicOn) SND.playSong('hub'); dirty(); });
   drawOnlinePill(Math.max(168, 60 + textW((S.name ? S.name + ' ' : '') + (t ? t.n : 'ASTRONAUT'), FS) + 14), 5);
-  if (button(W - 18, 4, 14, 16, '?', { font: FS, tip: 'W/S OR ARROWS TO PICK, ENTER TO OPEN. NUMBER KEYS JUMP STRAIGHT TO A ROOM' })) { }
+  if (button(W - 18, 4, 14, 16, '', { tip: 'SETTINGS: FULLSCREEN AND CONTROLS', icon: (x, y, w, h, c) => { const cx = x + 7, cy = y + 8; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; rect(cx + Math.round(Math.cos(a) * 4) - 1, cy + Math.round(Math.sin(a) * 4) - 1, 2, 2, c); } rect(cx - 2, cy - 2, 4, 4, c); rect(cx - 1, cy - 1, 2, 2, '#05020c'); } })) openStation('settings');
+  drawDailyButton(W - 92 - cw, 4);
 }
 function drawNav(dimmed) {
   const x = 10, w = 162;
@@ -277,6 +278,8 @@ function drawPanel() {
   if (p === 'mining') return panelMining(st);
   if (p === 'social') return panelSocial(st);
   if (p === 'arena') return panelArena(st);
+  if (p === 'daily') return panelDaily(st);
+  if (p === 'settings') return panelSettings(st);
 }
 function ownedFor(slot) {
   const want = slot; const ids = Object.keys(S.inv).filter(id => { const d = getDef(id); return slotOf(d) === want; });
@@ -581,7 +584,7 @@ function drawMap(dt) {
   drawRings(p, 40, 229, 28, false); ctx.drawImage(big, 40 - 28 - big.pad, 229 - 28 - big.pad); drawRings(p, 40, 229, 28, true);
   textO(`${n}. ${p.name}`, 78, 197, COL.ink, '#000', FB); text(p.look, 78, 207, COL.dim, FS);
   text(p.trait ? `HAZARD: ${p.trait}. ${TRAIT_TXT[p.trait]}` : 'NO HAZARDS', 78, 215, p.trait ? COL.orange : COL.mute, FS);
-  oreIcon(n, 78, 221); text(`${p.ore[0]}  TIER ${p.ore[1]} ORE  ${ORE_VALUE(p.ore[1])} COINS EACH`, 94, 226, COL.ink, FS);
+  oreIcon(n, 78, 221); text(`${p.ore[0]}  TIER ${p.ore[1]} ORE  ${orePrice(p.ore[1])} COINS EACH`, 94, 226, COL.ink, FS);
   text(`BOSS: ${p.boss[0]}${S.planet.bosses[n] ? (S.planet.bossCd[n] > 0 ? ` (BACK IN ${S.planet.bossCd[n]} LANDINGS)` : ' (READY AGAIN)') : ' (DROPS 3 CRATES)'}`, 78, 236, S.planet.bosses[n] ? COL.mint : COL.coral, FS);
   text(`ALIENS: ${p.alien[0]}S  THREAT ${'!'.repeat(Math.min(10, Math.ceil(n / 2)))}`, 78, 244, COL.dim, FS);
   const evk = S.tutorial.planet && S.planet.landings > 0 ? S.planet.ev[n] : null; if (evk) { const E = EVENTS[evk]; text(`EVENT: ${E.n} (${E.tag})  +${E.rw} CRATE${E.rw > 1 ? 'S' : ''}`, 78, 252, E.c, FS); text(E.txt, 78, 259, COL.dim, FS); }

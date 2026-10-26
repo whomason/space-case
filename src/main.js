@@ -8,7 +8,8 @@ function frame(now) {
   T_NOW += dt; IN.cursor = 'default';
   let gdt = dt; if (FX.hitstop > 0) { FX.hitstop -= dt; gdt = dt * 0.05; } else if (FX.slowmo > 0) { FX.slowmo -= dt; gdt = dt * 0.35; }
   FX.shake = Math.max(0, FX.shake - dt * 18);
-  try { netTick(dt); duelTick(dt); } catch (e) { console.error(e); }
+  try { netTick(dt); duelTick(dt); liveTick(dt); } catch (e) { console.error(e); }
+  const popGrab = liveGrab();
   const modal = NAMEUI.open || !!NET.choice;
   let held = null; if (modal) { held = { pr: IN.pr, kp: new Set(IN.kp), mx: IN.mx, my: IN.my, wheel: IN.wheel, down: IN.down }; IN.pr = false; IN.kp.clear(); IN.wheel = 0; IN.mx = -999; IN.my = -999; IN.down = false; }
   ctx.save();
@@ -29,6 +30,7 @@ function frame(now) {
   } catch (e) { console.error(e); if (!ERR || ERR.message !== e.message) ERR_T = 0; ERR = e; }
   ctx.restore();
   if (held) { IN.pr = held.pr; IN.kp = held.kp; IN.mx = held.mx; IN.my = held.my; IN.wheel = held.wheel; IN.down = held.down; IN.used = false; IN.cursor = 'default'; TIP.v = null; try { if (NET.choice) drawNetChoice(dt); else drawNameUI(dt); } catch (e) { console.error(e); ERR = e; ERR_T = 0; } }
+  try { liveOverlay(popGrab); } catch (e) { console.error(e); }
   endFields(modal);
   if (FX.flash > 0) { ctx.globalAlpha = Math.min(1, FX.flash); rect(0, 0, W, H, FX.flashCol); ctx.globalAlpha = 1; FX.flash -= dt * 2.8; }
   if (SCENE !== 'title') { GOAL_T -= dt; if (GOAL_T <= 0) { GOAL_T = 0.4; try { checkGoal(); checkContracts(); } catch (e) { console.error(e); } } }

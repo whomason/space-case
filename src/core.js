@@ -267,14 +267,22 @@ cvs.addEventListener('pointerdown', e => {
 addEventListener('pointerup', e => { if (e.button === 2) { if (IN.rdown) IN.rrl = true; IN.rdown = false; } else { if (IN.down) IN.rl = true; IN.down = false; } });
 cvs.addEventListener('contextmenu', e => e.preventDefault());
 cvs.addEventListener('wheel', e => { IN.wheel += Math.sign(e.deltaY); e.preventDefault(); }, { passive: false });
+// rebindable controls: the game reads the default keys; a rebound key is translated into its action's default
+const BIND_DEF = { up: 'KeyW', left: 'KeyA', down: 'KeyS', right: 'KeyD', boost: 'Space', interact: 'KeyE', gadget: 'KeyF', swap: 'KeyQ', emote: 'KeyT', pause: 'KeyP' };
+let KEY_TR = {}, KEY_BINDS = null;
+const KEYCAP = { wait: null, got: null };   // the controls screen waiting for a key
+function applyBinds(b) { KEY_BINDS = b; KEY_TR = {}; if (!b) return; for (const a in BIND_DEF) { const p = b[a]; if (p && p !== BIND_DEF[a]) KEY_TR[p] = BIND_DEF[a]; } }
+const remapKey = c => KEY_TR[c] || c;
 addEventListener('keydown', e => {
   if (e.target && e.target.tagName === 'INPUT') { if (['Enter', 'NumpadEnter', 'Escape', 'Tab'].includes(e.code)) IN.kp.add(e.code); if (typeof SND !== 'undefined') SND.unlock(); return; } // typing in a text box
-  if (!IN.keys.has(e.code)) IN.kp.add(e.code);
-  IN.keys.add(e.code);
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+  if (KEYCAP.wait) { KEYCAP.got = e.code; e.preventDefault(); return; }
+  const c = remapKey(e.code);
+  if (!IN.keys.has(c)) IN.kp.add(c);
+  IN.keys.add(c);
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code) || c !== e.code) e.preventDefault();
   if (typeof SND !== 'undefined') SND.unlock();
 });
-addEventListener('keyup', e => IN.keys.delete(e.code));
+addEventListener('keyup', e => IN.keys.delete(remapKey(e.code)));
 addEventListener('blur', () => { IN.keys.clear(); IN.down = false; IN.rdown = false; });
 const key = c => IN.keys.has(c);
 const kp = c => IN.kp.has(c);
