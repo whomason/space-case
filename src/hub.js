@@ -83,7 +83,7 @@ function drawNebula(ox = 0) {
 function navBadge(id) {
   if (S.unlockNew && S.unlockNew[id]) return { t: 'NEW!', c: COL.pink, pulse: true };
   switch (id) {
-    case 'launch': { const n = S.planet.reached + 1; return shipRating() >= PLANET_REQ(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
+    case 'launch': { const n = S.planet.reached + 1; return canWarp(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
     case 'crates': { const n = Math.floor(S.coins / crateCost('weapon', 0)); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
     case 'hangar': { const n = freshCount('hangar'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : { t: '' + shipRating(), c: COL.blueL, quiet: true }; }
     case 'locker': { const n = freshCount('locker'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : null; }
@@ -411,7 +411,7 @@ function panelHangar(st) {
   const next = S.planet.reached + 1; const req = PLANET_REQ(next);
   text(`NEXT: ${planetDef(next).name}`, 222, 70, COL.ink, FS); text(`NEEDS ${req}`, 222, 78, rt >= req ? COL.mint : COL.coral, FS);
   bar(222, 87, 100, 5, rt / req, rt >= req ? COL.mint : COL.cyan, COL.void2);
-  text('ENGINE COUNTS DOUBLE', 222, 98, COL.mute, FS);
+  { const bg = bossGate(next); text(bg ? `AND BEAT ${bg.boss[0]}` : 'ENGINE COUNTS DOUBLE', 222, 98, bg ? COL.coral : COL.mute, FS); }
   const sc = setCounts(); let yy = 108; for (const s in sc.s) if (sc.s[s] >= 2) { text(`${SET_NAMES[s]} FLEET ${sc.s[s]}/5`, 222, yy, sc.s[s] >= 3 ? COL.magenta : COL.dim, FS); yy += 7; if (sc.s[s] >= 3) { wrap(bonusLine(SHIP_SET_BONUS[s][sc.s[s] >= 5 ? 1 : 0]), 100, FS).forEach(l => { text(l, 226, yy, COL.magenta, FS); yy += 7; }); } }
   SLOTS_SHIP.concat(['skin_ship']).forEach((s, i) => { const x = 14 + i * 34; if (slotBox(x, 156, 32, 30, S.eq[s], SLOT_LABEL[s], st.slot === s, { fresh: freshIn(s) > 0 })) { st.slot = s; st.scroll = 0; SND.play('click'); } });
   text('SHIP CRATES COST 3X. BETTER PARTS UNLOCK NEW PLANETS', 14, 192, COL.mute, FS);
@@ -634,7 +634,7 @@ const MAP = { scroll: 0, sel: 1, spheres: {}, sT: 0, init: false };
 function mapPos(n) { return { x: 70 + (n - 1) * 92, y: 108 + Math.sin(n * 0.85) * 44 + (n % 2 ? 12 : -12) }; }
 function maxMapPlanet() { return Math.max(20, S.planet.bosses[20] ? S.planet.reached + 1 : 20); }
 function drawMap(dt) {
-  if (!MAP.init) { MAP.init = true; ensureEvents(); const nx = S.planet.reached + 1; MAP.sel = (nx <= maxMapPlanet() && shipRating() >= PLANET_REQ(nx)) ? nx : Math.min(maxMapPlanet(), S.planet.cur || 1); MAP.scroll = clamp(mapPos(MAP.sel).x - W / 2, 0, mapPos(maxMapPlanet()).x - W + 70); }
+  if (!MAP.init) { MAP.init = true; ensureEvents(); const nx = S.planet.reached + 1; MAP.sel = (nx <= maxMapPlanet() && canWarp(nx)) ? nx : Math.min(maxMapPlanet(), S.planet.cur || 1); MAP.scroll = clamp(mapPos(MAP.sel).x - W / 2, 0, mapPos(maxMapPlanet()).x - W + 70); }
   const maxS = Math.max(0, mapPos(maxMapPlanet()).x - W + 70);
   if (IN.wheel) MAP.scroll = clamp(MAP.scroll + IN.wheel * 50, 0, maxS);
   if (key('ArrowRight') || key('KeyD')) MAP.scroll = clamp(MAP.scroll + 240 * dt, 0, maxS); if (key('ArrowLeft') || key('KeyA')) MAP.scroll = clamp(MAP.scroll - 240 * dt, 0, maxS);
@@ -646,13 +646,13 @@ function drawMap(dt) {
   for (let n = 1; n < top; n++) { const a = mapPos(n), b = mapPos(n + 1); const lit = n + 1 <= S.planet.reached; for (let k = 0; k < 1; k += 0.04) { const x = lerp(a.x, b.x, k) - ox, y = lerp(a.y, b.y, k); if (x < -10 || x > W + 10) continue; const blink = lit && ((k * 25 + T_NOW * 6) % 4 < 1); px(x, y, lit ? (blink ? '#fafaff' : COL.gold) : '#273469'); } }
   for (let n = 1; n <= top; n++) {
     const p = planetDef(n), pos = mapPos(n); const x = pos.x - ox, y = pos.y; if (x < -40 || x > W + 40) continue;
-    const req = PLANET_REQ(n); const ok = n <= S.planet.reached || rt >= req; const r = n === 20 ? 24 : 16 + (n * 7 % 5);
+    const req = PLANET_REQ(n); const ok = canWarp(n); const r = n === 20 ? 24 : 16 + (n * 7 % 5);
     let sp = MAP.spheres[n]; if (!sp || (redraw && Math.abs(x - W / 2) < 300)) { sp = MAP.spheres[n] = renderSphere(p, r, T_NOW * 0.25 + n, { dim: !ok, canvas: sp }); }
     const sel = MAP.sel === n; const hov = Math.hypot(IN.mx - x, IN.my - y) < r + 6;
     if (sel) { ctx.globalAlpha = 0.25 + 0.2 * Math.sin(T_NOW * 4); circ(x, y, r + 7, COL.gold); ctx.globalAlpha = 1; ring(x, y, r + 9, COL.gold); }
     drawRings(p, x, y, r, false, ok ? 1 : 0.35); ctx.drawImage(sp, Math.floor(x - r - sp.pad), Math.floor(y - r - sp.pad)); drawRings(p, x, y, r, true, ok ? 1 : 0.35);
     text(p.name, x, y + r + 8, ok ? (sel ? COL.ink : COL.dim) : COL.mute, FS, 1);
-    if (!ok) { rect(x - 4, y - 2, 9, 7, COL.lilac); rect(x - 4, y - 2, 9, 1, '#fff'); ring(x, y - 3, 3, COL.lilac); px(x, y + 1, COL.navy); text('NEED ' + req, x, y + r + 15, COL.coral, FS, 1); }
+    if (!ok) { rect(x - 4, y - 2, 9, 7, COL.lilac); rect(x - 4, y - 2, 9, 1, '#fff'); ring(x, y - 3, 3, COL.lilac); px(x, y + 1, COL.navy); text(rt >= req && bossGate(n) ? 'BEAT BOSS' : 'NEED ' + req, x, y + r + 15, COL.coral, FS, 1); }
     else if (S.planet.bosses[n]) { line(x + r - 2, y - r + 1, x + r, y - r + 3, COL.mint); line(x + r, y - r + 3, x + r + 4, y - r - 2, COL.mint); }
     if (p.mastery) { const stt = S.planet.stars[n] || [0, 0, 0]; for (let k = 0; k < 3; k++) text('*', x - 6 + k * 6, y - r - 10, stt[k] ? COL.gold : COL.steel, FS, 1); }
     const ek = ok && S.tutorial.planet && S.planet.landings > 0 && S.planet.ev[n]; if (ek) { const E = EVENTS[ek]; const yy = y + r + 22 + (ok ? 0 : 7); const tw = textW(E.tag, FS) + 6; panel(x - tw / 2, yy - 2, tw, 9, { bg: COL.void0, bd: E.c, flat: true }); text(E.tag, x, yy, E.c, FS, 1); }
@@ -663,7 +663,7 @@ function drawMap(dt) {
   coachMap();
   if (button(170, 3, 112, 14, COOP.st === 'idle' ? 'LAND WITH A FRIEND' : 'CO-OP LOBBY', { font: FS, kind: COOP.partner ? 'primary' : 'blue', tip: 'INVITE A FRIEND TO THIS PLANET. YOU FIGHT THE SAME ALIENS' })) coopOpen(MAP.sel);
   // info panel
-  const n = MAP.sel, p = planetDef(n), req = PLANET_REQ(n), ok = n <= S.planet.reached || rt >= req;
+  const n = MAP.sel, p = planetDef(n), req = PLANET_REQ(n), ok = canWarp(n), gate = rt >= req && bossGate(n);
   panel(4, 192, W - 8, 74, { bg: 'rgba(14,22,48,0.96)', bd: ok ? COL.gold : COL.steel, notch: true });
   let big = MAP.big; if (!big || big.n !== n || redraw) { big = MAP.big = renderSphere(p, 28, T_NOW * 0.2, { canvas: big && big.n === n ? big : null }); big.n = n; }
   drawRings(p, 40, 229, 28, false); ctx.drawImage(big, 40 - 28 - big.pad, 229 - 28 - big.pad); drawRings(p, 40, 229, 28, true);
@@ -678,6 +678,7 @@ function drawMap(dt) {
   text(n === 1 ? 'NO SHIP RATING NEEDED' : `SHIP RATING ${rt} / ${req}`, W - 10, 229, ok ? COL.lilac : COL.coral, FS, 2);
   if (ok) drawBoosts(p);
   if (ok) { const lbl = (S.planet.visited[n] ? 'LAND ON ' : 'WARP TO ') + p.name; ctx.globalAlpha = 0.2 + 0.15 * Math.sin(T_NOW * 4); rect(W - 152, 238, 146, 26, COL.gold); ctx.globalAlpha = 1; if (button(W - 150, 240, 142, 22, lbl, { kind: 'primary' }) || kp('Enter') || kp('Space')) { if (buyBoosts(p)) { MAP.init = false; if (!S.planet.visited[n]) startWarp(n); else startRun(n); } } }
+  else if (gate) { button(W - 150, 240, 142, 22, 'BEAT ' + gate.boss[0], { disabled: true, font: FS }); if (button(W - 204, 240, 50, 22, 'BOSS', { font: FS, kind: 'blue', tip: `BEAT ${gate.boss[0]} ON ${gate.name} TO UNLOCK THIS PLANET` })) { MAP.sel = n - 1; SND.play('click'); } }
   else { button(W - 150, 240, 142, 22, 'NEED RATING ' + req, { disabled: true }); if (button(W - 204, 240, 50, 22, 'HANGAR', { font: FS, kind: 'blue', tip: 'BETTER SHIP PARTS RAISE YOUR RATING' })) { MAP.init = false; goHub(); openStation('hangar'); } }
   if (S.planet.bosses[20] && n >= 20) { if (button(W - 230, 240, 108, 20, 'GO SUPERNOVA', { col: '#4a1d3a', tc: COL.magenta, tip: 'RESET PLANETS AND COINS. KEEP EVERY ITEM. GAIN STARS, BETTER ORE AND THE SINGULARITY TIER' })) MAP.nova = true; }
   if (MAP.nova) drawNovaConfirm();

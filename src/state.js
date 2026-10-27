@@ -135,6 +135,9 @@ function shipRating() {
   let r = 0; for (const sl of SLOTS_SHIP) { const id = S.eq[sl]; if (id) r += aStats(getDef(id), effL(id)).rating || 0; }
   return Math.round(r * (1 + bonuses().rating));
 }
+// to warp somewhere new you need the ship rating AND the previous planet's boss beaten
+function bossGate(n) { return n > 1 && n > S.planet.reached && !S.planet.bosses[n - 1] ? planetDef(n - 1) : null; }
+function canWarp(n) { return n <= S.planet.reached || (shipRating() >= PLANET_REQ(n) && !bossGate(n)); }
 function frontierMul() { return Math.pow(1.15, Math.max(0, S.planet.reached - 1)); } // every planet you reach makes all your weapons stronger
 function luckPct() { return S.skills.luck * 3 + S.nova.perks.luck * 2 + bonuses().luck; }
 function loadout() {
@@ -260,10 +263,10 @@ function drawToasts(dt) {
 function goals() {
   const G = [];
   const next = S.planet.reached + 1; const rt = shipRating();
-  if (next <= 99) { const req = PLANET_REQ(next); if (rt < req) G.push({ t: `SHIP RATING ${rt}/${req} TO REACH ${planetDef(next).name}`, f: rt / req, c: COL.cyan, go: 'hangar' }); else G.push({ t: `${planetDef(next).name} IS IN RANGE. WARP THERE`, f: 1, c: COL.mint, go: 'map' }); }
+  if (next <= 99) { const req = PLANET_REQ(next), bg = bossGate(next); if (bg) G.push({ t: `BEAT ${bg.boss[0]} ON ${bg.name} TO UNLOCK ${planetDef(next).name}`, f: 0, c: COL.coral, go: 'map' }); if (rt < req) G.push({ t: `SHIP RATING ${rt}/${req} TO REACH ${planetDef(next).name}`, f: rt / req, c: COL.cyan, go: 'hangar' }); else if (!bg) G.push({ t: `${planetDef(next).name} IS IN RANGE. WARP THERE`, f: 1, c: COL.mint, go: 'map' }); }
   const claim = PAGES.find(pg => pageDone(pg) && !S.pages[pg.id]); if (claim) G.push({ t: `CLAIM REWARD: ${claim.n}`, f: 1, c: COL.magenta, go: 'collection' });
   if (S.sp > 0) G.push({ t: `${S.sp} SKILL POINT${S.sp > 1 ? 'S' : ''} TO SPEND`, f: 1, c: COL.cyan, go: 'profile' });
-  for (let p = 1; p <= Math.min(S.planet.reached, 99); p++) if (!S.planet.bosses[p]) { G.push({ t: `BEAT ${planetDef(p).boss[0]} ON ${planetDef(p).name}`, f: 0, c: COL.coral, go: 'map' }); break; }
+  for (let p = 1; p <= Math.min(S.planet.reached, 99); p++) if (!S.planet.bosses[p]) { if (p === next - 1) break; G.push({ t: `BEAT ${planetDef(p).boss[0]} ON ${planetDef(p).name}`, f: 0, c: COL.coral, go: 'map' }); break; }
   const fin = PAGES.find(pg => finisherOk(pg)); if (fin) G.push({ t: `${fin.n}: ${pageOwned(fin)}/${fin.ids.length}. FINISHER CRATE OPEN`, f: pageOwned(fin) / fin.ids.length, c: COL.gold, go: 'crates' });
   let best = null, bf = 0; for (const pg of PAGES) { const o = pageOwned(pg); if (o > 0 && o < pg.ids.length && o / pg.ids.length > bf) { bf = o / pg.ids.length; best = pg; } }
   if (best && best !== fin) G.push({ t: `${best.n} ${pageOwned(best)}/${best.ids.length}`, f: bf, c: COL.magenta, go: 'collection' });
@@ -332,7 +335,7 @@ function goalInfo() {
   const g = S.goal;
   if (g.i < GOAL_CHAIN.length) { const d = GOAL_CHAIN[g.i]; const [cur, need] = d.rel ? [S.stats[d.rel] - g.base, d.n] : d.f(); return { t: d.t(), cur, need, go: d.go, rw: d.rw }; }
   switch (g.tpl) {
-    case 'reach': { const req = PLANET_REQ(g.p); return { t: `REACH ${pName(g.p)}`, cur: S.planet.reached >= g.p ? 1 : 0, need: 1, go: shipRating() >= req ? 'launch' : 'hangar', rw: g.rw, sub: shipRating() >= req ? 'IT IS IN RANGE. WARP THERE' : `SHIP RATING ${shipRating()}/${req}. UPGRADE SHIP PARTS` }; }
+    case 'reach': { const req = PLANET_REQ(g.p), bg = bossGate(g.p); return { t: `REACH ${pName(g.p)}`, cur: S.planet.reached >= g.p ? 1 : 0, need: 1, go: shipRating() >= req ? 'launch' : 'hangar', rw: g.rw, sub: shipRating() < req ? `SHIP RATING ${shipRating()}/${req}. UPGRADE SHIP PARTS` : bg ? `BEAT ${bg.boss[0]} ON ${bg.name} FIRST` : 'IT IS IN RANGE. WARP THERE' }; }
     case 'boss': return { t: `BEAT ${bossOf(g.p)} ON ${pName(g.p)}${g.need > 1 ? ' AGAIN' : ''}`, cur: Math.min(1, (S.planet.bosses[g.p] || 0) >= g.need ? 1 : 0), need: 1, go: 'launch', rw: g.rw };
     case 'crates': return { t: `OPEN ${g.need} MORE CRATES`, cur: S.stats.crates - g.base, need: g.need, go: 'crates', rw: g.rw };
     case 'ore': return { t: `MINE ${g.need} ORE`, cur: S.stats.ore - g.base, need: g.need, go: 'launch', rw: g.rw };

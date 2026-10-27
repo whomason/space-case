@@ -587,7 +587,7 @@ const TIERS = [
   { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
 ];
 const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
-const ENEMY_COIN = 1.5; // aliens drop this many times their old coins
+const ENEMY_COIN = 0.5; // aliens drop this many times their old coins. Mining is the main way to earn
 // the combo still counts up to X10, but coins grow slower: X4 pays X2, X10 pays X4 (a long fight used to out-earn a full cargo hold several times over)
 const comboPay = m => 1 + (m - 1) / 3;
 const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
@@ -736,10 +736,11 @@ PLANETS.forEach((p, i) => { p.i = i + 1; });
 // ship rating to reach each planet. Each band asks for about one full rarity step of ship parts at that stage's crate grade:
 // uncommon by 3, rare by 6, epic by 8-10, legendary by 11-13, mythic by 14-16, then levelled mythic/cosmic parts.
 // (The old curve wanted legendary by 8 and mythic by 11, which took roughly 30 landings on one planet to reach.)
-const PLANET_REQ_T = [0, 0, 700, 800, 900, 1000, 1100, 1200, 1350, 1450, 1550, 1750, 1900, 2000, 2250, 2400, 2550, 2650, 2800, 2950, 3100];
-const PLANET_REQ = n => n <= 1 ? 0 : n < PLANET_REQ_T.length ? PLANET_REQ_T[n] : 3100 + 150 * (n - 20);
+// Raised ~30% (Oct 2026): planets were unlocking every one or two landings. You also have to beat the previous planet's boss.
+const PLANET_REQ_T = [0, 0, 850, 1000, 1150, 1300, 1450, 1600, 1800, 1950, 2100, 2350, 2550, 2700, 3000, 3200, 3400, 3550, 3750, 3950, 4150];
+const PLANET_REQ = n => n <= 1 ? 0 : n < PLANET_REQ_T.length ? PLANET_REQ_T[n] : 4150 + 200 * (n - 20);
 const ORE_VALUE = tier => Math.round(5 * Math.pow(1.42, tier - 1));   // base scale (alien coins use it too)
-const ORE_PAY = 5;                                                     // ore sells for this many times the base
+const ORE_PAY = 4;                                                     // ore sells for this many times the base
 const orePrice = tier => ORE_VALUE(tier) * ORE_PAY;
 const LIQ_SOLID = { swamp: 1, ice: 1, lava: 1, brine: 1, cloud: 1, darkwater: 1, tide: 1, oil: 1, slime: 1, sludge: 1, water: 1, glass: 1, puddle: 1, light: 1, trench: 1, magma: 1, void: 1, starlight: 1 };
 
@@ -3070,6 +3071,9 @@ function shipRating() {
   let r = 0; for (const sl of SLOTS_SHIP) { const id = S.eq[sl]; if (id) r += aStats(getDef(id), effL(id)).rating || 0; }
   return Math.round(r * (1 + bonuses().rating));
 }
+// to warp somewhere new you need the ship rating AND the previous planet's boss beaten
+function bossGate(n) { return n > 1 && n > S.planet.reached && !S.planet.bosses[n - 1] ? planetDef(n - 1) : null; }
+function canWarp(n) { return n <= S.planet.reached || (shipRating() >= PLANET_REQ(n) && !bossGate(n)); }
 function frontierMul() { return Math.pow(1.15, Math.max(0, S.planet.reached - 1)); } // every planet you reach makes all your weapons stronger
 function luckPct() { return S.skills.luck * 3 + S.nova.perks.luck * 2 + bonuses().luck; }
 function loadout() {
@@ -3195,10 +3199,10 @@ function drawToasts(dt) {
 function goals() {
   const G = [];
   const next = S.planet.reached + 1; const rt = shipRating();
-  if (next <= 99) { const req = PLANET_REQ(next); if (rt < req) G.push({ t: `SHIP RATING ${rt}/${req} TO REACH ${planetDef(next).name}`, f: rt / req, c: COL.cyan, go: 'hangar' }); else G.push({ t: `${planetDef(next).name} IS IN RANGE. WARP THERE`, f: 1, c: COL.mint, go: 'map' }); }
+  if (next <= 99) { const req = PLANET_REQ(next), bg = bossGate(next); if (bg) G.push({ t: `BEAT ${bg.boss[0]} ON ${bg.name} TO UNLOCK ${planetDef(next).name}`, f: 0, c: COL.coral, go: 'map' }); if (rt < req) G.push({ t: `SHIP RATING ${rt}/${req} TO REACH ${planetDef(next).name}`, f: rt / req, c: COL.cyan, go: 'hangar' }); else if (!bg) G.push({ t: `${planetDef(next).name} IS IN RANGE. WARP THERE`, f: 1, c: COL.mint, go: 'map' }); }
   const claim = PAGES.find(pg => pageDone(pg) && !S.pages[pg.id]); if (claim) G.push({ t: `CLAIM REWARD: ${claim.n}`, f: 1, c: COL.magenta, go: 'collection' });
   if (S.sp > 0) G.push({ t: `${S.sp} SKILL POINT${S.sp > 1 ? 'S' : ''} TO SPEND`, f: 1, c: COL.cyan, go: 'profile' });
-  for (let p = 1; p <= Math.min(S.planet.reached, 99); p++) if (!S.planet.bosses[p]) { G.push({ t: `BEAT ${planetDef(p).boss[0]} ON ${planetDef(p).name}`, f: 0, c: COL.coral, go: 'map' }); break; }
+  for (let p = 1; p <= Math.min(S.planet.reached, 99); p++) if (!S.planet.bosses[p]) { if (p === next - 1) break; G.push({ t: `BEAT ${planetDef(p).boss[0]} ON ${planetDef(p).name}`, f: 0, c: COL.coral, go: 'map' }); break; }
   const fin = PAGES.find(pg => finisherOk(pg)); if (fin) G.push({ t: `${fin.n}: ${pageOwned(fin)}/${fin.ids.length}. FINISHER CRATE OPEN`, f: pageOwned(fin) / fin.ids.length, c: COL.gold, go: 'crates' });
   let best = null, bf = 0; for (const pg of PAGES) { const o = pageOwned(pg); if (o > 0 && o < pg.ids.length && o / pg.ids.length > bf) { bf = o / pg.ids.length; best = pg; } }
   if (best && best !== fin) G.push({ t: `${best.n} ${pageOwned(best)}/${best.ids.length}`, f: bf, c: COL.magenta, go: 'collection' });
@@ -3267,7 +3271,7 @@ function goalInfo() {
   const g = S.goal;
   if (g.i < GOAL_CHAIN.length) { const d = GOAL_CHAIN[g.i]; const [cur, need] = d.rel ? [S.stats[d.rel] - g.base, d.n] : d.f(); return { t: d.t(), cur, need, go: d.go, rw: d.rw }; }
   switch (g.tpl) {
-    case 'reach': { const req = PLANET_REQ(g.p); return { t: `REACH ${pName(g.p)}`, cur: S.planet.reached >= g.p ? 1 : 0, need: 1, go: shipRating() >= req ? 'launch' : 'hangar', rw: g.rw, sub: shipRating() >= req ? 'IT IS IN RANGE. WARP THERE' : `SHIP RATING ${shipRating()}/${req}. UPGRADE SHIP PARTS` }; }
+    case 'reach': { const req = PLANET_REQ(g.p), bg = bossGate(g.p); return { t: `REACH ${pName(g.p)}`, cur: S.planet.reached >= g.p ? 1 : 0, need: 1, go: shipRating() >= req ? 'launch' : 'hangar', rw: g.rw, sub: shipRating() < req ? `SHIP RATING ${shipRating()}/${req}. UPGRADE SHIP PARTS` : bg ? `BEAT ${bg.boss[0]} ON ${bg.name} FIRST` : 'IT IS IN RANGE. WARP THERE' }; }
     case 'boss': return { t: `BEAT ${bossOf(g.p)} ON ${pName(g.p)}${g.need > 1 ? ' AGAIN' : ''}`, cur: Math.min(1, (S.planet.bosses[g.p] || 0) >= g.need ? 1 : 0), need: 1, go: 'launch', rw: g.rw };
     case 'crates': return { t: `OPEN ${g.need} MORE CRATES`, cur: S.stats.crates - g.base, need: g.need, go: 'crates', rw: g.rw };
     case 'ore': return { t: `MINE ${g.need} ORE`, cur: S.stats.ore - g.base, need: g.need, go: 'launch', rw: g.rw };
@@ -5543,7 +5547,7 @@ function paintDetails(G, p, R, solidP, GW, GH, rmp) {
 function startRun(pi, opt = {}) {
   const p = planetDef(pi); S.planet.landings++; S.planet.cur = pi; const boost = S.nextBoost || {}; S.nextBoost = null;
   if (!S.planet.visited[pi]) { S.planet.visited[pi] = 1; toast(`${p.name} SALVAGE CRATES UNLOCKED`, COL.mint); }
-  if (pi > S.planet.reached && (!opt.guest || shipRating() >= PLANET_REQ(pi))) S.planet.reached = pi;   // a co-op guest doesn't skip ahead
+  if (pi > S.planet.reached && (!opt.guest || canWarp(pi))) S.planet.reached = pi;   // a co-op guest doesn't skip ahead
   for (const b in S.planet.bossCd) if (S.planet.bossCd[b] > 0) S.planet.bossCd[b]--;
   const evKey = S.tutorial.planet && S.planet.landings > 1 && !opt.guest ? (S.planet.ev[pi] || rollEvent(pi)) : null;
   S.planet.ev[pi] = rollEvent(pi, evKey);
@@ -5553,7 +5557,7 @@ function startRun(pi, opt = {}) {
   const L = loadout();
   const w = makeWorld({ pi });
   // aliens are tough on their own planet; they get easy once you're geared for the next one (weapons gain 15% per planet reached)
-  w.hpMul = 1.35 * Math.pow(1.21, pi - 1) * (1 + S.nova.count * 0.6); w.dmgMul = 1.2 * Math.pow(1.13, pi - 1) * (1 + S.nova.count * 0.4);
+  w.hpMul = 1.6 * Math.pow(1.22, pi - 1) * (1 + S.nova.count * 0.6); w.dmgMul = 1.5 * Math.pow(1.14, pi - 1) * (1 + S.nova.count * 0.4);
   w.crit = L.crit; w.comboMax = L.combo;
   w.moveMul = p.trait === 'LOW GRAVITY' ? 1.22 : p.trait === 'HEAVY GRAVITY' ? 0.8 : 1; w.slippery = p.trait === 'LOW GRAVITY';
   if (S.eq.killfx) { const kd = getDef(S.eq.killfx); const kp = itemPal(kd); w.killfx = { r: kd.r, style: kd.style, cols: [hex(kp.P[3]), hex(kp.G[3]), hex(kp.S[3]), '#fff'] }; }
@@ -5797,8 +5801,8 @@ function updateRun(dt) {
     // spawns
     R.spawnT -= dt * (R.tut ? (R.tut.i < 1 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
     if (R.spawnT <= 0) {
-      R.spawnT = Math.max(0.9, 3.4 - R.t * 0.018) * (w.boss ? 1.8 : 1);
-      if (w.ents.length < 34) {
+      R.spawnT = Math.max(0.75, 2.9 - R.t * 0.018) * (w.boss ? 1.8 : 1);
+      if (w.ents.length < 40) {
         const ros = planetRoster(w.pi); const arch = R0() < 0.55 ? R0.pick(R.p.alien[2]) : R0.pick(ros); const n = arch === 'swarm' ? 3 + R0.int(3) : arch === 'turret' || arch === 'healer' || arch === 'sniper' ? 1 : 1 + R0.int(R.t > 60 ? 3 : 2);
         const anc = w.allies && w.allies[0] && w.allies[0].alive && R0() < 0.5 ? w.allies[0] : pl;
         for (let tries = 0; tries < 10; tries++) { const a = R0() * TAU, d = 230 + R0() * 50; const x = anc.x + Math.cos(a) * d, y = anc.y + Math.sin(a) * d; if (!w.solid(x, y) && x > 30 && y > 30 && x < map.GW - 30 && y < map.GH - 30) { for (let i = 0; i < n; i++) foeVariant(spawnEnemy(w, arch, x + (R0() - 0.5) * 24, y + (R0() - 0.5) * 24), R.t); break; } }
@@ -7642,7 +7646,7 @@ function drawNebula(ox = 0) {
 function navBadge(id) {
   if (S.unlockNew && S.unlockNew[id]) return { t: 'NEW!', c: COL.pink, pulse: true };
   switch (id) {
-    case 'launch': { const n = S.planet.reached + 1; return shipRating() >= PLANET_REQ(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
+    case 'launch': { const n = S.planet.reached + 1; return canWarp(n) && n <= maxMapPlanet() ? { t: 'NEW PLANET', c: COL.gold } : null; }
     case 'crates': { const n = Math.floor(S.coins / crateCost('weapon', 0)); return n ? { t: 'X' + Math.min(99, n), c: COL.gold } : null; }
     case 'hangar': { const n = freshCount('hangar'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : { t: '' + shipRating(), c: COL.blueL, quiet: true }; }
     case 'locker': { const n = freshCount('locker'); return n ? { t: n + ' NEW', c: COL.pink, pulse: true } : null; }
@@ -7970,7 +7974,7 @@ function panelHangar(st) {
   const next = S.planet.reached + 1; const req = PLANET_REQ(next);
   text(`NEXT: ${planetDef(next).name}`, 222, 70, COL.ink, FS); text(`NEEDS ${req}`, 222, 78, rt >= req ? COL.mint : COL.coral, FS);
   bar(222, 87, 100, 5, rt / req, rt >= req ? COL.mint : COL.cyan, COL.void2);
-  text('ENGINE COUNTS DOUBLE', 222, 98, COL.mute, FS);
+  { const bg = bossGate(next); text(bg ? `AND BEAT ${bg.boss[0]}` : 'ENGINE COUNTS DOUBLE', 222, 98, bg ? COL.coral : COL.mute, FS); }
   const sc = setCounts(); let yy = 108; for (const s in sc.s) if (sc.s[s] >= 2) { text(`${SET_NAMES[s]} FLEET ${sc.s[s]}/5`, 222, yy, sc.s[s] >= 3 ? COL.magenta : COL.dim, FS); yy += 7; if (sc.s[s] >= 3) { wrap(bonusLine(SHIP_SET_BONUS[s][sc.s[s] >= 5 ? 1 : 0]), 100, FS).forEach(l => { text(l, 226, yy, COL.magenta, FS); yy += 7; }); } }
   SLOTS_SHIP.concat(['skin_ship']).forEach((s, i) => { const x = 14 + i * 34; if (slotBox(x, 156, 32, 30, S.eq[s], SLOT_LABEL[s], st.slot === s, { fresh: freshIn(s) > 0 })) { st.slot = s; st.scroll = 0; SND.play('click'); } });
   text('SHIP CRATES COST 3X. BETTER PARTS UNLOCK NEW PLANETS', 14, 192, COL.mute, FS);
@@ -8193,7 +8197,7 @@ const MAP = { scroll: 0, sel: 1, spheres: {}, sT: 0, init: false };
 function mapPos(n) { return { x: 70 + (n - 1) * 92, y: 108 + Math.sin(n * 0.85) * 44 + (n % 2 ? 12 : -12) }; }
 function maxMapPlanet() { return Math.max(20, S.planet.bosses[20] ? S.planet.reached + 1 : 20); }
 function drawMap(dt) {
-  if (!MAP.init) { MAP.init = true; ensureEvents(); const nx = S.planet.reached + 1; MAP.sel = (nx <= maxMapPlanet() && shipRating() >= PLANET_REQ(nx)) ? nx : Math.min(maxMapPlanet(), S.planet.cur || 1); MAP.scroll = clamp(mapPos(MAP.sel).x - W / 2, 0, mapPos(maxMapPlanet()).x - W + 70); }
+  if (!MAP.init) { MAP.init = true; ensureEvents(); const nx = S.planet.reached + 1; MAP.sel = (nx <= maxMapPlanet() && canWarp(nx)) ? nx : Math.min(maxMapPlanet(), S.planet.cur || 1); MAP.scroll = clamp(mapPos(MAP.sel).x - W / 2, 0, mapPos(maxMapPlanet()).x - W + 70); }
   const maxS = Math.max(0, mapPos(maxMapPlanet()).x - W + 70);
   if (IN.wheel) MAP.scroll = clamp(MAP.scroll + IN.wheel * 50, 0, maxS);
   if (key('ArrowRight') || key('KeyD')) MAP.scroll = clamp(MAP.scroll + 240 * dt, 0, maxS); if (key('ArrowLeft') || key('KeyA')) MAP.scroll = clamp(MAP.scroll - 240 * dt, 0, maxS);
@@ -8205,13 +8209,13 @@ function drawMap(dt) {
   for (let n = 1; n < top; n++) { const a = mapPos(n), b = mapPos(n + 1); const lit = n + 1 <= S.planet.reached; for (let k = 0; k < 1; k += 0.04) { const x = lerp(a.x, b.x, k) - ox, y = lerp(a.y, b.y, k); if (x < -10 || x > W + 10) continue; const blink = lit && ((k * 25 + T_NOW * 6) % 4 < 1); px(x, y, lit ? (blink ? '#fafaff' : COL.gold) : '#273469'); } }
   for (let n = 1; n <= top; n++) {
     const p = planetDef(n), pos = mapPos(n); const x = pos.x - ox, y = pos.y; if (x < -40 || x > W + 40) continue;
-    const req = PLANET_REQ(n); const ok = n <= S.planet.reached || rt >= req; const r = n === 20 ? 24 : 16 + (n * 7 % 5);
+    const req = PLANET_REQ(n); const ok = canWarp(n); const r = n === 20 ? 24 : 16 + (n * 7 % 5);
     let sp = MAP.spheres[n]; if (!sp || (redraw && Math.abs(x - W / 2) < 300)) { sp = MAP.spheres[n] = renderSphere(p, r, T_NOW * 0.25 + n, { dim: !ok, canvas: sp }); }
     const sel = MAP.sel === n; const hov = Math.hypot(IN.mx - x, IN.my - y) < r + 6;
     if (sel) { ctx.globalAlpha = 0.25 + 0.2 * Math.sin(T_NOW * 4); circ(x, y, r + 7, COL.gold); ctx.globalAlpha = 1; ring(x, y, r + 9, COL.gold); }
     drawRings(p, x, y, r, false, ok ? 1 : 0.35); ctx.drawImage(sp, Math.floor(x - r - sp.pad), Math.floor(y - r - sp.pad)); drawRings(p, x, y, r, true, ok ? 1 : 0.35);
     text(p.name, x, y + r + 8, ok ? (sel ? COL.ink : COL.dim) : COL.mute, FS, 1);
-    if (!ok) { rect(x - 4, y - 2, 9, 7, COL.lilac); rect(x - 4, y - 2, 9, 1, '#fff'); ring(x, y - 3, 3, COL.lilac); px(x, y + 1, COL.navy); text('NEED ' + req, x, y + r + 15, COL.coral, FS, 1); }
+    if (!ok) { rect(x - 4, y - 2, 9, 7, COL.lilac); rect(x - 4, y - 2, 9, 1, '#fff'); ring(x, y - 3, 3, COL.lilac); px(x, y + 1, COL.navy); text(rt >= req && bossGate(n) ? 'BEAT BOSS' : 'NEED ' + req, x, y + r + 15, COL.coral, FS, 1); }
     else if (S.planet.bosses[n]) { line(x + r - 2, y - r + 1, x + r, y - r + 3, COL.mint); line(x + r, y - r + 3, x + r + 4, y - r - 2, COL.mint); }
     if (p.mastery) { const stt = S.planet.stars[n] || [0, 0, 0]; for (let k = 0; k < 3; k++) text('*', x - 6 + k * 6, y - r - 10, stt[k] ? COL.gold : COL.steel, FS, 1); }
     const ek = ok && S.tutorial.planet && S.planet.landings > 0 && S.planet.ev[n]; if (ek) { const E = EVENTS[ek]; const yy = y + r + 22 + (ok ? 0 : 7); const tw = textW(E.tag, FS) + 6; panel(x - tw / 2, yy - 2, tw, 9, { bg: COL.void0, bd: E.c, flat: true }); text(E.tag, x, yy, E.c, FS, 1); }
@@ -8222,7 +8226,7 @@ function drawMap(dt) {
   coachMap();
   if (button(170, 3, 112, 14, COOP.st === 'idle' ? 'LAND WITH A FRIEND' : 'CO-OP LOBBY', { font: FS, kind: COOP.partner ? 'primary' : 'blue', tip: 'INVITE A FRIEND TO THIS PLANET. YOU FIGHT THE SAME ALIENS' })) coopOpen(MAP.sel);
   // info panel
-  const n = MAP.sel, p = planetDef(n), req = PLANET_REQ(n), ok = n <= S.planet.reached || rt >= req;
+  const n = MAP.sel, p = planetDef(n), req = PLANET_REQ(n), ok = canWarp(n), gate = rt >= req && bossGate(n);
   panel(4, 192, W - 8, 74, { bg: 'rgba(14,22,48,0.96)', bd: ok ? COL.gold : COL.steel, notch: true });
   let big = MAP.big; if (!big || big.n !== n || redraw) { big = MAP.big = renderSphere(p, 28, T_NOW * 0.2, { canvas: big && big.n === n ? big : null }); big.n = n; }
   drawRings(p, 40, 229, 28, false); ctx.drawImage(big, 40 - 28 - big.pad, 229 - 28 - big.pad); drawRings(p, 40, 229, 28, true);
@@ -8237,6 +8241,7 @@ function drawMap(dt) {
   text(n === 1 ? 'NO SHIP RATING NEEDED' : `SHIP RATING ${rt} / ${req}`, W - 10, 229, ok ? COL.lilac : COL.coral, FS, 2);
   if (ok) drawBoosts(p);
   if (ok) { const lbl = (S.planet.visited[n] ? 'LAND ON ' : 'WARP TO ') + p.name; ctx.globalAlpha = 0.2 + 0.15 * Math.sin(T_NOW * 4); rect(W - 152, 238, 146, 26, COL.gold); ctx.globalAlpha = 1; if (button(W - 150, 240, 142, 22, lbl, { kind: 'primary' }) || kp('Enter') || kp('Space')) { if (buyBoosts(p)) { MAP.init = false; if (!S.planet.visited[n]) startWarp(n); else startRun(n); } } }
+  else if (gate) { button(W - 150, 240, 142, 22, 'BEAT ' + gate.boss[0], { disabled: true, font: FS }); if (button(W - 204, 240, 50, 22, 'BOSS', { font: FS, kind: 'blue', tip: `BEAT ${gate.boss[0]} ON ${gate.name} TO UNLOCK THIS PLANET` })) { MAP.sel = n - 1; SND.play('click'); } }
   else { button(W - 150, 240, 142, 22, 'NEED RATING ' + req, { disabled: true }); if (button(W - 204, 240, 50, 22, 'HANGAR', { font: FS, kind: 'blue', tip: 'BETTER SHIP PARTS RAISE YOUR RATING' })) { MAP.init = false; goHub(); openStation('hangar'); } }
   if (S.planet.bosses[20] && n >= 20) { if (button(W - 230, 240, 108, 20, 'GO SUPERNOVA', { col: '#4a1d3a', tc: COL.magenta, tip: 'RESET PLANETS AND COINS. KEEP EVERY ITEM. GAIN STARS, BETTER ORE AND THE SINGULARITY TIER' })) MAP.nova = true; }
   if (MAP.nova) drawNovaConfirm();
