@@ -13,6 +13,7 @@ function frame(now) {
   const other = NAMEUI.open || !!NET.choice || !!NET.viewProf || BUG.open || !!COOP.ui;
   const modal = other || COACH.on;
   let held = null; if (modal) { held = { pr: IN.pr, kp: new Set(IN.kp), mx: IN.mx, my: IN.my, wheel: IN.wheel, down: IN.down }; IN.pr = false; IN.kp.clear(); IN.wheel = 0; IN.mx = -999; IN.my = -999; IN.down = false; }
+  IN.block = overlayUp();
   ctx.save();
   if (SCENE !== 'planet' && FX.shake > 0) ctx.translate(Math.round((R0() - 0.5) * FX.shake), Math.round((R0() - 0.5) * FX.shake));
   try {
@@ -29,6 +30,7 @@ function frame(now) {
       case 'arena': arUpdate(dt); if (AM) arDraw(dt); break;
     }
   } catch (e) { console.error(e); if (!ERR || ERR.message !== e.message) ERR_T = 0; ERR = e; logCrash(e); }
+  IN.block = false;
   ctx.restore();
   if (held) { IN.pr = held.pr; IN.kp = held.kp; IN.mx = held.mx; IN.my = held.my; IN.wheel = held.wheel; IN.down = held.down; IN.used = false; IN.cursor = 'default'; TIP.v = null; try { if (NET.choice) drawNetChoice(dt); else if (NET.viewProf) drawProfilePopup(); else if (BUG.open) drawBugReport(); else if (COOP.ui) coopOverlay(); else if (NAMEUI.open) drawNameUI(dt); } catch (e) { console.error(e); ERR = e; ERR_T = 0; } }
   if (!other && !NAMEUI.open && SCENE !== 'title') { try { drawCoach(dt); } catch (e) { console.error(e); COACH.on = false; } } else { COACH.req = null; COACH.on = false; }

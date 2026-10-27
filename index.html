@@ -302,7 +302,10 @@ addEventListener('blur', () => { IN.keys.clear(); IN.down = false; IN.rdown = fa
 const key = c => IN.keys.has(c);
 const kp = c => IN.kp.has(c);
 function endInput() { IN.pr = IN.rl = IN.rpr = IN.rrl = false; IN.wheel = 0; IN.kp.clear(); IN.used = false; }
-const inBox = (x, y, w, h) => IN.mx >= x && IN.my >= y && IN.mx < x + w && IN.my < y + h;
+// while an overlay is up (IN.block), nothing behind it can be hovered or clicked; the overlay unblocks itself when it draws
+const inBox = (x, y, w, h) => !IN.block && IN.mx >= x && IN.my >= y && IN.mx < x + w && IN.my < y + h;
+function unblock() { IN.block = false; }
+function overlayUp() { return (SCENE === 'hub' && (!!HUB.choice || !!HUB.panel)) || (SCENE === 'planet' && !!RUN && (!!RUN.choice || RUN.paused)) || (SCENE === 'arena' && !!AM && (AM.menu || AM.ended)); }
 function clickIn(x, y, w, h) { if (!IN.used && IN.pr && inBox(x, y, w, h)) { IN.used = true; return true; } return false; }
 
 // ---------- time & fx ----------
@@ -590,9 +593,10 @@ const comboPay = m => 1 + (m - 1) / 3;
 const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
-// double or nothing: the rarer the item, the harder it is to double (common 45% ... mythic 7%). Doubling makes it rarer, so stacking gets harder on its own
-const DON_BY_R = [45, 36, 28, 20, 13, 7];
-function donChance(r = 0) { return Math.min(95, (DON_BY_R[clamp(r, 0, 5)] || 0) + S.skills.luck); }
+// double or nothing: the rarer the item, the harder it is to double (common 45% ... mythic 1%). Doubling makes it rarer, so stacking gets harder on its own
+const DON_BY_R = [45, 30, 18, 9, 4, 1];
+// luck makes it up to 50% more likely (it used to add a flat +10%, which made mythic doubles 11x likelier)
+function donChance(r = 0) { const v = (DON_BY_R[clamp(r, 0, 5)] || 0) * (1 + S.skills.luck * 0.05); return v >= 10 ? Math.round(v) : Math.round(v * 10) / 10; }
 
 const CLASSES = ['blaster', 'rifle', 'shotgun', 'sniper', 'railgun', 'launcher', 'beam', 'blade', 'throwing', 'mine', 'drone'];
 const CLS = {
@@ -811,7 +815,7 @@ const SKILLS = [
   { id: 'combat', n: 'COMBAT', max: 15, txt: r => `+${r * 6}% DAMAGE` },
   { id: 'mining', n: 'MINING', max: 15, txt: r => `+${r * 8}% EXTRACT SPEED, +${r * 3}% ORE VALUE` },
   { id: 'explorer', n: 'EXPLORER', max: 15, txt: r => `+${r * 6}% O2, +${r * 3}% MOVE SPEED` },
-  { id: 'luck', n: 'LUCK', max: 10, txt: r => `CRATE ODDS SHIFT UP ${r * 3}%, +${r}% DOUBLE OR NOTHING` },
+  { id: 'luck', n: 'LUCK', max: 10, txt: r => `CRATE ODDS SHIFT UP ${r * 3}%, DOUBLE OR NOTHING ${r * 5}% LIKELIER` },
 ];
 const NOVA_PERKS = [
   { id: 'coin', n: 'STELLAR COINS', max: 10, txt: r => `+${r * 15}% ORE VALUE` },
@@ -2642,7 +2646,7 @@ const PC_BACK = {
     if (dir === 0) { g.rect(cx - 6 - (af === 2 ? 1 : 0), y + 1, 2, 8, M.P); g.rect(cx + 5 + (af === 2 ? 1 : 0), y + 1, 2, 8, M.P); g.rect(cx - 6, y + 8, 2, 1, M.W); g.rect(cx + 5, y + 8, 2, 1, M.W); g.rect(cx - 5, y, 11, 1, M.W); return; }
     const f2 = sw + fl;
     if (dir === 1) { g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + f2, y + 10], [cx - 6 - f2, y + 10]], M.P); g.rect(cx - 6 - f2, y + 10, 13 + f2 * 2, 2, M.W); g.rect(cx - 5, y - 1, 11, 2, M.W); g.set(cx, y + 1, M.A); }
-    else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s, y], [cx + s * 4, y], [cx + s * (8 + f2 * 2), y + 9 - fl], [cx + s * 3, y + 10]], M.P); g.line(cx + s * 3, y + 10, cx + s * (8 + f2 * 2), y + 9 - fl, M.W); g.line(cx + s * 3, y + 11, cx + s * (8 + f2 * 2), y + 10 - fl, M.W); g.rect(cx + (s < 0 ? -4 : 1), y - 1, 4, 2, M.W); }
+    else { const s = dir === 2 ? 1 : -1, ex = cx + s * (7 + f2), ey = y + 10 - (fl >> 1); g.poly([[cx + s * 3, y - 1], [cx + s * 6, y - 1], [ex, ey], [cx + s * 2, y + 11]], M.P); g.line(cx + s * 2, y + 11, ex, ey, M.W); g.line(cx + s * 2, y + 12, ex, ey + 1, M.W); g.rect(cx + (s < 0 ? -6 : 3), y - 2, 4, 2, M.W); }
   },
   'ICE WINGS'(g, dir, cx, y, sw, af) {
     const up = sw + [0, 1, 2, 1][af] * 2;
@@ -3393,8 +3397,9 @@ function astroSprite(eq, dir, fr) {
   const ox = 2, oy = 6, bob = (fr === 1 || fr === 3) ? 1 : 0;
   const L = [];
   // back item behind
-  if (eq.back && dir !== 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); L.push([g, palOfItem(eq.back)]); }
-  else if (eq.back && dir === 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, 0, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); L.push([g, palOfItem(eq.back)]); }
+  // back items sit behind you, except when you walk away from the camera: then they're on top of your back
+  let backL = null; if (eq.back) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); backL = [g, palOfItem(eq.back)]; }
+  if (backL && dir !== 1) L.push(backL);
   const g = new Spr(20, 26);
   const legA = fr === 1 ? -1 : fr === 3 ? 1 : 0;
   const by = oy + bob;
@@ -3420,6 +3425,7 @@ function astroSprite(eq, dir, fr) {
   }
   L.push([g, body, patOfSkin(sk, af / 4)]);
   armorDetailLayers(L, eq, dir, ox, oy, by, legA, af);
+  if (backL && dir === 1) L.push(backL);
   if (eq.headgear) { const h = new Spr(20, 26); drawHeadOnChar(h, getDef(eq.headgear).style, dir, ox, by, af); cosSparkle(h, getDef(eq.headgear).r, af); L.push([h, palOfItem(eq.headgear)]); }
   if (eq.eyewear && dir !== 1) { const e = new Spr(20, 26); drawEyesOnChar(e, getDef(eq.eyewear).style, dir, ox, by, af); cosSparkle(e, getDef(eq.eyewear).r, af); L.push([e, palOfItem(eq.eyewear)]); }
   c = layerCanvas(20, 26, L);
@@ -3477,7 +3483,7 @@ function drawBackOnChar(g, st, dir, ox, by, fr, af = 0) {
     return;
   }
   switch (st) {
-    case 'CAPE': { const f2 = sw + fl; if (dir === 1) g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + f2, y + 10 - (af === 2 ? 1 : 0)], [cx - 6 - f2, y + 10 - (af === 0 ? 1 : 0)]], M.P); else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 1, y], [cx + s * 4, y], [cx + s * (8 + f2 * 2), y + 9 - fl], [cx + s * 3, y + 10]], M.P); } break; }
+    case 'CAPE': { const f2 = sw + fl; if (dir === 1) g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + f2, y + 10 - (af === 2 ? 1 : 0)], [cx - 6 - f2, y + 10 - (af === 0 ? 1 : 0)]], M.P); else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 3, y - 1], [cx + s * 6, y - 1], [cx + s * (7 + f2), y + 10 - (fl >> 1)], [cx + s * 2, y + 11]], M.P); g.line(cx + s * 5, y + 1, cx + s * (6 + f2), y + 9, M.S); } break; }
     case 'WINGS': case 'BAT WINGS': case 'FAIRY WINGS': case 'MECH WINGS': {
       const m = st === 'FAIRY WINGS' ? M.G : st === 'MECH WINGS' ? M.A : M.P; const up = sw + fl * 2;
       if (dir === 1) { g.poly([[cx - 2, y + 1], [cx - 10, y - 4 - up], [cx - 9, y + 4 - fl], [cx - 3, y + 5]], m); g.poly([[cx + 2, y + 1], [cx + 10, y - 4 - up], [cx + 9, y + 4 - fl], [cx + 3, y + 5]], m); if (st === 'BAT WINGS') { g.set(cx - 7, y + 3 - fl, 0); g.set(cx + 7, y + 3 - fl, 0); } }
@@ -5825,7 +5831,7 @@ function updateRun(dt) {
   const tx = clamp(pl.x - W / 2 + lx, 0, map.GW - W), ty = clamp(pl.y - 12 - H / 2 + ly, 0, map.GH - H);
   R.cam.x = lerp(R.cam.x, tx, Math.min(1, dt * 6)); R.cam.y = lerp(R.cam.y, ty, Math.min(1, dt * 6));
   if (R.msgT > 0) R.msgT -= dt;
-  if (kp('Escape') || kp('KeyP')) { R.paused = true; SND.play('click'); }
+  if (kp('Escape') || kp('KeyP')) { R.paused = true; SND.play('click'); IN.kp.delete('Escape'); IN.kp.delete('KeyP'); }   // eat the key, or the pause menu would read it as resume
 }
 function updateExtract(dt, inp) {
   const R = RUN, pl = R.w.player, map = R.map;
@@ -6068,7 +6074,7 @@ function drawRunHUD(R) {
   // bottom-left: weapon / tool
   const slot = (x, id, active, label, skin, key) => { panel(x, H - 30, 40, 26, { bg: active ? COL.void3 : 'rgba(5,6,15,0.82)', bd: active ? COL.cyan : COL.steel }); if (id) drawItemIn(id, x + 2, H - 28, 36, 18, { skin, maxSc: 1, noFx: true }); else text('EMPTY', x + 20, H - 21, COL.mute, FS, 1); text(label, x + 20, H - 9, active ? COL.cyan : COL.mute, FS, 1); if (!IN.touch) { rect(x + 1, H - 29, 7, 7, active ? COL.cyan : COL.void3); text(key, x + 3, H - 28, active ? COL.navy : COL.dim, FS); } };
   slot(4, pl.Ws[0] && pl.Ws[0].id, pl.mode === 'weapon' && pl.wi === 0, 'WEAPON', S.eq.skin_weapon, '1'); gadgetSlot(46, pl); slot(88, S.eq.tool, pl.mode === 'tool', `TOOL T${L.toolTier}`, S.eq.skin_tool, '3');
-  if (!IN.touch) { const kw = keycap(132, H - 29, 'Q', R.tut && TUT[R.tut.i] && TUT[R.tut.i].keys[0] === 'Q' && Math.floor(T_NOW * 2) % 2 === 0); text('SWAP', 135 + kw, H - 27, COL.dim, FS); const sw = keycap(132, H - 16, 'SPACE'); text('BOOST', 135 + sw, H - 14, COL.dim, FS); const ew = keycap(188, H - 29, 'P'); text('PAUSE + CONTROLS', 191 + ew, H - 27, COL.dim, FS); }
+  if (!IN.touch) { const kw = keycap(132, H - 29, 'Q', R.tut && TUT[R.tut.i] && TUT[R.tut.i].keys[0] === 'Q' && Math.floor(T_NOW * 2) % 2 === 0); text('SWAP', 135 + kw, H - 27, COL.dim, FS); const sw = keycap(132, H - 16, 'SPACE'); text('BOOST', 135 + sw, H - 14, COL.dim, FS); const ew = keycap(188, H - 29, 'ESC'); text('PAUSE + CONTROLS', 191 + ew, H - 27, COL.dim, FS); }
   const cx0 = IN.touch ? 132 : 188, cy0 = IN.touch ? H - 10 : H - 13; for (let i = 0; i < pl.maxCharges; i++) { const ready = i < pl.charges; rect(cx0 + i * 8, cy0, 6, 4, ready ? COL.gold : COL.void3); if (!ready && i === pl.charges) rect(cx0 + i * 8, cy0, Math.floor(6 * (1 - Math.max(0, pl.boostCd) / L.boostCd)), 4, '#7a5a10'); }
   if (pl.focusT > 0) textO('FOCUS X1.5', 132, H - 40, COL.gold, '#000', FS);
   // bottom-right: cargo
@@ -6092,10 +6098,11 @@ function drawRunHUD(R) {
   if (!R.paused && !R.choice && !IN.touch) { const c = pl.mode === 'tool' ? COL.mint : COL.ink; const x = Math.floor(IN.mx), y = Math.floor(IN.my), b = Math.round(HITM.bloom * 2); rect(x - 4 - b, y, 3, 1, c); rect(x + 2 + b, y, 3, 1, c); rect(x, y - 4 - b, 1, 3, c); rect(x, y + 2 + b, 1, 3, c); drawHitMark(x, y, 1 / 60); }
 }
 function drawPause(R) {
+  unblock();
   ctx.globalAlpha = 0.7; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   panel(W / 2 - 90, 60, 180, 140, { notch: true });
   textO('PAUSED', W / 2, 72, COL.cyan, '#000', FB, 1, 2);
-  if (button(W / 2 - 70, 100, 140, 18, 'RESUME') || kp('Escape')) { R.paused = false; IN.kp.delete('Escape'); }
+  if (button(W / 2 - 70, 100, 140, 18, 'RESUME') || kp('Escape') || kp('KeyP')) { R.paused = false; IN.kp.delete('Escape'); IN.kp.delete('KeyP'); }
   if (button(W / 2 - 70, 122, 140, 18, 'EVACUATE (LOSE HALF ORE)', { col: '#5a1d2a' })) { R.paused = false; endRun('o2'); }
   if (button(W / 2 - 70, 144, 140, 18, SND.muted ? 'SOUND: OFF' : 'SOUND: ON')) { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); }
   drawControlsCard(10, 60); drawPlayTips(W - 142, 60);
@@ -6805,13 +6812,16 @@ function sigHUD(R) {
   const G = R.sig; if (!G) return; const k = G.s.k === 'converge' ? G.mode : G.s.k;
   let y = R.ev ? 92 : 68; const x = W - 104;
   const rl = relicOf(R.pi);
-  const rows = (!hasRelic(R.pi) && R.pi <= 20 ? 18 : 0) + (k === 'tide' && G.tide !== undefined ? 9 : 0) + (k === 'aurora' && G.charge > 0 ? 14 : 0) + (k === 'converge' ? 9 : 0) + (sigRelicHelps(R) && R.pi > 1 ? 16 : 0);
-  if (rows) { ctx.globalAlpha = 0.72; rect(x - 18, y - 4, 122, rows + 4, '#05060f'); ctx.globalAlpha = 1; }
-  if (!hasRelic(R.pi) && R.pi <= 20) { drawRelicIcon(R.pi, x - 14, y - 1, 1); text('PRIZE: ' + rl.n, x, y, rl.c, FS); text('BEAT ' + R.p.boss[0], x, y + 7, COL.mute, FS); y += 18; }
+  // the prize and relic notes are for when you land: they fade out after a few seconds so the minimap stays clear
+  const intro = R.t < 8, ia = clamp((8 - R.t) / 1, 0, 1), showPrize = intro && !hasRelic(R.pi) && R.pi <= 20, showHelp = intro && sigRelicHelps(R) && R.pi > 1;
+  const live = (k === 'tide' && G.tide !== undefined ? 9 : 0) + (k === 'aurora' && G.charge > 0 ? 14 : 0) + (k === 'converge' ? 9 : 0);
+  const rows = (showPrize ? 18 : 0) + live + (showHelp ? 16 : 0);
+  if (rows) { ctx.globalAlpha = 0.72 * (live ? 1 : ia); rect(x - 18, y - 4, 122, rows + 4, '#05060f'); ctx.globalAlpha = 1; }
+  if (showPrize) { ctx.globalAlpha = ia; drawRelicIcon(R.pi, x - 14, y - 1, 1); text('PRIZE: ' + rl.n, x, y, rl.c, FS); text('BEAT ' + R.p.boss[0], x, y + 7, COL.mute, FS); ctx.globalAlpha = 1; y += 18; }
   if (k === 'tide' && G.tide !== undefined) { text(G.lowTide ? 'LOW TIDE' : 'HIGH TIDE', x, y, G.lowTide ? COL.gold : '#4fb7b0', FS); y += 9; }
   if (k === 'aurora' && G.charge > 0) { text('AURORA CHARGE', x, y, '#7dffb0', FS); bar(x, y + 8, 80, 3, G.charge, '#7dffb0', COL.void0); y += 14; }
   if (k === 'converge') { text('NOW: ' + SIGS.find(s => s && s.k === G.mode).n, x, y, COL.magenta, FS); y += 9; }
-  if (sigRelicHelps(R) && R.pi > 1) { drawRelicIcon(R.pi - 1, x - 14, y - 1, 1); text(relicOf(R.pi - 1).n, x, y, '#7dffb0', FS); text('IS HELPING YOU', x, y + 7, COL.mute, FS); }
+  if (showHelp) { ctx.globalAlpha = ia; drawRelicIcon(R.pi - 1, x - 14, y - 1, 1); text(relicOf(R.pi - 1).n, x, y, '#7dffb0', FS); text('IS HELPING YOU', x, y + 7, COL.mute, FS); ctx.globalAlpha = 1; }
   if (R.relicShow) drawRelicReveal(R);
 }
 function drawRelicReveal(R) {
@@ -7517,6 +7527,7 @@ function finishOpen() { const h = OPEN && OPEN.haul; if (h) { OPEN = null; goHub
 function makeChoice(ids, title, tier, clue) { return { ids, title, tier, t: 0, picked: -1, clue, hover: -1, labels: ids.map(id => pullLabels(id, tier)), demo: null }; }
 function updateChoiceOverlay(dt) { const C = RUN && RUN.choice ? RUN.choice : HUB.choice; if (!C) return; C.t += dt; if (C.demo) updateDemo(C.demo, dt); if (C.picked >= 0) { C.pt = (C.pt || 0) + dt; } }
 function drawChoiceOverlay() {
+  unblock();
   const inRun = RUN && RUN.choice && SCENE === 'planet'; const C = inRun ? RUN.choice : HUB.choice; if (!C) return;
   ctx.globalAlpha = 0.86; rect(0, 0, W, H, '#03040b'); ctx.globalAlpha = 1;
   textO('CHOOSE ONE', W / 2, 14, COL.gold, '#000', FB, 1, 2);
@@ -7822,6 +7833,7 @@ function panelFrame(title, color = COL.gold, coins = false, help) {
   return false;
 }
 function drawPanel() {
+  if (!HUB.choice) unblock();
   const p = HUB.panel, st = HUB.ps[p];
   if (p === 'locker') return panelLocker(st);
   if (p === 'hangar') return panelHangar(st);
@@ -8100,7 +8112,7 @@ function blueprintPicker(st) {
 function myProfile() {
   const s = S.stats, cr = typeof NET !== 'undefined' && NET.social && NET.social.crew;
   return {
-    self: true, callsign: S.name || 'NO CALLSIGN', plate: arMyPlate(), title: S.titles.eq, crew: cr ? { tag: cr.tag, name: cr.name } : null, online: true, level: S.lvl, planet: S.planet.reached,
+    self: true, callsign: S.name || 'NO CALLSIGN', plate: arMyPlate(), bg: S.cardBg && (!STORE.p || ownsBg(S.cardBg)) ? S.cardBg : null, title: S.titles.eq, crew: cr ? { tag: cr.tag, name: cr.name } : null, online: true, level: S.lvl, planet: S.planet.reached,
     stats: { power: shipRating(), items: Object.keys(S.inv).length, kills: s.kills, crates: s.crates, legendaries: s.legendaries, mythics: s.mythics, cosmics: s.cosmics },
     arena: { trophies: (typeof NET !== 'undefined' && NET.arena && NET.arena.trophies) || 0 }, showcase: topItems(4), loadout: S.eq,
   };
@@ -8110,8 +8122,9 @@ function panelProfile(st) {
   // left: the card other players get when they click your name
   text('HOW OTHER PILOTS SEE YOU', 14, 29, COL.mute, FS);
   drawProfileCard(myProfile(), 12, 37, 254, 198, [], S.name);
-  if (arMyPlate()) text('THANK YOU FOR SUPPORTING THE GAME', 139, H - 30, COL.gold, FS, 1);
-  else { const lb = 'GET A SUPPORTER PLATE', lw = textW(lb, FS) + 18; if (button(139 - lw / 2, H - 33, lw, 12, lb, { font: FS, kind: 'outline', tip: 'A GOLD NAMEPLATE EVERYONE SEES. IT HELPS KEEP THE GAME RUNNING' })) { openStation('store'); HUB.ps.store.tab = 4; } ctx.fillStyle = COL.pink; for (const [dx, dy] of [[0, 0], [2, 0], [-1, 1], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [1, 3]]) ctx.fillRect(Math.floor(139 - lw / 2) + 4 + dx, H - 29 + dy, 1, 1); }
+  if (arMyPlate()) text('THANK YOU FOR SUPPORTING!', 172, H - 30, COL.gold, FS, 1);
+  else { const lb = 'GET A SUPPORTER PLATE', lw = textW(lb, FS) + 18; if (button(172 - lw / 2, H - 33, lw, 12, lb, { font: FS, kind: 'outline', tip: 'A GOLD NAMEPLATE EVERYONE SEES. IT HELPS KEEP THE GAME RUNNING' })) { openStation('store'); HUB.ps.store.tab = 4; } ctx.fillStyle = COL.pink; for (const [dx, dy] of [[0, 0], [2, 0], [-1, 1], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [1, 3]]) ctx.fillRect(Math.floor(172 - lw / 2) + 4 + dx, H - 29 + dy, 1, 1); }
+  if (button(12, H - 33, 76, 12, 'BACKGROUND', { font: FS, kind: 'blue', tip: 'PICK A SCENE BEHIND YOUR CARD' })) { openStation('store'); HUB.ps.store.tab = 5; }
   // right: level, then skills / titles / stats
   const x = 274, w = W - 14 - x, y = 29;
   textO('LEVEL ' + S.lvl, x, y, COL.cyan, '#000', FB, 0, 2); bar(x, y + 18, w, 4, S.xp / xpNeed(S.lvl), COL.cyan, COL.void2); text(`${fmt(S.xp)}/${fmt(xpNeed(S.lvl))} XP`, x, y + 25, COL.mute, FS);
@@ -8716,10 +8729,11 @@ function socialFriends(st, so) {
   drawProfileCard(p, RX, 31, RW, H - 45, acts, st.sel);
 }
 function drawProfileCard(p, x, y, w, h, acts, cs) {
-  panel(x, y, w, h, { bg: '#05070f', bd: COL.steel });
+  panel(x, y, w, h, { bg: '#05070f', bd: p && p.plate ? '#b88a2a' : COL.steel });
+  if (p && p.bg && bgDef(p.bg)) { const bgc = cardBgCanvas(p.bg, w - 2, h - 2); if (bgc) ctx.drawImage(bgc, x + 1, y + 1); ctx.globalAlpha = 0.55; rect(x + 76, y + 3, w - 80, 90, '#04050c'); rect(x + 4, y + 100, w - 8, h - 104, '#04050c'); ctx.globalAlpha = 1; }
   if (!p) { const c = NET.prof[cs]; text(c && c.err ? c.err : 'LOADING...', x + w / 2, y + h / 2, c && c.err ? COL.coral : COL.dim, FS, 1); return; }
   const eq = netCleanEq(p.loadout);
-  ctx.globalAlpha = 0.3; for (let gx = x + 4; gx < x + 74; gx += 10) rect(gx, y + 4, 1, 92, COL.steel); ctx.globalAlpha = 1;
+  if (!p.bg) { ctx.globalAlpha = 0.3; for (let gx = x + 4; gx < x + 74; gx += 10) rect(gx, y + 4, 1, 92, COL.steel); ctx.globalAlpha = 1; }
   shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78); if (eq.pet) drawPetAt(eq.pet, x + 66, y + 94, 1, true);
   const tx = x + 80;
   textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2); if (p.plate) drawSupporterPlate(Math.min(x + w - 92, tx + textW(p.callsign || '???', FB, 2) + 6), y + 9);
@@ -9491,6 +9505,7 @@ function arScoreboard() {
   list.slice(0, 20).forEach((f, i) => { const yy = y + 14 + i * 10; if (f.local) rect(x + 2, yy - 2, w - 4, 9, '#2a2310'); text(`${i + 1}. ${f.cs}`, x + 8, yy, f.local ? COL.gold : COL.ink, FS); text(f.lvl ? 'LV ' + f.lvl : '', x + 120, yy, COL.mute, FS); text(f.kills + '', x + w - 48, yy, COL.ink, FS, 1); text(f.deaths + '', x + w - 18, yy, COL.dim, FS, 1); });
 }
 function arMenu() {
+  unblock();
   const A = AM; ctx.globalAlpha = 0.6; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   panel(W / 2 - 90, 70, 180, 116, { bg: COL.void1, bd: COL.steel });
   textO(A.mode === 'duel' ? 'LEAVE THE DUEL?' : 'ARENA MENU', W / 2, 80, COL.ink, '#000', FB, 1);
@@ -9501,6 +9516,7 @@ function arMenu() {
   text(`WASD MOVE. MOUSE AIM AND FIRE. SPACE BOOSTS. ${keyLabel('gadget')} USES YOUR GADGET`, W / 2, 162, COL.mute, FS, 1); text('YOUR GEAR WORKS EXACTLY LIKE IT DOES ON PLANETS', W / 2, 170, COL.mute, FS, 1);
 }
 function arEndScreen() {
+  unblock();
   const A = AM, r = A.result; ctx.globalAlpha = Math.min(0.75, A.endT); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   const won = r.won; textO(won ? 'VICTORY' : 'DEFEAT', W / 2, 60, won ? COL.gold : COL.coral, '#000', FB, 1, 4);
   const opp = [...A.fighters.values()].find(f => f !== A.me); text(`${A.me.kills} - ${opp ? opp.kills : 0}${opp ? '  VS ' + opp.cs : ''}`, W / 2, 98, COL.cream, FB, 1);
@@ -10586,12 +10602,13 @@ function claimAll() {
 }
 
 // ---------- the store panel ----------
-const STORE_TABS = [['PASS', 'pass', '#9fe7ff'], ['ARMORY', 'gun', '#ff8a5c'], ['SHOP', 'bag', '#ffd166'], ['STARDUST', 'gem', '#c9a6ff'], ['SUPPORTER', 'crown', COL.gold]];
+const STORE_TABS = [['PASS', 'pass', '#9fe7ff'], ['ARMORY', 'gun', '#ff8a5c'], ['SHOP', 'bag', '#ffd166'], ['STARDUST', 'gem', '#c9a6ff'], ['SUPPORTER', 'crown', COL.gold], ['PROFILE', 'card', '#7fd8ff']];
 function storeTabIcon(k, x, y, c) {
   if (k === 'pass') { rect(x + 3, y, 1, 7, c); rect(x, y + 3, 7, 1, c); px(x + 1, y + 1, c); px(x + 5, y + 1, c); px(x + 1, y + 5, c); px(x + 5, y + 5, c); }
   else if (k === 'gun') { rect(x, y + 2, 7, 2, c); rect(x + 1, y + 4, 2, 3, c); px(x + 6, y + 1, c); }
   else if (k === 'bag') { rect(x, y + 2, 7, 5, c); rect(x + 2, y, 3, 1, c); px(x + 1, y + 1, c); px(x + 5, y + 1, c); }
   else if (k === 'gem') drawStardustIcon(x, y);
+  else if (k === 'card') { rect(x, y + 1, 7, 6, c); rect(x + 1, y + 2, 5, 4, '#160f30'); rect(x + 1, y + 4, 2, 2, c); px(x + 4, y + 3, c); px(x + 5, y + 5, c); }
   else { rect(x, y + 2, 7, 4, c); px(x, y + 1, c); px(x + 3, y, c); px(x + 6, y + 1, c); }
 }
 function storeSnow(dt) {
@@ -10614,7 +10631,7 @@ function panelStore(st) {
   if (button(W - 66, 8, 58, 16, 'CLOSE', { font: FS, kind: 'cream', tip: 'OR PRESS ESC' }) || (kp('Escape') && !STORE.confirm)) { HUB.panel = null; SND.play('click'); return; }
   if (kp('Escape')) STORE.confirm = null;
   // tabs
-  st.tab = st.tab || 0; const tw = 86, tx0 = 12;
+  st.tab = st.tab || 0; const tw = 74, tx0 = 12;
   STORE_TABS.forEach(([n, ic, c], i) => {
     const x = tx0 + i * (tw + 4), y = 30, sel = st.tab === i, hov = inBox(x, y, tw, 15);
     gbox(x, y, tw, 15, sel ? '#3a2a6e' : hov ? '#241a4a' : '#160f30', sel ? '#221548' : '#0e0a20', sel ? c : '#3a2f66');
@@ -10636,7 +10653,8 @@ function panelStore(st) {
   else if (st.tab === 1) storeArmory(st);
   else if (st.tab === 2) storeShop(st);
   else if (st.tab === 3) storeDust(st);
-  else storeSupporter(st);
+  else if (st.tab === 4) storeSupporter(st);
+  else storeProfile(st);
   // footer
   text('SECURE PAYMENTS BY STRIPE. UNDER 18? ASK A PARENT FIRST.', 12, H - 15, '#6a6290', FS);
   if (button(W - 80, H - 18, 34, 11, 'TERMS', { font: FS })) openLegal('terms');
@@ -10880,6 +10898,50 @@ function storeSupporter(st) {
   }
 }
 
+// ---------- PROFILE BACKGROUNDS: a scene behind your profile card, bought with Stardust like the supporter plate ----------
+const PROFILE_BGS = [
+  { id: 'nebula', n: 'DEEP NEBULA', style: 'NEBULA', ph: 285, h2: 320, sd: 250 },
+  { id: 'sunset', n: 'TWIN SUNSET', style: 'TWIN SUNS', ph: 20, h2: 45, sd: 250 },
+  { id: 'synth', n: 'NEON DRIVE', style: 'SYNTHWAVE', ph: 300, h2: 330, sd: 400 },
+  { id: 'aurora', n: 'NORTHERN LIGHTS', style: 'AURORA', ph: 150, h2: 280, sd: 400 },
+  { id: 'frost', n: 'FROSTBOUND', style: 'WINTER AURORA', ph: 190, h2: 140, sd: 500 },
+  { id: 'galaxy', n: 'SPIRAL GALAXY', style: 'GALAXY', ph: 230, h2: 300, sd: 500 },
+  { id: 'hole', n: 'EVENT HORIZON', style: 'BLACK HOLE', ph: 30, h2: 280, sd: 750 },
+  { id: 'gate', n: 'THE STARGATE', style: 'STARGATE', ph: 190, h2: 280, sd: 750 },
+];
+const bgDef = id => PROFILE_BGS.find(b => b.id === id) || null;
+const bgPrice = b => { const c = STORE.p && STORE.p.cards && STORE.p.cards.find(x => x[0] === b.id); return c ? c[1] : b.sd; };
+const ownsBg = id => !!(STORE.p && STORE.p.owned && STORE.p.owned.includes('card:' + id));
+const BG_CANVAS = new Map();
+function cardBgCanvas(id, w, h) {
+  const k = id + w + 'x' + h; let c = BG_CANVAS.get(k); if (c) return c; const b = bgDef(id); if (!b) return null;
+  c = mkCanvas(w, h); drawBackdrop(c.x, { style: b.style, ph: b.ph, h2: b.h2, ps: 0.8, pl: 0.5, r: 4, seed: hashStr('card' + id) }, w, h);
+  c.x.fillStyle = 'rgba(2,3,10,0.42)'; c.x.fillRect(0, 0, w, h);   // keeps the card's text readable
+  BG_CANVAS.set(k, c); if (BG_CANVAS.size > 24) BG_CANVAS.delete(BG_CANVAS.keys().next().value); return c;
+}
+function storeProfile(st) {
+  textO('PROFILE BACKGROUNDS', 12, 50, '#7fd8ff', '#000', FB); text('A SCENE BEHIND YOUR CARD WHEN OTHER PILOTS LOOK AT YOUR PROFILE. JUST FOR LOOKS', 12, 61, '#9fc8e0', FS);
+  const pv = st.bgPick || S.cardBg || PROFILE_BGS[0].id;
+  // left: your real card with the background you're looking at
+  const me = myProfile(); me.bg = pv; drawProfileCard(me, 8, 70, 240, 178, [], S.name);
+  // right: the backgrounds
+  const gx = 254;
+  PROFILE_BGS.forEach((b, i) => {
+    const x = gx + (i % 2) * 108, y = 70 + Math.floor(i / 2) * 45, own = ownsBg(b.id), on = S.cardBg === b.id, sel = pv === b.id, hov = inBox(x, y, 104, 42);
+    gbox(x, y, 104, 42, sel ? '#24305a' : '#161230', '#0a0818', on ? COL.gold : sel ? '#7fd8ff' : '#3a2f66');
+    const th = cardBgCanvas(b.id, 40, 26); if (th) ctx.drawImage(th, x + 3, y + 3);
+    wrap(b.n, 56, FS).slice(0, 2).forEach((l, j) => text(l, x + 46, y + 4 + j * 7, '#ffffff', FS));
+    if (hov) { IN.cursor = 'pointer'; if (clickIn(x, y, 104, 30)) { st.bgPick = b.id; SND.play('click'); } }
+    if (on) text('EQUIPPED', x + 52, y + 31, COL.gold, FS, 1);
+    else if (own) { if (button(x + 46, y + 27, 54, 12, 'USE IT', { font: FS, kind: 'blue' })) { S.cardBg = b.id; st.bgPick = b.id; dirty(); SND.play('pickup'); toast(`${b.n} IS YOUR PROFILE BACKGROUND`, '#7fd8ff'); } }
+    else if (pricePill(x + 46, y + 27, 54, '' + bgPrice(b), stardust() >= bgPrice(b) && !NET.act, true)) {
+      if (stardust() < bgPrice(b)) { toast('NOT ENOUGH STARDUST', COL.coral); st.tab = 3; }
+      else { const id = b.id; netDo(() => rpc('premium_spend', { p_kind: 'card', p_id: id }).then(r => { STORE.p = r; S.cardBg = id; st.bgPick = id; dirty(); STORE.flash = 1; SND.play('fanfare'); return r; }), `${b.n} IS YOURS! IT IS ON YOUR PROFILE NOW`); }
+    }
+  });
+  if (S.cardBg && button(gx, 252, 104, 12, 'USE NO BACKGROUND', { font: FS })) { S.cardBg = null; dirty(); SND.play('click'); }
+}
+
 // ===== META: analytics, crash logs, bug reports, legal pages, and the moderator stats screen =====
 // Analytics are our own (no outside trackers): a random id per browser, a few events, no personal info.
 const GAME_VER = '2026.10.27';
@@ -11078,7 +11140,7 @@ function coachReveal(single) {
   coach('reveal', [
     { title: 'YOUR NEW ITEM', r: [6, 20, 284, 120], side: 'below', t: 'ITS NAME, RARITY AND STATS. THE TAG UNDER THE STATS TELLS YOU IF IT BEATS WHAT YOU HAVE EQUIPPED.' },
     { title: 'KEEP OR SELL', r: [296, 150, 176, 20], side: 'left', t: single ? 'COLLECT KEEPS IT. SELL TURNS IT INTO COINS RIGHT AWAY.' : 'SELL TURNS IT INTO COINS RIGHT AWAY. ANYTHING YOU DO NOT SELL IS KEPT.' },
-    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS ARE 45%, RARER ITEMS ARE HARDER.' },
+    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS ARE 45%, A MYTHIC IS ONLY 1%.' },
   ]);
 }
 function coachLocker() {
@@ -11670,6 +11732,7 @@ function frame(now) {
   const other = NAMEUI.open || !!NET.choice || !!NET.viewProf || BUG.open || !!COOP.ui;
   const modal = other || COACH.on;
   let held = null; if (modal) { held = { pr: IN.pr, kp: new Set(IN.kp), mx: IN.mx, my: IN.my, wheel: IN.wheel, down: IN.down }; IN.pr = false; IN.kp.clear(); IN.wheel = 0; IN.mx = -999; IN.my = -999; IN.down = false; }
+  IN.block = overlayUp();
   ctx.save();
   if (SCENE !== 'planet' && FX.shake > 0) ctx.translate(Math.round((R0() - 0.5) * FX.shake), Math.round((R0() - 0.5) * FX.shake));
   try {
@@ -11686,6 +11749,7 @@ function frame(now) {
       case 'arena': arUpdate(dt); if (AM) arDraw(dt); break;
     }
   } catch (e) { console.error(e); if (!ERR || ERR.message !== e.message) ERR_T = 0; ERR = e; logCrash(e); }
+  IN.block = false;
   ctx.restore();
   if (held) { IN.pr = held.pr; IN.kp = held.kp; IN.mx = held.mx; IN.my = held.my; IN.wheel = held.wheel; IN.down = held.down; IN.used = false; IN.cursor = 'default'; TIP.v = null; try { if (NET.choice) drawNetChoice(dt); else if (NET.viewProf) drawProfilePopup(); else if (BUG.open) drawBugReport(); else if (COOP.ui) coopOverlay(); else if (NAMEUI.open) drawNameUI(dt); } catch (e) { console.error(e); ERR = e; ERR_T = 0; } }
   if (!other && !NAMEUI.open && SCENE !== 'title') { try { drawCoach(dt); } catch (e) { console.error(e); COACH.on = false; } } else { COACH.req = null; COACH.on = false; }

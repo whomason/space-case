@@ -346,10 +346,11 @@ function socialFriends(st, so) {
   drawProfileCard(p, RX, 31, RW, H - 45, acts, st.sel);
 }
 function drawProfileCard(p, x, y, w, h, acts, cs) {
-  panel(x, y, w, h, { bg: '#05070f', bd: COL.steel });
+  panel(x, y, w, h, { bg: '#05070f', bd: p && p.plate ? '#b88a2a' : COL.steel });
+  if (p && p.bg && bgDef(p.bg)) { const bgc = cardBgCanvas(p.bg, w - 2, h - 2); if (bgc) ctx.drawImage(bgc, x + 1, y + 1); ctx.globalAlpha = 0.55; rect(x + 76, y + 3, w - 80, 90, '#04050c'); rect(x + 4, y + 100, w - 8, h - 104, '#04050c'); ctx.globalAlpha = 1; }
   if (!p) { const c = NET.prof[cs]; text(c && c.err ? c.err : 'LOADING...', x + w / 2, y + h / 2, c && c.err ? COL.coral : COL.dim, FS, 1); return; }
   const eq = netCleanEq(p.loadout);
-  ctx.globalAlpha = 0.3; for (let gx = x + 4; gx < x + 74; gx += 10) rect(gx, y + 4, 1, 92, COL.steel); ctx.globalAlpha = 1;
+  if (!p.bg) { ctx.globalAlpha = 0.3; for (let gx = x + 4; gx < x + 74; gx += 10) rect(gx, y + 4, 1, 92, COL.steel); ctx.globalAlpha = 1; }
   shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78); if (eq.pet) drawPetAt(eq.pet, x + 66, y + 94, 1, true);
   const tx = x + 80;
   textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2); if (p.plate) drawSupporterPlate(Math.min(x + w - 92, tx + textW(p.callsign || '???', FB, 2) + 6), y + 9);

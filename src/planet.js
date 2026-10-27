@@ -438,7 +438,7 @@ function updateRun(dt) {
   const tx = clamp(pl.x - W / 2 + lx, 0, map.GW - W), ty = clamp(pl.y - 12 - H / 2 + ly, 0, map.GH - H);
   R.cam.x = lerp(R.cam.x, tx, Math.min(1, dt * 6)); R.cam.y = lerp(R.cam.y, ty, Math.min(1, dt * 6));
   if (R.msgT > 0) R.msgT -= dt;
-  if (kp('Escape') || kp('KeyP')) { R.paused = true; SND.play('click'); }
+  if (kp('Escape') || kp('KeyP')) { R.paused = true; SND.play('click'); IN.kp.delete('Escape'); IN.kp.delete('KeyP'); }   // eat the key, or the pause menu would read it as resume
 }
 function updateExtract(dt, inp) {
   const R = RUN, pl = R.w.player, map = R.map;
@@ -681,7 +681,7 @@ function drawRunHUD(R) {
   // bottom-left: weapon / tool
   const slot = (x, id, active, label, skin, key) => { panel(x, H - 30, 40, 26, { bg: active ? COL.void3 : 'rgba(5,6,15,0.82)', bd: active ? COL.cyan : COL.steel }); if (id) drawItemIn(id, x + 2, H - 28, 36, 18, { skin, maxSc: 1, noFx: true }); else text('EMPTY', x + 20, H - 21, COL.mute, FS, 1); text(label, x + 20, H - 9, active ? COL.cyan : COL.mute, FS, 1); if (!IN.touch) { rect(x + 1, H - 29, 7, 7, active ? COL.cyan : COL.void3); text(key, x + 3, H - 28, active ? COL.navy : COL.dim, FS); } };
   slot(4, pl.Ws[0] && pl.Ws[0].id, pl.mode === 'weapon' && pl.wi === 0, 'WEAPON', S.eq.skin_weapon, '1'); gadgetSlot(46, pl); slot(88, S.eq.tool, pl.mode === 'tool', `TOOL T${L.toolTier}`, S.eq.skin_tool, '3');
-  if (!IN.touch) { const kw = keycap(132, H - 29, 'Q', R.tut && TUT[R.tut.i] && TUT[R.tut.i].keys[0] === 'Q' && Math.floor(T_NOW * 2) % 2 === 0); text('SWAP', 135 + kw, H - 27, COL.dim, FS); const sw = keycap(132, H - 16, 'SPACE'); text('BOOST', 135 + sw, H - 14, COL.dim, FS); const ew = keycap(188, H - 29, 'P'); text('PAUSE + CONTROLS', 191 + ew, H - 27, COL.dim, FS); }
+  if (!IN.touch) { const kw = keycap(132, H - 29, 'Q', R.tut && TUT[R.tut.i] && TUT[R.tut.i].keys[0] === 'Q' && Math.floor(T_NOW * 2) % 2 === 0); text('SWAP', 135 + kw, H - 27, COL.dim, FS); const sw = keycap(132, H - 16, 'SPACE'); text('BOOST', 135 + sw, H - 14, COL.dim, FS); const ew = keycap(188, H - 29, 'ESC'); text('PAUSE + CONTROLS', 191 + ew, H - 27, COL.dim, FS); }
   const cx0 = IN.touch ? 132 : 188, cy0 = IN.touch ? H - 10 : H - 13; for (let i = 0; i < pl.maxCharges; i++) { const ready = i < pl.charges; rect(cx0 + i * 8, cy0, 6, 4, ready ? COL.gold : COL.void3); if (!ready && i === pl.charges) rect(cx0 + i * 8, cy0, Math.floor(6 * (1 - Math.max(0, pl.boostCd) / L.boostCd)), 4, '#7a5a10'); }
   if (pl.focusT > 0) textO('FOCUS X1.5', 132, H - 40, COL.gold, '#000', FS);
   // bottom-right: cargo
@@ -705,10 +705,11 @@ function drawRunHUD(R) {
   if (!R.paused && !R.choice && !IN.touch) { const c = pl.mode === 'tool' ? COL.mint : COL.ink; const x = Math.floor(IN.mx), y = Math.floor(IN.my), b = Math.round(HITM.bloom * 2); rect(x - 4 - b, y, 3, 1, c); rect(x + 2 + b, y, 3, 1, c); rect(x, y - 4 - b, 1, 3, c); rect(x, y + 2 + b, 1, 3, c); drawHitMark(x, y, 1 / 60); }
 }
 function drawPause(R) {
+  unblock();
   ctx.globalAlpha = 0.7; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   panel(W / 2 - 90, 60, 180, 140, { notch: true });
   textO('PAUSED', W / 2, 72, COL.cyan, '#000', FB, 1, 2);
-  if (button(W / 2 - 70, 100, 140, 18, 'RESUME') || kp('Escape')) { R.paused = false; IN.kp.delete('Escape'); }
+  if (button(W / 2 - 70, 100, 140, 18, 'RESUME') || kp('Escape') || kp('KeyP')) { R.paused = false; IN.kp.delete('Escape'); IN.kp.delete('KeyP'); }
   if (button(W / 2 - 70, 122, 140, 18, 'EVACUATE (LOSE HALF ORE)', { col: '#5a1d2a' })) { R.paused = false; endRun('o2'); }
   if (button(W / 2 - 70, 144, 140, 18, SND.muted ? 'SOUND: OFF' : 'SOUND: ON')) { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); }
   drawControlsCard(10, 60); drawPlayTips(W - 142, 60);

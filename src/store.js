@@ -265,12 +265,13 @@ function claimAll() {
 }
 
 // ---------- the store panel ----------
-const STORE_TABS = [['PASS', 'pass', '#9fe7ff'], ['ARMORY', 'gun', '#ff8a5c'], ['SHOP', 'bag', '#ffd166'], ['STARDUST', 'gem', '#c9a6ff'], ['SUPPORTER', 'crown', COL.gold]];
+const STORE_TABS = [['PASS', 'pass', '#9fe7ff'], ['ARMORY', 'gun', '#ff8a5c'], ['SHOP', 'bag', '#ffd166'], ['STARDUST', 'gem', '#c9a6ff'], ['SUPPORTER', 'crown', COL.gold], ['PROFILE', 'card', '#7fd8ff']];
 function storeTabIcon(k, x, y, c) {
   if (k === 'pass') { rect(x + 3, y, 1, 7, c); rect(x, y + 3, 7, 1, c); px(x + 1, y + 1, c); px(x + 5, y + 1, c); px(x + 1, y + 5, c); px(x + 5, y + 5, c); }
   else if (k === 'gun') { rect(x, y + 2, 7, 2, c); rect(x + 1, y + 4, 2, 3, c); px(x + 6, y + 1, c); }
   else if (k === 'bag') { rect(x, y + 2, 7, 5, c); rect(x + 2, y, 3, 1, c); px(x + 1, y + 1, c); px(x + 5, y + 1, c); }
   else if (k === 'gem') drawStardustIcon(x, y);
+  else if (k === 'card') { rect(x, y + 1, 7, 6, c); rect(x + 1, y + 2, 5, 4, '#160f30'); rect(x + 1, y + 4, 2, 2, c); px(x + 4, y + 3, c); px(x + 5, y + 5, c); }
   else { rect(x, y + 2, 7, 4, c); px(x, y + 1, c); px(x + 3, y, c); px(x + 6, y + 1, c); }
 }
 function storeSnow(dt) {
@@ -293,7 +294,7 @@ function panelStore(st) {
   if (button(W - 66, 8, 58, 16, 'CLOSE', { font: FS, kind: 'cream', tip: 'OR PRESS ESC' }) || (kp('Escape') && !STORE.confirm)) { HUB.panel = null; SND.play('click'); return; }
   if (kp('Escape')) STORE.confirm = null;
   // tabs
-  st.tab = st.tab || 0; const tw = 86, tx0 = 12;
+  st.tab = st.tab || 0; const tw = 74, tx0 = 12;
   STORE_TABS.forEach(([n, ic, c], i) => {
     const x = tx0 + i * (tw + 4), y = 30, sel = st.tab === i, hov = inBox(x, y, tw, 15);
     gbox(x, y, tw, 15, sel ? '#3a2a6e' : hov ? '#241a4a' : '#160f30', sel ? '#221548' : '#0e0a20', sel ? c : '#3a2f66');
@@ -315,7 +316,8 @@ function panelStore(st) {
   else if (st.tab === 1) storeArmory(st);
   else if (st.tab === 2) storeShop(st);
   else if (st.tab === 3) storeDust(st);
-  else storeSupporter(st);
+  else if (st.tab === 4) storeSupporter(st);
+  else storeProfile(st);
   // footer
   text('SECURE PAYMENTS BY STRIPE. UNDER 18? ASK A PARENT FIRST.', 12, H - 15, '#6a6290', FS);
   if (button(W - 80, H - 18, 34, 11, 'TERMS', { font: FS })) openLegal('terms');
@@ -557,4 +559,48 @@ function storeSupporter(st) {
     text('OR', rx + 109, y + 85, '#8a80b8', FS);
     if (pricePill(rx + 124, y + 82, 70, confirming('supsd') ? 'SURE?' : '500', stardust() >= 500 && !NET.act, true)) { if (stardust() < 500) { toast('NOT ENOUGH STARDUST', COL.coral); st.tab = 3; } else if (confirmBuy('supsd')) storeSpend('supporter', '', 'YOU ARE A SUPPORTER. THANK YOU!'); }
   }
+}
+
+// ---------- PROFILE BACKGROUNDS: a scene behind your profile card, bought with Stardust like the supporter plate ----------
+const PROFILE_BGS = [
+  { id: 'nebula', n: 'DEEP NEBULA', style: 'NEBULA', ph: 285, h2: 320, sd: 250 },
+  { id: 'sunset', n: 'TWIN SUNSET', style: 'TWIN SUNS', ph: 20, h2: 45, sd: 250 },
+  { id: 'synth', n: 'NEON DRIVE', style: 'SYNTHWAVE', ph: 300, h2: 330, sd: 400 },
+  { id: 'aurora', n: 'NORTHERN LIGHTS', style: 'AURORA', ph: 150, h2: 280, sd: 400 },
+  { id: 'frost', n: 'FROSTBOUND', style: 'WINTER AURORA', ph: 190, h2: 140, sd: 500 },
+  { id: 'galaxy', n: 'SPIRAL GALAXY', style: 'GALAXY', ph: 230, h2: 300, sd: 500 },
+  { id: 'hole', n: 'EVENT HORIZON', style: 'BLACK HOLE', ph: 30, h2: 280, sd: 750 },
+  { id: 'gate', n: 'THE STARGATE', style: 'STARGATE', ph: 190, h2: 280, sd: 750 },
+];
+const bgDef = id => PROFILE_BGS.find(b => b.id === id) || null;
+const bgPrice = b => { const c = STORE.p && STORE.p.cards && STORE.p.cards.find(x => x[0] === b.id); return c ? c[1] : b.sd; };
+const ownsBg = id => !!(STORE.p && STORE.p.owned && STORE.p.owned.includes('card:' + id));
+const BG_CANVAS = new Map();
+function cardBgCanvas(id, w, h) {
+  const k = id + w + 'x' + h; let c = BG_CANVAS.get(k); if (c) return c; const b = bgDef(id); if (!b) return null;
+  c = mkCanvas(w, h); drawBackdrop(c.x, { style: b.style, ph: b.ph, h2: b.h2, ps: 0.8, pl: 0.5, r: 4, seed: hashStr('card' + id) }, w, h);
+  c.x.fillStyle = 'rgba(2,3,10,0.42)'; c.x.fillRect(0, 0, w, h);   // keeps the card's text readable
+  BG_CANVAS.set(k, c); if (BG_CANVAS.size > 24) BG_CANVAS.delete(BG_CANVAS.keys().next().value); return c;
+}
+function storeProfile(st) {
+  textO('PROFILE BACKGROUNDS', 12, 50, '#7fd8ff', '#000', FB); text('A SCENE BEHIND YOUR CARD WHEN OTHER PILOTS LOOK AT YOUR PROFILE. JUST FOR LOOKS', 12, 61, '#9fc8e0', FS);
+  const pv = st.bgPick || S.cardBg || PROFILE_BGS[0].id;
+  // left: your real card with the background you're looking at
+  const me = myProfile(); me.bg = pv; drawProfileCard(me, 8, 70, 240, 178, [], S.name);
+  // right: the backgrounds
+  const gx = 254;
+  PROFILE_BGS.forEach((b, i) => {
+    const x = gx + (i % 2) * 108, y = 70 + Math.floor(i / 2) * 45, own = ownsBg(b.id), on = S.cardBg === b.id, sel = pv === b.id, hov = inBox(x, y, 104, 42);
+    gbox(x, y, 104, 42, sel ? '#24305a' : '#161230', '#0a0818', on ? COL.gold : sel ? '#7fd8ff' : '#3a2f66');
+    const th = cardBgCanvas(b.id, 40, 26); if (th) ctx.drawImage(th, x + 3, y + 3);
+    wrap(b.n, 56, FS).slice(0, 2).forEach((l, j) => text(l, x + 46, y + 4 + j * 7, '#ffffff', FS));
+    if (hov) { IN.cursor = 'pointer'; if (clickIn(x, y, 104, 30)) { st.bgPick = b.id; SND.play('click'); } }
+    if (on) text('EQUIPPED', x + 52, y + 31, COL.gold, FS, 1);
+    else if (own) { if (button(x + 46, y + 27, 54, 12, 'USE IT', { font: FS, kind: 'blue' })) { S.cardBg = b.id; st.bgPick = b.id; dirty(); SND.play('pickup'); toast(`${b.n} IS YOUR PROFILE BACKGROUND`, '#7fd8ff'); } }
+    else if (pricePill(x + 46, y + 27, 54, '' + bgPrice(b), stardust() >= bgPrice(b) && !NET.act, true)) {
+      if (stardust() < bgPrice(b)) { toast('NOT ENOUGH STARDUST', COL.coral); st.tab = 3; }
+      else { const id = b.id; netDo(() => rpc('premium_spend', { p_kind: 'card', p_id: id }).then(r => { STORE.p = r; S.cardBg = id; st.bgPick = id; dirty(); STORE.flash = 1; SND.play('fanfare'); return r; }), `${b.n} IS YOURS! IT IS ON YOUR PROFILE NOW`); }
+    }
+  });
+  if (S.cardBg && button(gx, 252, 104, 12, 'USE NO BACKGROUND', { font: FS })) { S.cardBg = null; dirty(); SND.play('click'); }
 }

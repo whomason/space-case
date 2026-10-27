@@ -277,6 +277,7 @@ create or replace function sc_private.card(uid uuid) returns jsonb language sql 
   select jsonb_build_object('id', p.id, 'callsign', p.callsign, 'level', p.level, 'title', p.title, 'planet', p.planet,
     'online', p.last_seen > now() - interval '90 seconds', 'last_seen', p.last_seen,
     'plate', coalesce((select x.supporter from public.premium x where x.user_id = p.id), false),
+    'bg', (select s.data ->> 'cardBg' from public.saves s join public.premium x on x.user_id = s.user_id where s.user_id = p.id and jsonb_typeof(s.data -> 'cardBg') = 'string' and ('card:' || (s.data ->> 'cardBg')) = any(x.owned)),
     'crew', (select jsonb_build_object('id', c.id, 'name', c.name, 'tag', c.tag) from public.crew_members m join public.crews c on c.id = m.crew_id where m.user_id = p.id))
   from public.profiles p where p.id = uid
 $$;
@@ -1550,6 +1551,11 @@ begin
 end $$;
 
 -- ---------- reading your store
+-- profile card backgrounds: [id, stardust price]. Owned ones live in premium.owned as 'card:<id>'
+create or replace function sc_private.cards() returns jsonb language sql immutable set search_path = '' as $$
+  select '[["nebula",250],["sunset",250],["synth",400],["aurora",400],["frost",500],["galaxy",500],["hole",750],["gate",750]]'::jsonb
+$$;
+
 create or replace function public.premium_get() returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare uid uuid := sc_private.me(); p public.premium; sp jsonb := sc_private.season_pass();
@@ -1557,7 +1563,7 @@ begin
   p := sc_private.prem(uid);
   return jsonb_build_object('sd', p.stardust, 'supporter', p.supporter, 'owned', to_jsonb(p.owned), 'passes', to_jsonb(p.passes), 'claims', p.claims,
     'season', sp, 'shop', sc_private.shop_today(), 'shop_ends', ((now() at time zone 'utc')::date + 1)::timestamp at time zone 'utc',
-    'packs', sc_private.coin_packs(), 'armory', sc_private.armory(), 'k', sc_private.coin_k(uid), 'products', sc_private.products(), 'now', now());
+    'packs', sc_private.coin_packs(), 'armory', sc_private.armory(), 'cards', sc_private.cards(), 'k', sc_private.coin_k(uid), 'products', sc_private.products(), 'now', now());
 end $$;
 
 -- ---------- spending Stardust
@@ -1593,6 +1599,12 @@ begin
     if p_id = any(p.passes) then raise exception 'YOU ALREADY HAVE THE PASS'; end if;
     price := (sp ->> 'sd')::int; if p.stardust < price then raise exception 'NOT ENOUGH STARDUST'; end if;
     update public.premium set stardust = stardust - price, passes = array_append(passes, p_id), updated_at = now() where user_id = uid;
+  elsif p_kind = 'card' then
+    select (x ->> 1)::int into price from jsonb_array_elements(sc_private.cards()) x where x ->> 0 = p_id;
+    if price is null then raise exception 'NO SUCH BACKGROUND'; end if;
+    if ('card:' || p_id) = any(p.owned) then raise exception 'YOU ALREADY OWN IT'; end if;
+    if p.stardust < price then raise exception 'NOT ENOUGH STARDUST'; end if;
+    update public.premium set stardust = stardust - price, owned = array_append(owned, 'card:' || p_id), updated_at = now() where user_id = uid;
   elsif p_kind = 'supporter' then
     if p.supporter then raise exception 'YOU ARE ALREADY A SUPPORTER'; end if;
     if p.stardust < 500 then raise exception 'NOT ENOUGH STARDUST'; end if;

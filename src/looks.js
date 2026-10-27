@@ -386,7 +386,7 @@ const PC_BACK = {
     if (dir === 0) { g.rect(cx - 6 - (af === 2 ? 1 : 0), y + 1, 2, 8, M.P); g.rect(cx + 5 + (af === 2 ? 1 : 0), y + 1, 2, 8, M.P); g.rect(cx - 6, y + 8, 2, 1, M.W); g.rect(cx + 5, y + 8, 2, 1, M.W); g.rect(cx - 5, y, 11, 1, M.W); return; }
     const f2 = sw + fl;
     if (dir === 1) { g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + f2, y + 10], [cx - 6 - f2, y + 10]], M.P); g.rect(cx - 6 - f2, y + 10, 13 + f2 * 2, 2, M.W); g.rect(cx - 5, y - 1, 11, 2, M.W); g.set(cx, y + 1, M.A); }
-    else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s, y], [cx + s * 4, y], [cx + s * (8 + f2 * 2), y + 9 - fl], [cx + s * 3, y + 10]], M.P); g.line(cx + s * 3, y + 10, cx + s * (8 + f2 * 2), y + 9 - fl, M.W); g.line(cx + s * 3, y + 11, cx + s * (8 + f2 * 2), y + 10 - fl, M.W); g.rect(cx + (s < 0 ? -4 : 1), y - 1, 4, 2, M.W); }
+    else { const s = dir === 2 ? 1 : -1, ex = cx + s * (7 + f2), ey = y + 10 - (fl >> 1); g.poly([[cx + s * 3, y - 1], [cx + s * 6, y - 1], [ex, ey], [cx + s * 2, y + 11]], M.P); g.line(cx + s * 2, y + 11, ex, ey, M.W); g.line(cx + s * 2, y + 12, ex, ey + 1, M.W); g.rect(cx + (s < 0 ? -6 : 3), y - 2, 4, 2, M.W); }
   },
   'ICE WINGS'(g, dir, cx, y, sw, af) {
     const up = sw + [0, 1, 2, 1][af] * 2;

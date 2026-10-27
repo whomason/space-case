@@ -464,6 +464,7 @@ function arScoreboard() {
   list.slice(0, 20).forEach((f, i) => { const yy = y + 14 + i * 10; if (f.local) rect(x + 2, yy - 2, w - 4, 9, '#2a2310'); text(`${i + 1}. ${f.cs}`, x + 8, yy, f.local ? COL.gold : COL.ink, FS); text(f.lvl ? 'LV ' + f.lvl : '', x + 120, yy, COL.mute, FS); text(f.kills + '', x + w - 48, yy, COL.ink, FS, 1); text(f.deaths + '', x + w - 18, yy, COL.dim, FS, 1); });
 }
 function arMenu() {
+  unblock();
   const A = AM; ctx.globalAlpha = 0.6; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   panel(W / 2 - 90, 70, 180, 116, { bg: COL.void1, bd: COL.steel });
   textO(A.mode === 'duel' ? 'LEAVE THE DUEL?' : 'ARENA MENU', W / 2, 80, COL.ink, '#000', FB, 1);
@@ -474,6 +475,7 @@ function arMenu() {
   text(`WASD MOVE. MOUSE AIM AND FIRE. SPACE BOOSTS. ${keyLabel('gadget')} USES YOUR GADGET`, W / 2, 162, COL.mute, FS, 1); text('YOUR GEAR WORKS EXACTLY LIKE IT DOES ON PLANETS', W / 2, 170, COL.mute, FS, 1);
 }
 function arEndScreen() {
+  unblock();
   const A = AM, r = A.result; ctx.globalAlpha = Math.min(0.75, A.endT); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   const won = r.won; textO(won ? 'VICTORY' : 'DEFEAT', W / 2, 60, won ? COL.gold : COL.coral, '#000', FB, 1, 4);
   const opp = [...A.fighters.values()].find(f => f !== A.me); text(`${A.me.kills} - ${opp ? opp.kills : 0}${opp ? '  VS ' + opp.cs : ''}`, W / 2, 98, COL.cream, FB, 1);

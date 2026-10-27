@@ -68,6 +68,17 @@ call('svc', "select grant_purchase('cs_arm', %s, 'sd_2400', 1999)", (U['A'],)); 
 r = call('A', "select premium_spend('weapon', 'w|sniper|6302')"); ok('the armory sells THE LAST WORD for 2400', isinstance(r, dict) and 'w|sniper|6302' in r['owned'] and r['sd'] == sd0 - 2400, r if not isinstance(r, dict) else r['sd'])
 r = call('A', "select premium_spend('weapon', 'w|blaster|6012')"); ok('pass weapons are not for sale', str(r).startswith('ERR'), r)
 r = call('A', "select premium_spend('coins', 'c9')"); ok('unknown coin pack refused', str(r).startswith('ERR'), r)
+# profile backgrounds: bought with stardust, shown to everyone only if you own the one you picked
+sql_('update public.premium set stardust = stardust + 500 where user_id = %s', (U['A'],)); sdb = call('A', 'select premium_get()')['sd']
+r = call('A', "select premium_spend('card', 'synth')"); ok('buy a profile background for 400', isinstance(r, dict) and 'card:synth' in r['owned'] and r['sd'] == sdb - 400, r if not isinstance(r, dict) else r['sd'])
+r = call('A', "select premium_spend('card', 'synth')"); ok('cannot buy a background twice', str(r).startswith('ERR'), r)
+r = call('A', "select premium_spend('card', 'gold')"); ok('unknown background refused', str(r).startswith('ERR'), r)
+ok('the store lists the backgrounds', len(call('A', 'select premium_get()')['cards']) == 8)
+sql_("update public.saves set data = jsonb_set(data, '{cardBg}', '\"synth\"') where user_id = %s", (U['A'],))
+ok('an owned background shows on your public card', sql_('select sc_private.card(%s)', (U['A'],))[0]['bg'] == 'synth')
+sql_("update public.saves set data = jsonb_set(data, '{cardBg}', '\"hole\"') where user_id = %s", (U['A'],))
+ok('one you do not own does not', sql_('select sc_private.card(%s)', (U['A'],))[0]['bg'] is None)
+sql_("update public.saves set data = jsonb_set(data, '{cardBg}', '\"synth\"') where user_id = %s", (U['A'],))
 r = call('B', "select premium_spend('pass', 'frostfall')"); ok('no stardust, no pass', str(r).startswith('ERR') and 'NOT ENOUGH' in r, r)
 r = call('svc', "select grant_purchase('cs_2', %s, 'pass_frostfall', 499)", (U['B'],)); ok('buying the pass for $4.99 works', r == 'granted', r)
 r = call('B', 'select premium_get()'); ok('B owns FROSTFALL', 'frostfall' in r['passes'], r['passes'])

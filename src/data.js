@@ -32,9 +32,10 @@ const comboPay = m => 1 + (m - 1) / 3;
 const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
-// double or nothing: the rarer the item, the harder it is to double (common 45% ... mythic 7%). Doubling makes it rarer, so stacking gets harder on its own
-const DON_BY_R = [45, 36, 28, 20, 13, 7];
-function donChance(r = 0) { return Math.min(95, (DON_BY_R[clamp(r, 0, 5)] || 0) + S.skills.luck); }
+// double or nothing: the rarer the item, the harder it is to double (common 45% ... mythic 1%). Doubling makes it rarer, so stacking gets harder on its own
+const DON_BY_R = [45, 30, 18, 9, 4, 1];
+// luck makes it up to 50% more likely (it used to add a flat +10%, which made mythic doubles 11x likelier)
+function donChance(r = 0) { const v = (DON_BY_R[clamp(r, 0, 5)] || 0) * (1 + S.skills.luck * 0.05); return v >= 10 ? Math.round(v) : Math.round(v * 10) / 10; }
 
 const CLASSES = ['blaster', 'rifle', 'shotgun', 'sniper', 'railgun', 'launcher', 'beam', 'blade', 'throwing', 'mine', 'drone'];
 const CLS = {
@@ -253,7 +254,7 @@ const SKILLS = [
   { id: 'combat', n: 'COMBAT', max: 15, txt: r => `+${r * 6}% DAMAGE` },
   { id: 'mining', n: 'MINING', max: 15, txt: r => `+${r * 8}% EXTRACT SPEED, +${r * 3}% ORE VALUE` },
   { id: 'explorer', n: 'EXPLORER', max: 15, txt: r => `+${r * 6}% O2, +${r * 3}% MOVE SPEED` },
-  { id: 'luck', n: 'LUCK', max: 10, txt: r => `CRATE ODDS SHIFT UP ${r * 3}%, +${r}% DOUBLE OR NOTHING` },
+  { id: 'luck', n: 'LUCK', max: 10, txt: r => `CRATE ODDS SHIFT UP ${r * 3}%, DOUBLE OR NOTHING ${r * 5}% LIKELIER` },
 ];
 const NOVA_PERKS = [
   { id: 'coin', n: 'STELLAR COINS', max: 10, txt: r => `+${r * 15}% ORE VALUE` },

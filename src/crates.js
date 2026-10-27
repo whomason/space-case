@@ -690,6 +690,7 @@ function finishOpen() { const h = OPEN && OPEN.haul; if (h) { OPEN = null; goHub
 function makeChoice(ids, title, tier, clue) { return { ids, title, tier, t: 0, picked: -1, clue, hover: -1, labels: ids.map(id => pullLabels(id, tier)), demo: null }; }
 function updateChoiceOverlay(dt) { const C = RUN && RUN.choice ? RUN.choice : HUB.choice; if (!C) return; C.t += dt; if (C.demo) updateDemo(C.demo, dt); if (C.picked >= 0) { C.pt = (C.pt || 0) + dt; } }
 function drawChoiceOverlay() {
+  unblock();
   const inRun = RUN && RUN.choice && SCENE === 'planet'; const C = inRun ? RUN.choice : HUB.choice; if (!C) return;
   ctx.globalAlpha = 0.86; rect(0, 0, W, H, '#03040b'); ctx.globalAlpha = 1;
   textO('CHOOSE ONE', W / 2, 14, COL.gold, '#000', FB, 1, 2);

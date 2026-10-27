@@ -287,7 +287,10 @@ addEventListener('blur', () => { IN.keys.clear(); IN.down = false; IN.rdown = fa
 const key = c => IN.keys.has(c);
 const kp = c => IN.kp.has(c);
 function endInput() { IN.pr = IN.rl = IN.rpr = IN.rrl = false; IN.wheel = 0; IN.kp.clear(); IN.used = false; }
-const inBox = (x, y, w, h) => IN.mx >= x && IN.my >= y && IN.mx < x + w && IN.my < y + h;
+// while an overlay is up (IN.block), nothing behind it can be hovered or clicked; the overlay unblocks itself when it draws
+const inBox = (x, y, w, h) => !IN.block && IN.mx >= x && IN.my >= y && IN.mx < x + w && IN.my < y + h;
+function unblock() { IN.block = false; }
+function overlayUp() { return (SCENE === 'hub' && (!!HUB.choice || !!HUB.panel)) || (SCENE === 'planet' && !!RUN && (!!RUN.choice || RUN.paused)) || (SCENE === 'arena' && !!AM && (AM.menu || AM.ended)); }
 function clickIn(x, y, w, h) { if (!IN.used && IN.pr && inBox(x, y, w, h)) { IN.used = true; return true; } return false; }
 
 // ---------- time & fx ----------

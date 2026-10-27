@@ -31,8 +31,9 @@ function astroSprite(eq, dir, fr) {
   const ox = 2, oy = 6, bob = (fr === 1 || fr === 3) ? 1 : 0;
   const L = [];
   // back item behind
-  if (eq.back && dir !== 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); L.push([g, palOfItem(eq.back)]); }
-  else if (eq.back && dir === 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, 0, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); L.push([g, palOfItem(eq.back)]); }
+  // back items sit behind you, except when you walk away from the camera: then they're on top of your back
+  let backL = null; if (eq.back) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); backL = [g, palOfItem(eq.back)]; }
+  if (backL && dir !== 1) L.push(backL);
   const g = new Spr(20, 26);
   const legA = fr === 1 ? -1 : fr === 3 ? 1 : 0;
   const by = oy + bob;
@@ -58,6 +59,7 @@ function astroSprite(eq, dir, fr) {
   }
   L.push([g, body, patOfSkin(sk, af / 4)]);
   armorDetailLayers(L, eq, dir, ox, oy, by, legA, af);
+  if (backL && dir === 1) L.push(backL);
   if (eq.headgear) { const h = new Spr(20, 26); drawHeadOnChar(h, getDef(eq.headgear).style, dir, ox, by, af); cosSparkle(h, getDef(eq.headgear).r, af); L.push([h, palOfItem(eq.headgear)]); }
   if (eq.eyewear && dir !== 1) { const e = new Spr(20, 26); drawEyesOnChar(e, getDef(eq.eyewear).style, dir, ox, by, af); cosSparkle(e, getDef(eq.eyewear).r, af); L.push([e, palOfItem(eq.eyewear)]); }
   c = layerCanvas(20, 26, L);
@@ -115,7 +117,7 @@ function drawBackOnChar(g, st, dir, ox, by, fr, af = 0) {
     return;
   }
   switch (st) {
-    case 'CAPE': { const f2 = sw + fl; if (dir === 1) g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + f2, y + 10 - (af === 2 ? 1 : 0)], [cx - 6 - f2, y + 10 - (af === 0 ? 1 : 0)]], M.P); else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 1, y], [cx + s * 4, y], [cx + s * (8 + f2 * 2), y + 9 - fl], [cx + s * 3, y + 10]], M.P); } break; }
+    case 'CAPE': { const f2 = sw + fl; if (dir === 1) g.poly([[cx - 5, y], [cx + 5, y], [cx + 6 + f2, y + 10 - (af === 2 ? 1 : 0)], [cx - 6 - f2, y + 10 - (af === 0 ? 1 : 0)]], M.P); else { const s = dir === 2 ? 1 : -1; g.poly([[cx + s * 3, y - 1], [cx + s * 6, y - 1], [cx + s * (7 + f2), y + 10 - (fl >> 1)], [cx + s * 2, y + 11]], M.P); g.line(cx + s * 5, y + 1, cx + s * (6 + f2), y + 9, M.S); } break; }
     case 'WINGS': case 'BAT WINGS': case 'FAIRY WINGS': case 'MECH WINGS': {
       const m = st === 'FAIRY WINGS' ? M.G : st === 'MECH WINGS' ? M.A : M.P; const up = sw + fl * 2;
       if (dir === 1) { g.poly([[cx - 2, y + 1], [cx - 10, y - 4 - up], [cx - 9, y + 4 - fl], [cx - 3, y + 5]], m); g.poly([[cx + 2, y + 1], [cx + 10, y - 4 - up], [cx + 9, y + 4 - fl], [cx + 3, y + 5]], m); if (st === 'BAT WINGS') { g.set(cx - 7, y + 3 - fl, 0); g.set(cx + 7, y + 3 - fl, 0); } }

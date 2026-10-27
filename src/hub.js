@@ -274,6 +274,7 @@ function panelFrame(title, color = COL.gold, coins = false, help) {
   return false;
 }
 function drawPanel() {
+  if (!HUB.choice) unblock();
   const p = HUB.panel, st = HUB.ps[p];
   if (p === 'locker') return panelLocker(st);
   if (p === 'hangar') return panelHangar(st);
@@ -552,7 +553,7 @@ function blueprintPicker(st) {
 function myProfile() {
   const s = S.stats, cr = typeof NET !== 'undefined' && NET.social && NET.social.crew;
   return {
-    self: true, callsign: S.name || 'NO CALLSIGN', plate: arMyPlate(), title: S.titles.eq, crew: cr ? { tag: cr.tag, name: cr.name } : null, online: true, level: S.lvl, planet: S.planet.reached,
+    self: true, callsign: S.name || 'NO CALLSIGN', plate: arMyPlate(), bg: S.cardBg && (!STORE.p || ownsBg(S.cardBg)) ? S.cardBg : null, title: S.titles.eq, crew: cr ? { tag: cr.tag, name: cr.name } : null, online: true, level: S.lvl, planet: S.planet.reached,
     stats: { power: shipRating(), items: Object.keys(S.inv).length, kills: s.kills, crates: s.crates, legendaries: s.legendaries, mythics: s.mythics, cosmics: s.cosmics },
     arena: { trophies: (typeof NET !== 'undefined' && NET.arena && NET.arena.trophies) || 0 }, showcase: topItems(4), loadout: S.eq,
   };
@@ -562,8 +563,9 @@ function panelProfile(st) {
   // left: the card other players get when they click your name
   text('HOW OTHER PILOTS SEE YOU', 14, 29, COL.mute, FS);
   drawProfileCard(myProfile(), 12, 37, 254, 198, [], S.name);
-  if (arMyPlate()) text('THANK YOU FOR SUPPORTING THE GAME', 139, H - 30, COL.gold, FS, 1);
-  else { const lb = 'GET A SUPPORTER PLATE', lw = textW(lb, FS) + 18; if (button(139 - lw / 2, H - 33, lw, 12, lb, { font: FS, kind: 'outline', tip: 'A GOLD NAMEPLATE EVERYONE SEES. IT HELPS KEEP THE GAME RUNNING' })) { openStation('store'); HUB.ps.store.tab = 4; } ctx.fillStyle = COL.pink; for (const [dx, dy] of [[0, 0], [2, 0], [-1, 1], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [1, 3]]) ctx.fillRect(Math.floor(139 - lw / 2) + 4 + dx, H - 29 + dy, 1, 1); }
+  if (arMyPlate()) text('THANK YOU FOR SUPPORTING!', 172, H - 30, COL.gold, FS, 1);
+  else { const lb = 'GET A SUPPORTER PLATE', lw = textW(lb, FS) + 18; if (button(172 - lw / 2, H - 33, lw, 12, lb, { font: FS, kind: 'outline', tip: 'A GOLD NAMEPLATE EVERYONE SEES. IT HELPS KEEP THE GAME RUNNING' })) { openStation('store'); HUB.ps.store.tab = 4; } ctx.fillStyle = COL.pink; for (const [dx, dy] of [[0, 0], [2, 0], [-1, 1], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [1, 3]]) ctx.fillRect(Math.floor(172 - lw / 2) + 4 + dx, H - 29 + dy, 1, 1); }
+  if (button(12, H - 33, 76, 12, 'BACKGROUND', { font: FS, kind: 'blue', tip: 'PICK A SCENE BEHIND YOUR CARD' })) { openStation('store'); HUB.ps.store.tab = 5; }
   // right: level, then skills / titles / stats
   const x = 274, w = W - 14 - x, y = 29;
   textO('LEVEL ' + S.lvl, x, y, COL.cyan, '#000', FB, 0, 2); bar(x, y + 18, w, 4, S.xp / xpNeed(S.lvl), COL.cyan, COL.void2); text(`${fmt(S.xp)}/${fmt(xpNeed(S.lvl))} XP`, x, y + 25, COL.mute, FS);

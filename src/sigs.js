@@ -279,13 +279,16 @@ function sigHUD(R) {
   const G = R.sig; if (!G) return; const k = G.s.k === 'converge' ? G.mode : G.s.k;
   let y = R.ev ? 92 : 68; const x = W - 104;
   const rl = relicOf(R.pi);
-  const rows = (!hasRelic(R.pi) && R.pi <= 20 ? 18 : 0) + (k === 'tide' && G.tide !== undefined ? 9 : 0) + (k === 'aurora' && G.charge > 0 ? 14 : 0) + (k === 'converge' ? 9 : 0) + (sigRelicHelps(R) && R.pi > 1 ? 16 : 0);
-  if (rows) { ctx.globalAlpha = 0.72; rect(x - 18, y - 4, 122, rows + 4, '#05060f'); ctx.globalAlpha = 1; }
-  if (!hasRelic(R.pi) && R.pi <= 20) { drawRelicIcon(R.pi, x - 14, y - 1, 1); text('PRIZE: ' + rl.n, x, y, rl.c, FS); text('BEAT ' + R.p.boss[0], x, y + 7, COL.mute, FS); y += 18; }
+  // the prize and relic notes are for when you land: they fade out after a few seconds so the minimap stays clear
+  const intro = R.t < 8, ia = clamp((8 - R.t) / 1, 0, 1), showPrize = intro && !hasRelic(R.pi) && R.pi <= 20, showHelp = intro && sigRelicHelps(R) && R.pi > 1;
+  const live = (k === 'tide' && G.tide !== undefined ? 9 : 0) + (k === 'aurora' && G.charge > 0 ? 14 : 0) + (k === 'converge' ? 9 : 0);
+  const rows = (showPrize ? 18 : 0) + live + (showHelp ? 16 : 0);
+  if (rows) { ctx.globalAlpha = 0.72 * (live ? 1 : ia); rect(x - 18, y - 4, 122, rows + 4, '#05060f'); ctx.globalAlpha = 1; }
+  if (showPrize) { ctx.globalAlpha = ia; drawRelicIcon(R.pi, x - 14, y - 1, 1); text('PRIZE: ' + rl.n, x, y, rl.c, FS); text('BEAT ' + R.p.boss[0], x, y + 7, COL.mute, FS); ctx.globalAlpha = 1; y += 18; }
   if (k === 'tide' && G.tide !== undefined) { text(G.lowTide ? 'LOW TIDE' : 'HIGH TIDE', x, y, G.lowTide ? COL.gold : '#4fb7b0', FS); y += 9; }
   if (k === 'aurora' && G.charge > 0) { text('AURORA CHARGE', x, y, '#7dffb0', FS); bar(x, y + 8, 80, 3, G.charge, '#7dffb0', COL.void0); y += 14; }
   if (k === 'converge') { text('NOW: ' + SIGS.find(s => s && s.k === G.mode).n, x, y, COL.magenta, FS); y += 9; }
-  if (sigRelicHelps(R) && R.pi > 1) { drawRelicIcon(R.pi - 1, x - 14, y - 1, 1); text(relicOf(R.pi - 1).n, x, y, '#7dffb0', FS); text('IS HELPING YOU', x, y + 7, COL.mute, FS); }
+  if (showHelp) { ctx.globalAlpha = ia; drawRelicIcon(R.pi - 1, x - 14, y - 1, 1); text(relicOf(R.pi - 1).n, x, y, '#7dffb0', FS); text('IS HELPING YOU', x, y + 7, COL.mute, FS); ctx.globalAlpha = 1; }
   if (R.relicShow) drawRelicReveal(R);
 }
 function drawRelicReveal(R) {
