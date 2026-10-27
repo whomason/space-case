@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch (_) { /* empty */ }
   const p = body.product && PRODUCTS[body.product];
   if (!p) return json({ message: 'UNKNOWN PRODUCT' }, 400);
-  const site = Deno.env.get('SITE_URL') || 'https://whomason.github.io/space-case/';
+  const site = Deno.env.get('SITE_URL') || 'https://spacecrates.net/';
   const f = new URLSearchParams();
   f.set('mode', 'payment');
   f.set('line_items[0][quantity]', '1');

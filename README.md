@@ -2,7 +2,7 @@
 
 An 8-bit space crate-opening game: open crates, gear up your astronaut and ship, land on 20 planets, fight aliens, mine ore. Sign in to keep your save in the cloud, add friends, join a crew and trade.
 
-**Play:** https://whomason.github.io/space-case/
+**Play:** https://spacecrates.net/
 
 ## Planets and relics
 
@@ -38,7 +38,7 @@ An 8-bit space crate-opening game: open crates, gear up your astronaut and ship,
 ## Password reset
 
 - "Forgot password?" on the sign-in screen sends a Supabase reset email that links back to the game.
-- In Supabase → Authentication → URL Configuration, the Site URL should be `https://whomason.github.io/space-case/` (and add it under Redirect URLs).
+- In Supabase → Authentication → URL Configuration, the Site URL should be `https://spacecrates.net/` (add it and the old `https://whomason.github.io/space-case/` under Redirect URLs).
 
 ## The store (Stardust, the season pass, the supporter plate)
 

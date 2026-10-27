@@ -17,7 +17,7 @@ async function netFetch(path, body, token, method = 'POST') {
   if (token) h.Authorization = 'Bearer ' + token;
   let r;
   try { r = await fetch(NET.url + path, { method, headers: h, body: JSON.stringify(body || {}) }); }
-  catch (e) { const er = new Error(/whomason\.github\.io|localhost|127\.0\.0\.1/.test(location.hostname) ? "CAN'T REACH THE SERVER. CHECK YOUR INTERNET" : "CAN'T REACH THE SERVER FROM HERE. PLAY ONLINE AT WHOMASON.GITHUB.IO/SPACE-CASE"); er.net = true; throw er; }
+  catch (e) { const er = new Error(/spacecrates\.net|whomason\.github\.io|localhost|127\.0\.0\.1/.test(location.hostname) ? "CAN'T REACH THE SERVER. CHECK YOUR INTERNET" : "CAN'T REACH THE SERVER FROM HERE. PLAY ONLINE AT SPACECRATES.NET"); er.net = true; throw er; }
   const t = await r.text(); let j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
   if (!r.ok) {
     const m = (j && (j.message || j.msg || j.error_description || j.error)) || ('SERVER ERROR ' + r.status);

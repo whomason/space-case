@@ -65,7 +65,7 @@ function drawBugReport() {
 
 // ---------- legal pages (they live next to the game on the website) ----------
 function openLegal(which) {
-  const base = /whomason\.github\.io/.test(location.hostname) ? location.origin + '/space-case/' : 'https://whomason.github.io/space-case/';
+  const base = /spacecrates\.net$/.test(location.hostname) ? location.origin + '/' : /whomason\.github\.io/.test(location.hostname) ? location.origin + '/space-case/' : 'https://spacecrates.net/';
   const url = base + (which === 'privacy' ? 'privacy.html' : 'terms.html');
   try { const w = window.open(url, '_blank'); if (!w) location.href = url; } catch (e) { toast('OPEN ' + url.toUpperCase(), COL.dim); }
 }
