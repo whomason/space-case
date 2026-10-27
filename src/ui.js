@@ -117,13 +117,13 @@ function saveName() {
   if (typeof NET !== 'undefined' && NET.st === 'on') {
     if (NAMEUI.busy) return; NAMEUI.busy = true; NAMEUI.err = '';
     rpc('set_callsign', { p_name: v }).then(r => {
-      const was = S.name; S.name = r.callsign; NET.callsign = r.callsign; if (NET.ver === r.version - 1) NET.ver = r.version; NET.prof = {};
+      const was = S.name; S.name = r.callsign; NET.callsign = r.callsign; delete S.namePending; if (NET.ver === r.version - 1) NET.ver = r.version; NET.prof = {};
       S.nameAsked = true; dirty(); closeNameUI(); SND.play('fanfare'); NET.socialT = -1e9;
       toast(was ? `CALLSIGN CHANGED TO ${r.callsign}` : `WELCOME ABOARD, ${r.callsign}`, COL.gold);
     }).catch(e => { NAMEUI.err = e.message; SND.play('deny'); }).finally(() => { NAMEUI.busy = false; });
     return;
   }
-  const was = S.name; S.name = v; S.nameAsked = true; dirty(); closeNameUI(); SND.play('fanfare');
+  const was = S.name; S.name = v; S.nameAsked = true; if (typeof NET !== 'undefined' && (NET.sess || NET.callsign)) S.namePending = true; dirty(); closeNameUI(); SND.play('fanfare');
   toast(was ? `CALLSIGN CHANGED TO ${v}` : `WELCOME ABOARD, ${v}`, COL.gold);
 }
 function placeNameEl(x, y, w, h) {

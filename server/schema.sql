@@ -1628,9 +1628,11 @@ begin
     need := p_tier * (sp ->> 'xp')::int;
   end if;
   if now() > (sp ->> 'ends')::timestamptz + interval '7 days' then raise exception 'THIS SEASON IS OVER'; end if;
+  -- sanity cap on what the game reports. It used to be 1,200 XP an hour and threw an error, which blocked real players
+  -- who finished the pass fast (crate openings and weekly missions pay a lot). Now it is generous and only limits, never errors.
   hrs := greatest(0, extract(epoch from now() - (sp ->> 'starts')::timestamptz) / 3600);
-  if coalesce(p_xp, 0) > hrs * 1200 + 3000 then raise exception 'THAT MUCH PASS XP DOES NOT ADD UP'; end if;
-  if coalesce(p_xp, 0) < need then raise exception 'EARN MORE PASS XP FIRST'; end if;
+  p_xp := least(coalesce(p_xp, 0), (hrs * 5000 + 15000)::int);
+  if p_xp < need then raise exception 'EARN MORE PASS XP FIRST'; end if;
   p := sc_private.prem(uid);
   if tr = 'p' and not (sid = any(p.passes)) then raise exception 'GET THE PASS TO CLAIM THIS'; end if;
   c := coalesce(p.claims -> sid, '{}'::jsonb);

@@ -4,7 +4,7 @@
 let AM = null;
 const AR_FIGHTERS = 10, AR_MAX_AI = 5, AR_DUEL_TO = 5, AR_DUEL_TIME = 180, AR_SEND = 0.2;
 function arAITarget(sid) { if (!sid) return AR_MAX_AI; const b = Math.floor(Date.now() / 75000); return 1 + (hashStr(sid + ':' + b) % AR_MAX_AI); }
-const arAIFor = (humans, sid) => Math.max(0, Math.min(AR_MAX_AI, AR_FIGHTERS - humans, arAITarget(sid)));
+const arAIFor = (humans, sid, priv) => priv ? 0 : Math.max(0, Math.min(AR_MAX_AI, AR_FIGHTERS - humans, arAITarget(sid)));
 const AR_RANKS = [['ROOKIE', 0, '#9aa3c0'], ['BRONZE', 50, '#c8875a'], ['SILVER', 200, '#cfd6e6'], ['GOLD', 500, '#fca311'], ['PLATINUM', 1000, '#7fe9ff'], ['DIAMOND', 2000, '#9fd3ff'], ['MASTER', 3500, '#e0b1cb'], ['GALACTIC', 6000, 'RAINBOW']];
 const rankOf = t => { let r = AR_RANKS[0]; for (const k of AR_RANKS) if (t >= k[1]) r = k; return r; };
 const BN1 = ['KAI', 'NOVA', 'ZED', 'LUNA', 'RIO', 'JAX', 'MILO', 'ZARA', 'ACE', 'NYX', 'ECHO', 'VEX', 'ORION', 'SKY', 'REX', 'PIXEL', 'BLAZE', 'FROST', 'DUSK', 'COMET', 'TACO', 'MOCHI', 'BEANS', 'GOOSE', 'SPUD', 'WAFFLE', 'NOODLE', 'PICKLE', 'TURBO', 'GHOST', 'RAVEN', 'VIPER', 'ASTRO', 'COSMO', 'JUNO', 'KODA', 'ROOK', 'SAGE', 'ZION', 'NIKO', 'OTTO', 'REI', 'TOBI', 'YUKI', 'BEAR', 'CHIP', 'DOT', 'FINN', 'IVY', 'LEO', 'MAX', 'OLLIE', 'PIP', 'QUINN', 'RUBY', 'SOL', 'TEX', 'UMA', 'WREN'];
@@ -115,7 +115,7 @@ function arBots() { return [...AM.fighters.values()].filter(f => f.bot); }
 // the first fill is instant; after that pilots join and leave one at a time, like real players
 function arFillBots(gradual) {
   const A = AM; if (!A.host || A.mode === 'duel') return;
-  const want = arAIFor(A.humans, A.practice ? A.pracId : A.server && A.server.id), bots = arBots();
+  const want = arAIFor(A.humans, A.practice ? A.pracId : A.server && A.server.id, !A.practice && !!(A.server && A.server.private)), bots = arBots();
   if (gradual && A.t - (A.botMoveT || -99) < 9) return;
   if (bots.length > want) {
     const extra = bots.sort((a, b) => (a.alive - b.alive) || (a.kills - b.kills)).slice(0, gradual ? 1 : bots.length - want);
@@ -567,7 +567,7 @@ function arenaFFA(st, on) {
   list.slice(0, 6).forEach((s, i) => {
     const yy = y + 10 + i * 22; panel(x, yy, 300, 20, { bg: COL.void1, bd: s.private ? COL.magenta : COL.void3, flat: true });
     const pd = planetDef(s.theme || 1); text(s.name, x + 6, yy + 3, COL.ink, FB); text(`${s.private ? 'PRIVATE: ' + (s.owner || '') + (s.code ? '  CODE ' + s.code : '') : pd.name + ' ARENA'}`, x + 6, yy + 12, s.private ? COL.magenta : COL.mute, FS);
-    const pilots = s.humans + arAIFor(s.humans, s.id); text(`${pilots}/${AR_FIGHTERS}`, x + 240, yy + 7, pilots > 0 ? '#7dffb0' : COL.mute, FS, 2);
+    const pilots = s.humans + arAIFor(s.humans, s.id, s.private); text(`${pilots}/${AR_FIGHTERS}`, x + 240, yy + 7, pilots > 0 ? '#7dffb0' : COL.mute, FS, 2);
     if (button(x + 248, yy + 3, 48, 14, s.humans >= s.cap ? 'FULL' : 'JOIN', { kind: 'primary', font: FS, disabled: !on || s.humans >= s.cap || NET.act })) netDo(() => arJoinServer(s.id));
     if (inBox(x, yy, 240, 20) && s.players && s.players.length) TIP.set('IN HERE NOW: ' + s.players.join(', '));
   });

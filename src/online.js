@@ -93,7 +93,13 @@ async function netConnect() {
     }
     if (NET.choice) { /* sorted out after they pick a save */ }
     else if (!r.callsign && S.name) { try { const c = await rpc('set_callsign', { p_name: S.name }); NET.callsign = c.callsign; if (NET.ver === c.version - 1) NET.ver = c.version; } catch (e) { toast(`CALLSIGN ${S.name} IS TAKEN ONLINE. PICK ANOTHER`, COL.coral); S.name = ''; openNameUI(false); } }
-    else if (r.callsign && S.name !== r.callsign && !NET.choice) { S.name = r.callsign; }
+    else if (r.callsign && S.name !== r.callsign && S.namePending && S.name) {   // renamed while the connection was down: push it to the server now
+      try { const c = await rpc('set_callsign', { p_name: S.name }); NET.callsign = S.name = c.callsign; if (NET.ver === c.version - 1) NET.ver = c.version; toast(`CALLSIGN CHANGED TO ${c.callsign}`, COL.gold); }
+      catch (e) { toast(`CALLSIGN ${S.name} IS TAKEN ONLINE. YOU ARE STILL ${r.callsign}`, COL.coral); S.name = NET.callsign = r.callsign; }
+      delete S.namePending; dirty();
+    }
+    else if (r.callsign && S.name !== r.callsign && !NET.choice) { S.name = r.callsign; delete S.namePending; }
+    else delete S.namePending;
     netRefreshSocial();
   } catch (e) {
     NET.err = e.message;
