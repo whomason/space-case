@@ -94,7 +94,7 @@ function petBody(g, k, f) {
 const PET_SPR = new Map();
 function petSprite(id, f = 0) {
   const key = id + '|' + f; let c = PET_SPR.get(key); if (c) return c;
-  const d = getDef(id); const g = new Spr(16, 16); petBody(g, d.sub, f); g.fin();
+  const d = getDef(id); const g = new Spr(16, 16); const PA = d.o.t === 'prem' && PET_ART[d.n]; if (PA) PA.draw(g, f); else petBody(g, d.sub, f); g.fin();
   c = renderSpr(g, itemPal(d, d.r === 6 ? Math.floor(T_NOW * 8) % 8 : 0)); PET_SPR.set(key, c); if (PET_SPR.size > 120) PET_SPR.delete(PET_SPR.keys().next().value); return c;
 }
 function drawPetAt(id, x, y, sc = 1, flip = false) {
@@ -105,6 +105,8 @@ function drawPetAt(id, x, y, sc = 1, flip = false) {
   if (d.r >= 3) { ctx.globalAlpha = 0.35 + 0.2 * Math.sin(T_NOW * 3); ctx.drawImage(tinted(haloOf(s), rcol(d.r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(d.r)), x - 8 * sc - sc, y - 16 * sc - sc + bob, 18 * sc, 18 * sc); ctx.globalAlpha = 1; }
   if (flip) { ctx.save(); ctx.translate(x + 8 * sc, 0); ctx.scale(-1, 1); ctx.drawImage(s, 0, y - 16 * sc + bob, 16 * sc, 16 * sc); ctx.restore(); }
   else ctx.drawImage(s, x - 8 * sc, y - 16 * sc + bob, 16 * sc, 16 * sc);
+  const PA = d.o.t === 'prem' && PET_ART[d.n];
+  if (PA && PA.glow) { const nx = flip ? x + 8 * sc - (PA.nose[0] + 0.5) * sc : x - 8 * sc + (PA.nose[0] + 0.5) * sc, ny = y - 16 * sc + bob + (PA.nose[1] + 0.5) * sc; ctx.globalAlpha = 0.25 + 0.2 * Math.sin(T_NOW * 5); circ(nx, ny, Math.round(3 * sc), PA.glow); ctx.globalAlpha = 0.5 + 0.3 * Math.sin(T_NOW * 5); circ(nx, ny, Math.round(1.6 * sc), PA.glow); ctx.globalAlpha = 1; }
 }
 
 // ---------- gadgets in the world ----------

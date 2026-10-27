@@ -213,7 +213,7 @@ function arDrawGround(cx, cy) { for (const f of AM.fighters.values()) if (f.w) d
 function arDrawTop(cx, cy) { for (const f of AM.fighters.values()) if (f.w) { drawShots(f.w, cx, cy); drawGadgetFx(f.w, cx, cy); } }
 function arDrawStatus(f, cx, cy) {
   const p = f.px; if (!p || !f.alive) return; const x = Math.floor(f.x - cx), y = Math.floor(f.y - cy);
-  if (p.freeze > 0) { ctx.globalAlpha = 0.45; rect(x - 7, y - 24, 14, 24, '#bff6ff'); ctx.globalAlpha = 1; ctx.strokeStyle = '#ffffff'; ctx.strokeRect(x - 6.5, y - 23.5, 13, 23); }
+  if (p.freeze > 0) { const spr = astroSprite(f.eq || {}, f.dir || 0, 0); f.iceSeed = f.iceSeed || 7; drawIceOn(f, spr, x - 10, y - 25, 20, 26); iceWorldFx(AM && AM.fx ? { fx: AM.fx } : {}, f, x, y, 16, 24); }
   else if (p.stun > 0) { for (let i = 0; i < 3; i++) { const a = T_NOW * 6 + i * TAU / 3; px(x + Math.cos(a) * 7, y - 28 + Math.sin(a) * 2, '#fff25a'); } }
   if ((p.slow > 0 || p.warp > 0) && Math.floor(T_NOW * 4) % 2) px(x - 6, y - 2, '#7fe9ff');
 }

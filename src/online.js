@@ -353,11 +353,11 @@ function drawProfileCard(p, x, y, w, h, acts, cs) {
   shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78); if (eq.pet) drawPetAt(eq.pet, x + 66, y + 94, 1, true);
   const tx = x + 80;
   textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2); if (p.plate) drawSupporterPlate(Math.min(x + w - 92, tx + textW(p.callsign || '???', FB, 2) + 6), y + 9);
-  if (p.callsign && p.callsign !== NET.callsign && button(x + w - 44, y + 4, 40, 11, 'REPORT', { font: FS, kind: 'def', tip: 'TELL A MODERATOR ABOUT THIS PLAYER' })) NET.report = { cs: p.callsign, why: null };
+  if (p.callsign && !p.self && p.callsign !== NET.callsign && button(x + w - 44, y + 4, 40, 11, 'REPORT', { font: FS, kind: 'def', tip: 'TELL A MODERATOR ABOUT THIS PLAYER' })) NET.report = { cs: p.callsign, why: null };
   const tt = p.title && TITLES.find(t => t.id === p.title);
-  text(tt ? tt.n : 'ASTRONAUT', tx, y + 24, COL.lilac, FS);
+  if (tt) { const tw2 = textW(tt.n, FS) + 10; panel(tx, y + 21, tw2, 10, { bg: '#3a3010', bd: COL.gold, flat: true }); text(tt.n, tx + 5, y + 23, COL.gold, FS); } else text('ASTRONAUT', tx, y + 24, COL.lilac, FS);
   if (p.crew) text(`CREW [${p.crew.tag}] ${p.crew.name}`, tx, y + 32, COL.cyan, FS);
-  sDot(tx, y + 41, p.online); text(p.online ? 'ONLINE NOW' : 'SEEN ' + ago(p.last_seen), tx + 7, y + 40, p.online ? '#7dffb0' : COL.mute, FS);
+  if (p.self) text('THIS IS YOU', tx, y + 40, COL.mute, FS); else { sDot(tx, y + 41, p.online); text(p.online ? 'ONLINE NOW' : 'SEEN ' + ago(p.last_seen), tx + 7, y + 40, p.online ? '#7dffb0' : COL.mute, FS); }
   const s = p.stats || {}, ar = p.arena || {}; const rows = [['LEVEL', p.level], ['FURTHEST', planetDef(Math.max(1, p.planet || 1)).name], ['SHIP RATING', s.power || '-'], ['ITEMS FOUND', s.items || 0], ['ALIENS', fmt(s.kills || 0)], ['CRATES', fmt(s.crates || 0)], ['LEGENDARY+', (s.legendaries || 0) + (s.mythics || 0) + (s.cosmics || 0)], ['RANK', rankOf(ar.trophies || 0)[0] + ' ' + fmt(ar.trophies || 0)]];
   rows.forEach(([k, v], i) => { const cx = tx + (i % 2) * 82, cy = y + 52 + Math.floor(i / 2) * 9; text(k, cx, cy, COL.mute, FS); text(String(v), cx + 78, cy, COL.ink, FS, 2); });
   text('BEST FINDS', x + 8, y + 104, COL.gold, FS);

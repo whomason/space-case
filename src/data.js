@@ -26,7 +26,9 @@ const TIERS = [
   { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
 ];
 const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
-const ENEMY_COIN = 1.8; // aliens drop this many times their old coins
+const ENEMY_COIN = 1.5; // aliens drop this many times their old coins
+// the combo still counts up to X10, but coins grow slower: X4 pays X2, X10 pays X4 (a long fight used to out-earn a full cargo hold several times over)
+const comboPay = m => 1 + (m - 1) / 3;
 const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
@@ -167,7 +169,11 @@ const PLANETS = [
     g: [48, .45, .78], g2: [45, .4, .66], detail: 'gold', liq: ['starlight', 190, .8, .8], decos: [['obelisk', 4, { c: [48, .5, .76], glow: [185, 1, .65] }], ['column', 3, { c: [45, .3, .82] }], ['crystal', 2, { c: [190, .6, .86] }]], sph: 'gold', atmo: [50, 1, .7], rings: true, amb: 'motes2' },
 ];
 PLANETS.forEach((p, i) => { p.i = i + 1; });
-const PLANET_REQ = n => n <= 1 ? 0 : Math.round(600 + 100 * Math.pow(n - 1, 1.15)); // early planets need a real upgrade each, late ones need top-tier parts
+// ship rating to reach each planet. Each band asks for about one full rarity step of ship parts at that stage's crate grade:
+// uncommon by 3, rare by 6, epic by 8-10, legendary by 11-13, mythic by 14-16, then levelled mythic/cosmic parts.
+// (The old curve wanted legendary by 8 and mythic by 11, which took roughly 30 landings on one planet to reach.)
+const PLANET_REQ_T = [0, 0, 700, 800, 900, 1000, 1100, 1200, 1350, 1450, 1550, 1750, 1900, 2000, 2250, 2400, 2550, 2650, 2800, 2950, 3100];
+const PLANET_REQ = n => n <= 1 ? 0 : n < PLANET_REQ_T.length ? PLANET_REQ_T[n] : 3100 + 150 * (n - 20);
 const ORE_VALUE = tier => Math.round(5 * Math.pow(1.42, tier - 1));   // base scale (alien coins use it too)
 const ORE_PAY = 5;                                                     // ore sells for this many times the base
 const orePrice = tier => ORE_VALUE(tier) * ORE_PAY;

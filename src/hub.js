@@ -7,7 +7,7 @@ const NAV = [
   { id: 'hangar', n: 'HANGAR', sub: 'SHIP PARTS RAISE YOUR RATING AND UNLOCK PLANETS', icon: 'ship' },
   { id: 'collection', n: 'COLLECTION', sub: 'COLLECTION PAGES, SETS AND THE CODEX', icon: 'grid' },
   { id: 'workshop', n: 'WORKSHOP', sub: 'BLUEPRINTS, EVOLUTIONS AND ARTIFACTS', icon: 'wrench' },
-  { id: 'profile', n: 'PROFILE', sub: 'SKILLS, TITLES AND STATS', icon: 'star' },
+  { id: 'profile', n: 'PROFILE', sub: 'YOUR CARD, SKILLS AND TITLES', icon: 'star' },
   { id: 'mining', n: 'MINING', sub: 'AUTO-MINERS EARN COINS WHILE YOU ARE AWAY', icon: 'pick' },
 ];
 NAV.splice(1, 0, { id: 'arena', n: 'ARENA', sub: 'FFA SERVERS, 1V1 DUELS, TROPHIES AND RANKS', icon: 'swords' });
@@ -483,7 +483,7 @@ function codexTab(st) {
 }
 function panelWorkshop(st) {
   if (panelFrame('WORKSHOP', COL.orange)) return;
-  if (st.pick) return blueprintPicker(st);
+  if (st.bpick && st.bpick.cls) return blueprintPicker(st);
   st.tab = tabs(130, 10, ['BLUEPRINTS', 'EVOLVE', 'ARTIFACTS', 'RESEARCH'], st.tab, 66);
   const x = 14, y = 32;
   if (st.tab === 0) {
@@ -495,7 +495,7 @@ function panelWorkshop(st) {
       bar(x + 90, yy + 11, 160, 3, done ? 1 : m.k / need, COL.orange, COL.void0); text(done ? 'ALL DONE' : `${Math.min(m.k, need)}/${need}`, x + 256, yy + 8, COL.dim, FS);
       const maxR = Math.min(5, 2 + stp); const bp = (S.bp || {})[c] || 0;
       if (!done && m.k >= need) { if (button(x + 300, yy + 2, 70, 13, 'CLAIM', { font: FS, col: '#4a3010', tc: COL.gold })) { m.c++; S.bp = S.bp || {}; S.bp[c] = Math.max(S.bp[c] || 0, maxR + 1); S.mast[c] = m; SND.play('fanfare'); toast(`${CLS[c].n} BLUEPRINT EARNED (UP TO ${RAR[maxR].n})`, COL.orange); dirty(); } }
-      if (bp) { if (button(x + 376, yy + 2, 72, 13, `BUILD ${RAR[bp - 1].n.slice(0, 4)}`, { font: FS, col: '#1d3a4a', tc: COL.cyan })) { st.pick = { cls: c, maxR: bp - 1 }; st.pscroll = 0; } }
+      if (bp) { if (button(x + 376, yy + 2, 72, 13, `BUILD ${RAR[bp - 1].n.slice(0, 4)}`, { font: FS, col: '#1d3a4a', tc: COL.cyan })) { st.bpick = { cls: c, maxR: bp - 1 }; st.pscroll = 0; } }
       else text(`NEXT: UP TO ${RAR[maxR].n}`, x + 376, yy + 5, COL.mute, FS);
     });
   } else if (st.tab === 1) {
@@ -533,7 +533,7 @@ function panelWorkshop(st) {
   }
 }
 function blueprintPicker(st) {
-  const P = st.pick; const x = 14, y = 32;
+  const P = st.bpick; const x = 14, y = 32;
   textO(`BUILD A ${CLS[P.cls].n}: PICK ANY ONE, UP TO ${RAR[P.maxR].n}`, x, y - 2, COL.orange, '#000', FB);
   if (!P.cands) {
     const set = new Set(); for (const pg of PAGES) for (const id of pg.ids) { const d = getDef(id); if (d.cat === 'w' && d.sub === P.cls && d.r <= P.maxR && !owned(id) && d.o.t !== 'boss') set.add(id); }
@@ -542,42 +542,63 @@ function blueprintPicker(st) {
   }
   text('MISSING PIECES FROM YOUR COLLECTION PAGES COME FIRST. HOVER TO PREVIEW', x, y + 10, COL.dim, FS);
   const c = itemGrid(st, P.cands, x, y + 20, W - 28, H - 80, { cw: 40, ch: 24, allOwned: true });
-  if (c && c !== 'NONE') { addItem(c, Math.min(7, Math.max(0, ...[0, 1, 2, 3, 4, 5, 6].filter(tierUnlocked)))); S.bp[P.cls] = 0; st.pick = null; SND.play('reveal', getDef(c).r); toast(`BUILT ${getDef(c).name}`, COL.orange); dirty(); }
-  if (button(x, H - 34, 100, 18, 'CANCEL', { font: FS })) st.pick = null;
+  if (c && c !== 'NONE') { addItem(c, Math.min(7, Math.max(0, ...[0, 1, 2, 3, 4, 5, 6].filter(tierUnlocked)))); S.bp[P.cls] = 0; st.bpick = null; SND.play('reveal', getDef(c).r); toast(`BUILT ${getDef(c).name}`, COL.orange); dirty(); }
+  if (button(x, H - 34, 100, 18, 'CANCEL', { font: FS })) st.bpick = null;
+}
+// your public profile exactly as other pilots see it, with your level, skills, titles and stats beside it
+function myProfile() {
+  const s = S.stats, cr = typeof NET !== 'undefined' && NET.social && NET.social.crew;
+  return {
+    self: true, callsign: S.name || 'NO CALLSIGN', plate: arMyPlate(), title: S.titles.eq, crew: cr ? { tag: cr.tag, name: cr.name } : null, online: true, level: S.lvl, planet: S.planet.reached,
+    stats: { power: shipRating(), items: Object.keys(S.inv).length, kills: s.kills, crates: s.crates, legendaries: s.legendaries, mythics: s.mythics, cosmics: s.cosmics },
+    arena: { trophies: (typeof NET !== 'undefined' && NET.arena && NET.arena.trophies) || 0 }, showcase: topItems(4), loadout: S.eq,
+  };
 }
 function panelProfile(st) {
-  if (panelFrame('TROPHIES & SKILLS', COL.gold)) return;
-  const x = 14, y = 30;
-  textO('LEVEL ' + S.lvl, x, y, COL.cyan, '#000', FB, 0, 2); bar(x, y + 18, 150, 4, S.xp / xpNeed(S.lvl), COL.cyan, COL.void2); text(`${fmt(S.xp)}/${fmt(xpNeed(S.lvl))} XP`, x, y + 25, COL.mute, FS);
-  text(`${S.sp} SKILL POINT${S.sp === 1 ? '' : 'S'}`, x + 150, y + 25, S.sp ? COL.gold : COL.mute, FS, 2);
-  SKILLS.forEach((sk, i) => {
-    const yy = y + 36 + i * 24; const r = S.skills[sk.id];
-    panel(x, yy, 220, 22, { bg: COL.void1, bd: COL.void3, flat: true });
-    text(sk.n, x + 5, yy + 3, COL.ink, FB); text(sk.txt(r), x + 5, yy + 13, COL.dim, FS);
-    for (let k = 0; k < sk.max; k++) rect(x + 90 + k * 6, yy + 4, 5, 4, k < r ? COL.cyan : COL.void3);
-    if (button(x + 196, yy + 4, 20, 14, '+', { disabled: !S.sp || r >= sk.max })) { S.sp--; S.skills[sk.id]++; SND.play('levelup'); dirty(); }
-  });
-  let yy = y + 136;
-  if (S.nova.count > 0) {
-    text(`SUPERNOVA X${S.nova.count}  STARS: ${S.nova.stars}`, x, yy, COL.magenta, FB); yy += 10;
-    NOVA_PERKS.forEach(pk => { const r = S.nova.perks[pk.id]; text(`${pk.n} ${r}/${pk.max}: ${pk.txt(r)}`, x, yy + 2, COL.dim, FS); if (button(x + 196, yy, 20, 11, '+', { font: FS, disabled: !S.nova.stars || r >= pk.max })) { S.nova.stars--; S.nova.perks[pk.id]++; dirty(); } yy += 13; });
+  if (panelFrame('PROFILE', COL.gold)) return;
+  // left: the card other players get when they click your name
+  text('HOW OTHER PILOTS SEE YOU', 14, 29, COL.mute, FS);
+  drawProfileCard(myProfile(), 12, 37, 254, 198, [], S.name);
+  if (arMyPlate()) text('THANK YOU FOR SUPPORTING THE GAME', 139, H - 30, COL.gold, FS, 1);
+  else { const lb = 'GET A SUPPORTER PLATE', lw = textW(lb, FS) + 18; if (button(139 - lw / 2, H - 33, lw, 12, lb, { font: FS, kind: 'outline', tip: 'A GOLD NAMEPLATE EVERYONE SEES. IT HELPS KEEP THE GAME RUNNING' })) { openStation('store'); HUB.ps.store.tab = 4; } ctx.fillStyle = COL.pink; for (const [dx, dy] of [[0, 0], [2, 0], [-1, 1], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [1, 3]]) ctx.fillRect(Math.floor(139 - lw / 2) + 4 + dx, H - 29 + dy, 1, 1); }
+  // right: level, then skills / titles / stats
+  const x = 274, w = W - 14 - x, y = 29;
+  textO('LEVEL ' + S.lvl, x, y, COL.cyan, '#000', FB, 0, 2); bar(x, y + 18, w, 4, S.xp / xpNeed(S.lvl), COL.cyan, COL.void2); text(`${fmt(S.xp)}/${fmt(xpNeed(S.lvl))} XP`, x, y + 25, COL.mute, FS);
+  text(`${S.sp} SKILL POINT${S.sp === 1 ? '' : 'S'}`, x + w, y + 25, S.sp ? COL.gold : COL.mute, FS, 2);
+  st.ptab = tabs(x, y + 35, ['SKILLS' + (S.sp ? ' !' : ''), 'TITLES', 'STATS'], st.ptab || 0, Math.floor(w / 3) - 2);
+  const ty = y + 54;
+  if (st.ptab === 0) {
+    SKILLS.forEach((sk, i) => {
+      const yy = ty + i * 24; const r = S.skills[sk.id];
+      panel(x, yy, w, 22, { bg: COL.void1, bd: COL.void3, flat: true });
+      text(sk.n, x + 5, yy + 3, COL.ink, FB); let tt = sk.txt(r); while (textW(tt, FS) > w - 34) tt = tt.slice(0, -1); text(tt, x + 5, yy + 13, COL.dim, FS);
+      for (let k = 0; k < sk.max; k++) rect(x + 70 + k * 6, yy + 4, 5, 4, k < r ? COL.cyan : COL.void3);
+      if (button(x + w - 22, yy + 4, 18, 14, '+', { disabled: !S.sp || r >= sk.max })) { S.sp--; S.skills[sk.id]++; SND.play('levelup'); dirty(); }
+    });
+    let yy = ty + SKILLS.length * 24 + 4;
+    if (S.nova.count > 0) {
+      text(`SUPERNOVA X${S.nova.count}  STARS: ${S.nova.stars}`, x, yy, COL.magenta, FB); yy += 10;
+      NOVA_PERKS.forEach(pk => { const r = S.nova.perks[pk.id]; let tt = `${pk.n} ${r}/${pk.max}: ${pk.txt(r)}`; while (textW(tt, FS) > w - 26) tt = tt.slice(0, -1); text(tt, x, yy + 2, COL.dim, FS); if (button(x + w - 20, yy, 18, 11, '+', { font: FS, disabled: !S.nova.stars || r >= pk.max })) { S.nova.stars--; S.nova.perks[pk.id]++; dirty(); } yy += 13; });
+    }
+  } else if (st.ptab === 1) {
+    text('CLICK AN EARNED TITLE TO WEAR IT ON YOUR PROFILE', x, ty - 2, COL.mute, FS);
+    const cw = Math.floor((w - 4) / 2);
+    TITLES.forEach((t, i) => {
+      const bx = x + (i % 2) * (cw + 4), by = ty + 8 + Math.floor(i / 2) * 20; const e = S.titles.earned[t.id], eqd = S.titles.eq === t.id; const hov = inBox(bx, by, cw, 18);
+      panel(bx, by, cw, 18, { bg: eqd ? '#3a3010' : hov && e ? COL.void2 : COL.void1, bd: eqd ? COL.gold : e ? COL.line : COL.void3, flat: true });
+      text(e ? t.n : '???', bx + 4, by + 3, e ? (eqd ? COL.gold : COL.ink) : COL.mute, FS); let rq = t.req; while (textW(rq, FS) > cw - 6) rq = rq.slice(0, -1); text(rq, bx + 4, by + 10, COL.mute, FS);
+      if (hov) TIP.set(e ? (eqd ? 'CLICK TO TAKE IT OFF' : 'CLICK TO WEAR THIS TITLE') : t.req);
+      if (hov && e && clickIn(bx, by, cw, 18)) { S.titles.eq = eqd ? null : t.id; SND.play('click'); dirty(); }
+    });
+  } else {
+    const s = S.stats; const lines = [['CRATES OPENED', s.crates], ['ALIENS DEFEATED', s.kills], ['ORE HAULED', s.ore], ['COINS EARNED', s.coinsEarned], ['WRECKS LOOTED', s.wrecks], ['BEST COMBO', 'X' + s.bestCombo], ['ITEMS FOUND', Object.keys(S.inv).length], ['LEGENDARY+', s.legendaries + s.mythics + s.cosmics], ['STAGGERS', s.staggers || 0], ['PERFECT DODGES', s.perfects || 0], ['REACTIONS FOUND', Object.keys(S.reactions || {}).length + '/' + REACT_KEYS.length], ['EVENTS WON', s.events || 0], ['CACHES DUG UP', s.caches || 0], ['DREAMS FOUND', Object.keys(S.inv).filter(isDream).length + '/' + DREAMS.length]];
+    lines.forEach(([k, v], i) => { const cy = ty + i * 9; text(k, x, cy, COL.mute, FS); text(typeof v === 'number' ? fmt(v) : v, x + w, cy, COL.ink, FS, 2); });
+    const cy = ty + lines.length * 9 + 6;
+    text('CALLSIGN', x, cy, COL.mute, FS); text(S.name || 'NOT SET', x, cy + 8, S.name ? COL.cream : COL.mute, FB);
+    if (button(x + Math.max(textW(S.name || 'NOT SET', FB), 40) + 6, cy + 6, 44, 13, S.name ? 'RENAME' : 'SET', { font: FS, kind: 'blue' })) openNameUI(!S.name);
+    if (!st.reset) { if (button(x + w - 70, cy + 6, 70, 13, 'RESET SAVE', { font: FS, col: '#2a0a14', tc: COL.coral })) st.reset = true; }
+    else { panel(x - 4, H - 42, w + 8, 28, { bg: '#1a0610', bd: COL.coral }); text('ERASE EVERYTHING?', x + 2, H - 36, COL.coral, FB); text('THIS CANNOT BE UNDONE', x + 2, H - 25, COL.dim, FS); if (button(x + w - 108, H - 36, 50, 16, 'YES', { font: FS, col: '#5a1020' })) { try { localStorage.removeItem(SAVE_KEY); } catch (e) { } S = newState(); save(); HUB.panel = null; toast('NEW GAME STARTED', COL.mint); } if (button(x + w - 54, H - 36, 50, 16, 'NO', { font: FS })) st.reset = false; }
   }
-  const s = S.stats; const lines = [['CRATES OPENED', s.crates], ['ALIENS DEFEATED', s.kills], ['ORE HAULED', s.ore], ['COINS EARNED', s.coinsEarned], ['WRECKS LOOTED', s.wrecks], ['BEST COMBO', 'X' + s.bestCombo], ['ITEMS FOUND', Object.keys(S.inv).length], ['LEGENDARY+', s.legendaries + s.mythics + s.cosmics], ['STAGGERS', s.staggers || 0], ['PERFECT DODGES', s.perfects || 0], ['REACTIONS FOUND', Object.keys(S.reactions || {}).length + '/' + REACT_KEYS.length], ['EVENTS WON', s.events || 0], ['CACHES DUG UP', s.caches || 0], ['DREAMS FOUND', Object.keys(S.inv).filter(isDream).length + '/' + DREAMS.length]];
-  yy = Math.max(yy + 4, 196); lines.forEach(([k, v], i) => { const cx = x + (i % 2) * 112, cy = yy + Math.floor(i / 2) * 9; text(k, cx, cy, COL.mute, FS); text(typeof v === 'number' ? fmt(v) : v, cx + 106, cy, COL.ink, FS, 2); });
-  // titles
-  const tx = 250; text('TITLES', tx, y, COL.gold, FB); text('CLICK AN EARNED TITLE TO WEAR IT', tx + 50, y + 1, COL.mute, FS);
-  TITLES.forEach((t, i) => {
-    const bx = tx + (i % 2) * 108, by = y + 12 + Math.floor(i / 2) * 22; const e = S.titles.earned[t.id], eqd = S.titles.eq === t.id; const hov = inBox(bx, by, 104, 20);
-    panel(bx, by, 104, 20, { bg: eqd ? '#3a3010' : COL.void1, bd: eqd ? COL.gold : e ? COL.line : COL.void3, flat: true });
-    text(e ? t.n : '???', bx + 4, by + 3, e ? (eqd ? COL.gold : COL.ink) : COL.mute, FS); let rq = t.req; while (textW(rq, FS) > 98) rq = rq.slice(0, -1); text(rq, bx + 4, by + 11, COL.mute, FS);
-    if (hov && e && clickIn(bx, by, 104, 20)) { S.titles.eq = eqd ? null : t.id; SND.play('click'); dirty(); }
-  });
-  // callsign
-  text('CALLSIGN', 250, H - 38, COL.mute, FS); text(S.name || 'NOT SET', 250, H - 30, S.name ? COL.cream : COL.mute, FB);
-  if (button(250 + Math.max(textW(S.name || 'NOT SET', FB), 40) + 6, H - 32, 44, 13, S.name ? 'RENAME' : 'SET', { font: FS, kind: 'blue' })) openNameUI(!S.name);
-  // reset
-  if (!st.reset) { if (button(W - 96, H - 30, 80, 14, 'RESET SAVE', { font: FS, col: '#2a0a14', tc: COL.coral })) st.reset = true; }
-  else { panel(236, H - 40, W - 250, 28, { bg: '#1a0610', bd: COL.coral }); text('ERASE EVERYTHING?', 244, H - 34, COL.coral, FB); text('THIS CANNOT BE UNDONE', 244, H - 23, COL.dim, FS); if (button(W - 124, H - 34, 50, 16, 'YES', { font: FS, col: '#5a1020' })) { try { localStorage.removeItem(SAVE_KEY); } catch (e) { } S = newState(); save(); HUB.panel = null; toast('NEW GAME STARTED', COL.mint); } if (button(W - 70, H - 34, 50, 16, 'NO', { font: FS })) st.reset = false; }
 }
 function panelMining(st) {
   if (panelFrame('MINING OFFICE', COL.mint, true)) return;
@@ -592,7 +613,7 @@ function panelMining(st) {
     const bx = x + (i % 2) * 226, by = y + 30 + Math.floor(i / 2) * 36; const id = S.miners.slots[p]; const sel = st.mslot === p;
     panel(bx, by, 222, 34, { bg: sel ? COL.void3 : COL.void1, bd: sel ? COL.mint : COL.void3, flat: true });
     text(planetDef(p).name, bx + 4, by + 3, COL.ink, FS); text(`ORE: ${planetDef(p).ore[0]}`, bx + 4, by + 11, COL.mute, FS);
-    if (id) { drawItemIn(id, bx + 100, by + 3, 26, 26, { maxSc: 1 }); text(`${fmt(minerRate(id, p))}/MIN`, bx + 130, by + 6, COL.mint, FS); text(`${fmt(S.miners.acc[p] || 0)} READY`, bx + 130, by + 16, COL.gold, FS); }
+    if (id) { drawItemIn(id, bx + 100, by + 3, 26, 26, { maxSc: 1 }); text(`${fmt(Math.round(minerRate(id, p)))}/MIN`, bx + 130, by + 6, COL.mint, FS); text(`${fmt(S.miners.acc[p] || 0)} READY`, bx + 130, by + 16, COL.gold, FS); }
     else text('EMPTY SLOT', bx + 110, by + 12, COL.gold, FS);
     if (clickIn(bx, by, 222, 34)) { st.mslot = p; SND.play('click'); }
   });

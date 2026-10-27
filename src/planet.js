@@ -163,7 +163,7 @@ function startRun(pi, opt = {}) {
   w.hpMul = 1.35 * Math.pow(1.21, pi - 1) * (1 + S.nova.count * 0.6); w.dmgMul = 1.2 * Math.pow(1.13, pi - 1) * (1 + S.nova.count * 0.4);
   w.crit = L.crit; w.comboMax = L.combo;
   w.moveMul = p.trait === 'LOW GRAVITY' ? 1.22 : p.trait === 'HEAVY GRAVITY' ? 0.8 : 1; w.slippery = p.trait === 'LOW GRAVITY';
-  if (S.eq.killfx) { const kd = getDef(S.eq.killfx); const kp = itemPal(kd); w.killfx = { style: kd.style, cols: [hex(kp.P[3]), hex(kp.G[3]), hex(kp.S[3]), '#fff'] }; }
+  if (S.eq.killfx) { const kd = getDef(S.eq.killfx); const kp = itemPal(kd); w.killfx = { r: kd.r, style: kd.style, cols: [hex(kp.P[3]), hex(kp.G[3]), hex(kp.S[3]), '#fff'] }; }
   w.solid = (x, y) => map.solidP(x, y);
   w.collide = ent => collideMap(map, ent, w);
   const pl = makePlayer(map.shipX, map.shipY + 26, L); w.player = pl;
@@ -269,7 +269,7 @@ function onRunKill(e) {
     if (!e.nest) { w.combo = (w.comboT > 0 ? w.combo + 1 : 1); w.comboT = w.comboMax; }
     const mult = Math.min(10, 1 + Math.floor(w.combo / 3));
     R.bestCombo = Math.max(R.bestCombo, mult);
-    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * mult * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN);
+    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * comboPay(mult) * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN);
     R.coins += val; R.kills++; R.xp += e.xp; passXP(e.elite ? 80 : e.nest ? 30 : 4);
     for (let i = 0; i < Math.min(6, 1 + (val >> 2)); i++) R.chunks.push({ x: e.x, y: e.y - 4, vx: (R0() - 0.5) * 120, vy: -R0() * 100, t: 0, coin: true, delay: 0.25 + R0() * 0.2 });
     if (pl.perks.sprint) pl.sprintT = 1.2;
@@ -575,10 +575,13 @@ function drawRun() {
   if (R.choice) drawChoiceOverlay();
 }
 const TRAIL_PAT = { heart: '#.#|###|.#.', note: '.##|.#.|.#.|##.', star: '.#.|###|.#.', leaf: '.##|###|#..', bolt: '..#|.#.|###|.#.|#..', flake: '#.#|.#.|#.#', spark4: '..#..|..#..|##.##|..#..|..#..' };
+Object.assign(TRAIL_PAT, EXTRA_PAT);
 function trailFx(w, pl, d) {
   const pal = itemPal(d, Math.floor(T_NOW * 8) % 8); const c = [hex(pal.P[3]), hex(pal.G[3]), hex(pal.S[4] || pal.S[3])];
   const x = pl.x + (R0() - 0.5) * 6, y = pl.y - 2, L = (S.inv[d.id] && S.inv[d.id].l) || 1, big = L >= 6 ? 1 : 0;
   const pick = () => c[R0.int(3)];
+  trailFlair(w, x, y, d.r);
+  if (PC_TRAIL[d.style]) return PC_TRAIL[d.style](w, x, y, pl, c, big);
   switch (d.style) {
     case 'SPARKLES': w.fx.add({ x, y: y - 4 - R0() * 8, vx: 0, vy: -4, life: 0.7, c: R0() < 0.4 ? '#fff' : pick(), t: 'pat', pat: big && R0() < 0.3 ? TRAIL_PAT.spark4 : TRAIL_PAT.star, drag: 1 }); break;
     case 'FLAMES': for (let i = 0; i < 1 + big; i++) w.fx.add({ x: x + (R0() - 0.5) * 3, y, vx: (R0() - 0.5) * 6, vy: -26 - R0() * 10, life: 0.45, c: R0() < 0.4 ? '#ffd54a' : R0() < 0.5 ? '#ff7a2e' : c[1], s: 3, t: 'shrink', drag: 1.5 }); break;

@@ -8,15 +8,16 @@ function palOfItem(id, skinId) {
   if (!id) return makePal(220, 0.15, 0.7, { gh: 190 });
   const d = getDef(id);
   if (skinId) { const k = getDef(skinId); return makePal(k.ph, k.ps, k.pl, { h2: k.h2, gh: d.gh, A: METALS[k.metal](), dh: k.ph }); }
-  return makePal(d.ph, d.ps, d.pl, { h2: d.h2, gh: d.gh, A: METALS[d.metal](), dh: d.ph });
+  return makePal(d.ph, d.ps * rarityTone(d), d.pl, { h2: d.h2, gh: d.gh, A: METALS[d.metal](), dh: d.ph });
 }
-function patOfSkin(skinId) { if (!skinId) return null; const k = getDef(skinId); return patternFn(k.pat, k.seed, 0); }
+function patOfSkin(skinId, t = 0) { if (!skinId) return null; const k = getDef(skinId); return patternFn(k.pat, k.seed, t); }
+const skinAnimates = id => { if (!id) return false; const k = getDef(id); return !!(k.pat && PC_PAT[k.pat] && PC_PAT[k.pat].anim) || k.pat === 'HOLO' || k.pat === 'FLAME'; };
 
 // ---------- astronaut ----------
 const ASTRO = new Map();
 function astroLook(eq) { return [eq.helmet, eq.chest, eq.boots, eq.jetpack, eq.skin_armor, eq.eyewear, eq.headgear, eq.back].join(','); }
 // cosmetics animate: a 4-step loop shared by everything on screen
-const cosAF = eq => (eq.back || eq.headgear || eq.eyewear) ? Math.floor(T_NOW * 5) % 4 : 0;
+const cosAF = eq => (eq.back || eq.headgear || eq.eyewear || skinAnimates(eq.skin_armor) || armorAnimates(eq)) ? Math.floor(T_NOW * 5) % 4 : 0;
 function astroSprite(eq, dir, fr) {
   const af = cosAF(eq);
   const key = astroLook(eq) + '|' + dir + '|' + fr + '|' + af;
@@ -30,8 +31,8 @@ function astroSprite(eq, dir, fr) {
   const ox = 2, oy = 6, bob = (fr === 1 || fr === 3) ? 1 : 0;
   const L = [];
   // back item behind
-  if (eq.back && dir !== 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr, af); L.push([g, palOfItem(eq.back)]); }
-  else if (eq.back && dir === 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, 0, ox, oy + bob, fr, af); L.push([g, palOfItem(eq.back)]); }
+  if (eq.back && dir !== 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, dir, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); L.push([g, palOfItem(eq.back)]); }
+  else if (eq.back && dir === 0) { const g = new Spr(20, 26); drawBackOnChar(g, getDef(eq.back).style, 0, ox, oy + bob, fr, af); cosSparkle(g, getDef(eq.back).r, af); L.push([g, palOfItem(eq.back)]); }
   const g = new Spr(20, 26);
   const legA = fr === 1 ? -1 : fr === 3 ? 1 : 0;
   const by = oy + bob;
@@ -55,9 +56,10 @@ function astroSprite(eq, dir, fr) {
     g.ell(ox + 5, by + 6, 2, 2.4, M.G); g.set(ox + 4, by + 5, M.W);
     g.rect(ox + 6, by + 11, 2, 4, M.P, 1); g.set(ox + 6, by + 14, M.W);
   }
-  L.push([g, body, patOfSkin(sk)]);
-  if (eq.headgear) { const h = new Spr(20, 26); drawHeadOnChar(h, getDef(eq.headgear).style, dir, ox, by, af); L.push([h, palOfItem(eq.headgear)]); }
-  if (eq.eyewear && dir !== 1) { const e = new Spr(20, 26); drawEyesOnChar(e, getDef(eq.eyewear).style, dir, ox, by, af); L.push([e, palOfItem(eq.eyewear)]); }
+  L.push([g, body, patOfSkin(sk, af / 4)]);
+  armorDetailLayers(L, eq, dir, ox, oy, by, legA, af);
+  if (eq.headgear) { const h = new Spr(20, 26); drawHeadOnChar(h, getDef(eq.headgear).style, dir, ox, by, af); cosSparkle(h, getDef(eq.headgear).r, af); L.push([h, palOfItem(eq.headgear)]); }
+  if (eq.eyewear && dir !== 1) { const e = new Spr(20, 26); drawEyesOnChar(e, getDef(eq.eyewear).style, dir, ox, by, af); cosSparkle(e, getDef(eq.eyewear).r, af); L.push([e, palOfItem(eq.eyewear)]); }
   c = layerCanvas(20, 26, L);
   if (mirror) { const m = mkCanvas(20, 26); m.x.translate(20, 0); m.x.scale(-1, 1); m.x.drawImage(c, 0, 0); c = m; }
   ASTRO.set(key, c); if (ASTRO.size > 700) ASTRO.delete(ASTRO.keys().next().value);
@@ -65,6 +67,7 @@ function astroSprite(eq, dir, fr) {
 }
 function drawEyesOnChar(g, st, dir, ox, by, af = 0) {
   const y = by + 5;
+  if (PC_EYES[st]) return PC_EYES[st](g, dir, ox, y, af);
   if (dir === 0) {
     switch (st) {
       case 'PIXEL SHADES': g.rect(ox + 4, y, 8, 1, M.D); g.rect(ox + 4, y + 1, 3, 1, M.D); g.rect(ox + 9, y + 1, 3, 1, M.D); g.set(ox + 5 + (af % 2) * 4, y + 1, M.W); break;
@@ -80,6 +83,7 @@ function drawEyesOnChar(g, st, dir, ox, by, af = 0) {
 }
 function drawHeadOnChar(g, st, dir, ox, by, af = 0) {
   const cx = ox + (dir === 2 ? 7 : dir === 3 ? 8 : 8), top = by + 1;
+  if (PC_HEAD[st]) return PC_HEAD[st](g, dir, cx, top, af);
   const tw = [0, 1, 0, -1][af];
   switch (st) {
     case 'CAP': g.ell(cx, top + 1, 4, 2, M.P); g.rect(cx - 4, top + 2, 9, 1, M.P); if (dir === 0) g.rect(cx - 3, top + 3, 7, 1, M.S); else if (dir >= 2) g.rect(dir === 2 ? cx - 6 : cx + 3, top + 2, 3, 1, M.S); g.set(cx - 3 + af * 2, top, M.W); break;
@@ -102,6 +106,7 @@ function drawHeadOnChar(g, st, dir, ox, by, af = 0) {
 }
 function drawBackOnChar(g, st, dir, ox, by, fr, af = 0) {
   const cx = ox + 8, y = by + 9, sw = (fr === 1 || fr === 3 ? 1 : 0), fl = [0, 1, 2, 1][af], wv = [0, 1, 0, -1][af];
+  if (PC_BACK[st]) return PC_BACK[st](g, dir, cx, y, sw, af);
   if (dir === 0) { // peeking out from behind
     if (st === 'WINGS' || st === 'MECH WINGS' || st === 'BAT WINGS' || st === 'FAIRY WINGS' || st === 'SOLAR PANELS') { const m = st === 'FAIRY WINGS' ? M.G : M.P; g.poly([[cx - 6, y + 1], [cx - 9 - (fl > 1 ? 1 : 0), y - 4 - sw - fl], [cx - 8, y + 4]], m); g.poly([[cx + 6, y + 1], [cx + 9 + (fl > 1 ? 1 : 0), y - 4 - sw - fl], [cx + 8, y + 4]], m); if (st === 'FAIRY WINGS' && af === 1) { g.set(cx - 10, y - 6, M.W); g.set(cx + 10, y - 6, M.W); } }
     else if (st === 'CAPE') { g.rect(cx - 6 - (af === 2 ? 1 : 0), y + 2, 2, 7, M.P); g.rect(cx + 5 + (af === 2 ? 1 : 0), y + 2, 2, 7, M.P); }
@@ -130,9 +135,9 @@ function drawBackOnChar(g, st, dir, ox, by, fr, af = 0) {
 // ---------- ship composite (48x32, facing right) ----------
 const SHIPS = new Map();
 function shipSprite(eq) {
-  const key = SLOTS_SHIP.map(s => eq[s]).join(',') + eq.skin_ship;
+  const sk = eq.skin_ship, sf = skinAnimates(sk) ? Math.floor(T_NOW * 8) % 8 : 0;
+  const key = SLOTS_SHIP.map(s => eq[s]).join(',') + sk + '|' + sf;
   let c = SHIPS.get(key); if (c) return c;
-  const sk = eq.skin_ship;
   const ph = palOfItem(eq.hull, sk), pe = palOfItem(eq.engine), pc = palOfItem(eq.cargo, sk), ps = palOfItem(eq.scanner), psh = palOfItem(eq.shield);
   const rh = RNG(eq.hull ? getDef(eq.hull).seed : 1), re = RNG(eq.engine ? getDef(eq.engine).seed : 2), rc = RNG(eq.cargo ? getDef(eq.cargo).seed : 3), rs = RNG(eq.scanner ? getDef(eq.scanner).seed : 4);
   const hr = eq.hull ? getDef(eq.hull).r : 0, er = eq.engine ? getDef(eq.engine).r : 0, cr = eq.cargo ? getDef(eq.cargo).r : 0;
@@ -148,7 +153,7 @@ function shipSprite(eq) {
   const gc = new Spr(48, 32); const cl = 10 + cr * 2 + rc.int(4);
   if (rc.chance(0.5)) { gc.rect(13, 21, cl, 6, M.P); for (let x = 16; x < 13 + cl; x += 4) gc.rect(x, 21, 1, 6, M.S); gc.set(13 + cl - 2, 23, M.G); }
   else { gc.rect(14, 4, cl - 2, 5, M.P); gc.rect(14, 23, cl - 2, 5, M.P); gc.set(15, 6, M.G); gc.set(15, 25, M.G); }
-  L.push([gc, pc, patOfSkin(sk)]);
+  L.push([gc, pc, patOfSkin(sk, sf / 8)]);
   // hull
   const gh = new Spr(48, 32); const nose = 38 + Math.min(8, hr + rh.int(3)), bh = 5 + rh.int(2) + Math.floor(hr / 3);
   gh.poly([[9, 16 - bh], [30, 16 - bh - 1], [nose, 15], [nose, 17], [30, 16 + bh + 1], [9, 16 + bh]], M.P);
@@ -159,7 +164,7 @@ function shipSprite(eq) {
   gh.ell(31, 15, 4.5, 2.4, M.G); gh.set(29, 14, M.W); gh.set(30, 14, M.W);
   gh.rect(12, 16, 16, 1, M.S, -1);
   if (hr >= 4) { gh.rect(nose - 6, 15, 5, 1, M.A); }
-  L.push([gh, ph, patOfSkin(sk)]);
+  L.push([gh, ph, patOfSkin(sk, sf / 8)]);
   // scanner
   const gs = new Spr(48, 32); const sx = 24 + rs.int(4);
   gs.line(sx, 16 - bh - 1, sx, 16 - bh - 5, M.A); for (let x = -3; x <= 3; x++) gs.set(sx + x, 16 - bh - 6 + Math.round(x * x * 0.25), M.P); gs.set(sx, 16 - bh - 6, M.G);
@@ -169,7 +174,7 @@ function shipSprite(eq) {
   L.push([gsh, psh]);
   c = layerCanvas(48, 32, L);
   c.shieldCol = hex(psh.G[3]); c.flameCol = [hex(pe.G[4]), hex(pe.G[3]), hex(pe.G[2])]; c.ys = ys; c.nose = nose;
-  SHIPS.set(key, c); if (SHIPS.size > 30) SHIPS.delete(SHIPS.keys().next().value);
+  SHIPS.set(key, c); if (SHIPS.size > 60) SHIPS.delete(SHIPS.keys().next().value);
   return c;
 }
 function drawShip(eq, x, y, sc = 1, t = 0, o = {}) {

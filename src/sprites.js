@@ -72,6 +72,7 @@ const METALS = { steel: () => ramp(222, 0.1, 0.6), gold: () => ramp(44, 0.88, 0.
 
 // skin patterns: return [material, shadeDelta]
 function patternFn(name, seed, t = 0) {
+  if (typeof PC_PAT !== 'undefined' && PC_PAT[name]) return PC_PAT[name].fn(seed, t);
   const nz = makeNoise(seed);
   const r = RNG(seed);
   switch (name) {
@@ -103,7 +104,7 @@ function renderSpr(g, pal, pat) {
     else {
       let mat = m, sh = g.s[i];
       if (pat) { const r = pat(x, y, mat, sh); mat = r[0]; sh = r[1]; }
-      const rp = mat === M.P ? pal.P : mat === M.S ? pal.S : mat === M.A ? pal.A : mat === M.G ? pal.G : mat === M.D ? pal.D : pal.Wr;
+      const rp = mat === M.P ? pal.P : mat === M.S ? pal.S : mat === M.A ? pal.A : (mat === M.G || mat === 8) ? pal.G : mat === M.D ? pal.D : pal.Wr;
       col = rp[clamp(2 + sh, 0, 4)];
     }
     const o = i * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
@@ -247,7 +248,7 @@ function embellish(g, r, R, b) {
 }
 // half-size version for the gun in your hand: majority material per 2x2 block, then re-shade and re-outline
 function shrinkGrid(src) {
-  const w = src.w >> 1, h = src.h >> 1, g = new Spr(w, h); const pri = { 5: 6, 7: 5, 4: 4, 2: 3, 3: 2, 6: 1 };
+  const w = src.w >> 1, h = src.h >> 1, g = new Spr(w, h); const pri = { 8: 7, 5: 6, 7: 5, 4: 4, 2: 3, 3: 2, 6: 1 };
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const cnt = {}; let n = 0;
     for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const m = src.get(x * 2 + dx, y * 2 + dy); if (m > 1) { cnt[m] = (cnt[m] || 0) + 1; n++; } }

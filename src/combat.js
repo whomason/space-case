@@ -28,6 +28,7 @@ function makeShot(w, pl, W, a, o = {}) {
     bounce: W.v.bounce || 0, child: !!o.child, aoe: W.aoe || 0, phase: 0, travel: 0, rng: o.rng || W.rng,
   };
   if (!o.child) { s.W = W; s.sig = W.sig || null; }
+  s.rar = W.id ? getDef(W.id).r : 0;
   if (s.v.orbit && !o.child) { s.orbitT = 0.55 + 0.1 * s.v.orbit; s.oa = a + Math.PI; s.orbitR = 14; }
   if (s.v.burrow && !o.child) { s.burrow = true; s.burrowT = Math.min(s.life * 0.7, 0.9); }
   if (s.v.spiral) { s.spin = (R0() < 0.5 ? -1 : 1) * 6; }
@@ -212,7 +213,7 @@ function killEnemy(w, e) {
   if (e.dead || e.pvp || e.ghost) return; e.dead = true;
   const kc = w.killfx; const cols = kc ? kc.cols : ['#fff', e.col || '#9f9', e.col2 || '#ff9'];
   const st = kc ? kc.style : 'PIXEL POP';
-  burstKill(w, e.x, e.y - 3, st, cols, e.boss ? 3 : e.elite ? 2 : 1);
+  burstKill(w, e.x, e.y - 3, st, cols, e.boss ? 3 : e.elite ? 2 : 1); if (kc && kc.r >= 4) killFlair(w.fx, e.x, e.y - 3, kc.r, e.boss ? 3 : e.elite ? 2 : 1);
   if (e.poison > 0) for (const o of w.ents) if (!o.dead && o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 45) { o.poison = 3; o.poisonDps = Math.max(o.poisonDps || 0, e.poisonDps || 1); w.fx.burst(o.x, o.y, 4, { c: '#8cff3a', sp: 40 }); }
   if (e.sticky) explode(w, e.x, e.y, 24, e.sticky.dmg, e.sticky.W.col);
   if (e.boss) { w.bw = null; for (const o of w.ents) if (o.owner === e && !o.dead) { o.dead = true; w.fx.burst(o.x, o.y - 6, 10, { c: [o.col || '#fff', '#fff'], sp: 70 }); } }
@@ -230,6 +231,7 @@ function killEnemy(w, e) {
 }
 function burstKill(w, x, y, st, cols, big = 1) {
   const F = w.fx;
+  if (PC_KILL[st]) return PC_KILL[st](F, x, y, cols, big);
   switch (st) {
     case 'CONFETTI': for (let i = 0; i < 18 * big; i++) F.add({ x, y, vx: (R0() - 0.5) * 140, vy: -R0() * 120, g: 200, life: 0.9, c: rainbow(R0() * 3, i * 40), s: 1, drag: 1.5 }); break;
     case 'GHOSTS': for (let i = 0; i < 2 * big; i++) F.add({ x: x + (R0() - 0.5) * 10, y, vx: (R0() - 0.5) * 10, vy: -25, life: 1.1, c: '#fff', s: 3, t: 'fade', drag: 0.5 }); break;
@@ -252,7 +254,7 @@ function applyElement(w, e, W, dmg, o) {
   if (e.dead) return;
   switch (el) {
     case 'plasma': e.burn = 2; e.burnDps = Math.max(e.burnDps || 0, dmg * 0.4 * pow); break;
-    case 'cryo': e.slow = 1.5; e.chill = (e.chill || 0) + 0.35 * pow; if (e.chill >= 1 && !e.boss) { e.freeze = 1; e.chill = 0.5; wsnd(w, 'freeze'); w.fx.burst(e.x, e.y, 6, { c: ['#bff6ff', '#7fe9ff'], sp: 40 }); } break;
+    case 'cryo': e.slow = 1.5; e.chill = (e.chill || 0) + 0.35 * pow; if (e.chill >= 1 && !e.boss) { if (!(e.freeze > 0)) iceBurst(w, e.x, e.y - 6); e.freeze = 1; e.chill = 0.5; wsnd(w, 'freeze'); w.fx.burst(e.x, e.y, 6, { c: ['#bff6ff', '#7fe9ff'], sp: 40 }); } break;
     case 'arc': e.shock = 1.6; if (R0() < 0.6) chainZap(w, e, dmg * 0.35 * pow, 1 + Math.floor(pow * 1.5), ARC_COL, true); break;
     case 'void': e.vmark = 2.5; if (R0() < 0.35) w.pulls.push({ x: e.x, y: e.y, r: 34 + 14 * pow, str: 70 * pow, t: 0.3, col: '#b45cff' }); break;
     case 'toxin': e.poison = 3; e.poisonDps = Math.max(e.poisonDps || 0, dmg * 0.3 * pow); break;
@@ -428,7 +430,7 @@ function updateEnemies(w, dt) {
     e.dotAcc = (e.dotAcc || 0) + dt;
     if (e.dotAcc >= 0.25) { const dps = (e.burn > 0 ? e.burnDps : 0) + (e.poison > 0 ? e.poisonDps : 0); e.dotAcc = 0; if (dps > 0) damageEnemy(w, e, dps * 0.25, { quiet: true, col: e.burn > 0 ? '#ff9a3d' : '#8cff3a' }); if (e.dead) continue; }
     if (e.sticky) { e.sticky.t -= dt; if (e.sticky.t <= 0) { const st = e.sticky; e.sticky = null; explode(w, e.x, e.y, 26, st.dmg, st.W.col); if (e.dead) continue; } }
-    if (e.freeze > 0) { e.freeze -= dt; e.kx *= 0.8; e.ky *= 0.8; e.x += e.kx * dt; e.y += e.ky * dt; continue; }
+    if (e.freeze > 0) { e.freeze -= dt; if (e.freeze <= 0) iceBurst(w, e.x, e.y - 6, e.elite ? 2 : 1); e.kx *= 0.8; e.ky *= 0.8; e.x += e.kx * dt; e.y += e.ky * dt; continue; }
     if (e.stun > 0) { e.stun -= dt; e.kx *= 0.85; e.ky *= 0.85; e.x += e.kx * dt; e.y += e.ky * dt; if (w.collide) w.collide(e); continue; }
     if (e.dummy) continue;
     const slowK = (e.warp > 0 ? 0.3 : 1) * (e.slow > 0 ? 0.55 : 1); if (e.slow > 0) e.slow -= dt; if (e.warp > 0) e.warp -= dt;
@@ -562,6 +564,7 @@ function drawShots(w, ox, oy) {
   for (const s of w.shots) {
     if (s.burrow) continue;
     const x = s.x - ox, y = s.y - oy; const c = s.col;
+    if (s.rar >= 4 && w.fx && R0() < (s.rar - 3) * 0.25) w.fx.add({ x: s.x, y: s.y, vx: (R0() - 0.5) * 10, vy: (R0() - 0.5) * 10, life: 0.25, c: s.rar === 6 ? rainbow(T_NOW, s.t * 900) : R0() < 0.5 ? c.core : c.mid, s: 1, t: 'fade', drag: 2 });
     if (s.solar || s.zeus || s.forceCrit) { ctx.globalAlpha = 0.4; circ(x, y, 4, s.solar ? '#fca311' : s.zeus ? '#fff25a' : '#fff'); ctx.globalAlpha = 1; }
     if (s.stuck) { rect(x - 1, y - 1, 3, 3, (Math.floor(T_NOW * 20) % 2) ? '#fff' : c.mid); continue; }
     switch (s.kind) {
@@ -634,6 +637,7 @@ function drawEnemy(w, e, ox, oy) {
   if (e.flash > 0 && !e.boss) ctx.scale(1.14, 0.88);
   if (winding && Math.floor(T_NOW * 30) % 2) ctx.translate(1, 0);
   ctx.drawImage(spr, -Math.floor(sw / 2), -sh + 2, sw, sh);
+  if (e.freeze > 0) drawIceOn(e, spr, -Math.floor(sw / 2), -sh + 2, sw, sh);
   if (winding && Math.floor(T_NOW * 12) % 2) { ctx.globalAlpha = 0.55; ctx.drawImage(maskOf(spr, '#fff2a0'), -Math.floor(sw / 2), -sh + 2, sw, sh); ctx.globalAlpha = 1; }
   if (e.armored && !e.boss && !(e.stun > 0)) {   // a steel shell over the front half that follows the body's outline
     const fx0 = Math.floor(sw * 0.05), fw = Math.ceil(sw / 2) - fx0;
@@ -643,7 +647,7 @@ function drawEnemy(w, e, ox, oy) {
     ctx.restore(); ctx.globalAlpha = 1;
   }
   ctx.restore();
-  if (e.freeze > 0) { ctx.globalAlpha = 0.5; rect(x - sw / 2, y - sh + 2, sw, sh - 2, '#9fefff'); ctx.globalAlpha = 1; }
+  if (e.freeze > 0) iceWorldFx(w, e, x, y, sw, sh);
   if (e.boss && e.kit) drawBossExtra(w, e, x, y); else drawFoeExtra(w, e, x, y, sh);
   if (winding) { const by = y - sh - 10 + Math.round(Math.sin(T_NOW * 16)); rect(x - 1, by, 3, 6, '#fff2a0'); rect(x - 1, by + 7, 3, 2, '#fff2a0'); if (e.boss || e.elite) text('HIT IT!', x, by - 8, '#fff2a0', FS, 1); }
   if (e.stun > 0) for (let i = 0; i < 3; i++) { const a = T_NOW * 6 + i * TAU / 3; px(x + Math.cos(a) * (sw * 0.4 + 2), y - sh - 2 + Math.sin(a) * 2, i ? COL.gold : '#fff'); }
@@ -656,9 +660,9 @@ function drawEnemy(w, e, ox, oy) {
 }
 function cosmeticAura(fx, x, y, eq) {
   for (const [sl, oy] of [['eyewear', 20], ['headgear', 26], ['back', 14]]) {
-    const id = eq[sl]; if (!id || !S.inv[id]) continue; const L = S.inv[id].l; if (L < 3) continue;
-    const ch = L >= 10 ? 0.22 : L >= 6 ? 0.12 : 0.05; if (R0() > ch) continue;
-    const pal = itemPal(getDef(id)); const c = L >= 10 ? rainbow(T_NOW, R0() * 360) : hex(pal.G[3]);
+    const id = eq[sl]; if (!id) continue; const L = S.inv[id] ? S.inv[id].l : 1, rr = getDef(id).r; if (L < 3 && rr < 4) continue;
+    const ch = Math.max(L >= 10 ? 0.22 : L >= 6 ? 0.12 : L >= 3 ? 0.05 : 0, [0, 0, 0, 0, 0.05, 0.1, 0.16][rr]); if (R0() > ch) continue;
+    const pal = itemPal(getDef(id)); const c = L >= 10 || rr === 6 ? rainbow(T_NOW, R0() * 360) : R0() < 0.3 ? '#ffffff' : hex(pal.G[3]);
     fx.add({ x: x + (R0() - 0.5) * 12, y: y - oy + (R0() - 0.5) * 6, vx: (R0() - 0.5) * 8, vy: -10 - R0() * 10, life: 0.7, c, s: 1, t: L >= 6 ? 'px' : 'fade' });
   }
 }
@@ -689,7 +693,7 @@ function updatePlayer(w, pl, inp, dt, L) {
   }
   if (pl.boostT > 0) {
     pl.boostT -= dt; pl.vx = pl.bvx; pl.vy = pl.bvy;
-    for (let i = 0; i < 3; i++) w.fx.add({ x: pl.x - Math.cos(Math.atan2(pl.bvy, pl.bvx)) * 6 + (R0() - 0.5) * 4, y: pl.y - 6 + (R0() - 0.5) * 4, vx: -pl.bvx * 0.2 + (R0() - 0.5) * 30, vy: -pl.bvy * 0.2 + (R0() - 0.5) * 30, life: 0.3, c: R0() < 0.5 ? '#fca311' : '#ff7a2e', s: 2, t: 'shrink' });
+    for (let i = 0; i < 3; i++) w.fx.add({ x: pl.x - Math.cos(Math.atan2(pl.bvy, pl.bvx)) * 6 + (R0() - 0.5) * 4, y: pl.y - 6 + (R0() - 0.5) * 4, vx: -pl.bvx * 0.2 + (R0() - 0.5) * 30, vy: -pl.bvy * 0.2 + (R0() - 0.5) * 30, life: 0.3, c: pl.jetCol ? pl.jetCol[R0() < 0.5 ? 0 : 1] : R0() < 0.5 ? '#fca311' : '#ff7a2e', s: 2, t: 'shrink' });
     if (pl.perks.blastoff || sa[2]) for (const e of w.ents) if (!e.dead && Math.hypot(e.x - pl.x, e.y - pl.y) < e.r + 9 && !(e.boostHit > w.t)) { e.boostHit = w.t + 0.3; damageEnemy(w, e, (pl.W ? pl.W.dmg : 10) * 2, {}); if (sa[2] && !e.boss) { e.stun = Math.max(e.stun || 0, sa[2] > 1 ? 2 : 1.2); e.kx += pl.bvx * 0.8; e.ky += pl.bvy * 0.8; w.fx.text(e.x, e.y - 16, 'BONK', COL.gold, { f: FS, life: 0.5 }); } }
     if (sa[6] && R0() < 0.7 && w.hazards.length < 70) w.hazards.push({ x: pl.x, y: pl.y + 2, r: 9, t: sa[6] > 1 ? 3 : 2, dps: (pl.W ? pl.W.dmg : 10) * 1.2, el: 'plasma', col: '#ff9a3d', kind: 'fire' });
   } else {
@@ -722,9 +726,12 @@ function drawPlayer(w, pl, ox, oy, eq, opt = {}) {
     const s = pl.mode === 'tool' ? (skin ? getSkinnedSpr(id, skin) : getItemSpr(id)) : getHeldSpr(id, skin);
     const img = frameOf(s); if (pl.mode !== 'tool') pl.gunLen = s.w;
     const a = pl.aim, flip = Math.cos(a) < 0;
-    ctx.save(); ctx.translate(x + Math.cos(a) * (3 - pl.recoil), y - 8 + Math.sin(a) * 3); ctx.rotate(a); if (flip) ctx.scale(1, -1);
+    const gx = x + Math.cos(a) * (3 - pl.recoil), gy = y - 8 + Math.sin(a) * 3, d = getDef(id);
+    ctx.save(); ctx.translate(gx, gy); ctx.rotate(a); if (flip) ctx.scale(1, -1);
+    if (pl.mode !== 'tool') drawHeldGlow(d, img, -3, -Math.floor(s.h / 2));
     ctx.drawImage(img, pl.mode === 'tool' ? -4 : -3, -Math.floor(s.h / 2));
     ctx.restore();
+    if (pl.mode !== 'tool' && !opt.noFx) heldFx(w, d, pl.x + Math.cos(a) * (s.w - 2), pl.y - 8 + Math.sin(a) * (s.w - 2), a);
   };
   const behind = pl.dir === 1;
   if (pl.pet && pl.petY !== undefined && pl.petY < pl.y) drawPetWorld(w, pl, ox, oy);
@@ -734,7 +741,8 @@ function drawPlayer(w, pl, ox, oy, eq, opt = {}) {
   ctx.globalAlpha = 1;
   if (pl.hurtT > 0) { ctx.globalAlpha = 0.6; ctx.drawImage(maskOf(spr, '#ff3050'), x - 10, y - 25); ctx.globalAlpha = 1; }
   if (!behind) drawGun();
-  if (w.fx) cosmeticAura(w.fx, pl.x, pl.y, eq);
+  if (w.fx) { cosmeticAura(w.fx, pl.x, pl.y, eq); armorAura(w, pl, eq); }
+  const jr = eq.jetpack ? getDef(eq.jetpack) : null; pl.jetCol = jr && jr.r >= 3 ? [hex(palOfItem(eq.jetpack).G[3]), jr.r >= 6 ? rainbow(T_NOW) : hex(palOfItem(eq.jetpack).G[4])] : null;
   if (pl.pet && pl.petY !== undefined && pl.petY >= pl.y) drawPetWorld(w, pl, ox, oy);
   if (pl.charge > 0 && pl.W) { const k = pl.charge / 1.2; const full = k >= 1; ring(x + Math.cos(pl.aim) * 14, y - 8 + Math.sin(pl.aim) * 14, Math.floor(2 + k * 4), full ? (Math.floor(T_NOW * 20) % 2 ? '#fff' : COL.gold) : pl.W.col.mid); }
 }

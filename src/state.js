@@ -231,7 +231,9 @@ const xpNeed = L => Math.floor(80 * Math.pow(1.22, L - 1));
 function addXP(n) { S.xp += n; let up = 0; while (S.xp >= xpNeed(S.lvl)) { S.xp -= xpNeed(S.lvl); S.lvl++; S.sp++; up++; } if (up) { toast(`LEVEL ${S.lvl}! +${up} SKILL POINT${up > 1 ? 'S' : ''}`, COL.cyan); SND.play('levelup'); } return up; }
 function checkTitles() { for (const t of TITLES) if (!S.titles.earned[t.id] && t.chk(S)) { S.titles.earned[t.id] = 1; toast('TITLE EARNED: ' + t.n, COL.gold); if (!S.titles.eq) S.titles.eq = t.id; dirty(); } }
 function minerSlots() { return Object.keys(S.planet.bosses).map(Number).sort((a, b) => a - b).slice(0, 10); }
-function minerRate(id, p) { return aStats(getDef(id), effL(id)).rate * orePrice(planetDef(p).ore[1]) / 5; }
+// idle income is a bonus for coming back, not the main way to earn: a night away pays about 3 to 5 landings' worth in total
+const MINER_PAY = 0.06;
+function minerRate(id, p) { return aStats(getDef(id), effL(id)).rate * orePrice(planetDef(p).ore[1]) / 5 * MINER_PAY; }
 function tickMiners() {
   const now = Date.now(); const mins = Math.min(8 * 60, (now - S.miners.last) / 60000); S.miners.last = now;
   for (const p in S.miners.slots) { const id = S.miners.slots[p]; if (id && owned(id)) S.miners.acc[p] = Math.min((S.miners.acc[p] || 0) + minerRate(id, +p) * mins, minerRate(id, +p) * 480); }

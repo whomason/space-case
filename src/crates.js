@@ -403,7 +403,7 @@ function updateDemo(D, dt) {
     updateShots(w, dt); updateMines(w, dt); updateEnemies(w, dt); w.fx.update(dt);
   } else if (D.fx) {
     D.fx.update(dt);
-    if (D.kind === 'killfx') { D.cd = (D.cd || 0) - dt; if (D.cd <= 0) { D.cd = 1.1; const kp0 = itemPal(D.d); const w = { fx: D.fx }; burstKill(w, 120 + R0() * 30, 60 + R0() * 20, D.d.style, [hex(kp0.P[3]), hex(kp0.G[3]), hex(kp0.S[3]), '#fff'], 1); } }
+    if (D.kind === 'killfx') { D.cd = (D.cd || 0) - dt; if (D.cd <= 0) { D.cd = 1.1; const kp0 = itemPal(D.d); const w = { fx: D.fx }; const kx = 120 + R0() * 30, ky = 60 + R0() * 20; burstKill(w, kx, ky, D.d.style, [hex(kp0.P[3]), hex(kp0.G[3]), hex(kp0.S[3]), '#fff'], 1); killFlair(D.fx, kx, ky, D.d.r); } }
     if (D.kind === 'trail') { const x = 85 + Math.cos(D.t * 1.6) * 50, y = 66 + Math.sin(D.t * 3.2) * 18; D.px = x; D.py = y; const w = { fx: D.fx }; if (R0() < 0.7) trailFx(w, { x, y }, D.d); }
   }
 }

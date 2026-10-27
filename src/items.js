@@ -218,7 +218,7 @@ function statLines(d, L = 1) {
     case 'scanner': return [['RATING', '+' + s.rating], ['RANGE', s.scan]];
     case 'shield': return [['RATING', '+' + s.rating], ['HAZARD', '-' + Math.round(s.shield * 100) + '%']];
     case 'tool': return [['ORE TIER', s.tier], ['SPEED', 'X' + s.speed.toFixed(2)]];
-    case 'miner': return [['COINS', fmt(s.rate) + '/MIN']];
+    case 'miner': { const p = typeof S !== 'undefined' && S && S.planet ? Math.max(1, S.planet.reached) : 1; return [['COINS', Math.max(1, Math.round(s.rate * MINER_PAY * orePrice(planetDef(p).ore[1]) / 5)) + '/MIN ON ' + planetDef(p).name]]; }
   }
   return [['POWER', power(d, L)]];
 }
@@ -228,27 +228,28 @@ const SPR = new Map();
 function itemPal(d, frame = 0) {
   let h = d.ph, gh = d.gh, h2 = d.h2;
   if (d.r === 6 && !d.noCycle) { h += frame * 45; gh += frame * 45; h2 += frame * 45; }
-  return makePal(h, d.ps, d.pl, { h2, gh, A: METALS[d.metal](), dh: h });
+  return makePal(h, d.ps * rarityTone(d), d.pl, { h2, gh, A: METALS[d.metal](), dh: h });
 }
-function buildItemGrid(d) {
-  const R = RNG(d.seed);
-  if (d.cat === 'w') { const g = new Spr(32, 16); const b = WGEN[d.sub](g, d.r, R); embellish(g, d.r, R, b); return g.fin(); }
-  if (d.cat === 'a' || d.cat === 's' || d.cat === 't') { const g = new Spr(16, 16); AGEN[d.sub](g, d.r, R); return g.fin(); }
+function buildItemGrid(d, f = 0) {
+  const R = RNG(d.seed); const PA = premArt(d);
+  if (PA && PA.grid) { const g = new Spr(d.w, d.h); PA.grid(g, f); return g.fin(); }
+  if (d.cat === 'w') { const g = new Spr(32, 16); const b = WGEN[d.sub](g, d.r, R); rarityParts(g, d.sub, d.r, R, b, f); return g.fin(); }
+  if (d.cat === 'a' || d.cat === 's' || d.cat === 't') { const g = new Spr(16, 16); AGEN[d.sub](g, d.r, R); armorParts(g, d.sub, d.r, f); return g.fin(); }
   if (d.cat === 'k') { const ref = SKIN_REF[d.sub]; const g = new Spr(ref[2], ref[3]); const RR = RNG(7); if (ref[0] === 'w') WGEN.blaster(g, 2, RR); else AGEN[ref[1]](g, 2, RR); return g.fin(); }
   if (d.cat === 'c') { const g = new Spr(16, 16); CGEN[d.sub](g, d.style, R); return g.fin(); }
   if (d.cat === 'g') { const g = new Spr(16, 16); GGEN[d.sub](g, d.r, R); return g.fin(); }
   if (d.cat === 'p') { const g = new Spr(16, 16); petBody(g, d.sub, 0); return g.fin(); }
 }
-function sprFrames(d) { return (d.r === 6 || d.pat === 'HOLO' || d.pat === 'FLAME') ? 8 : 1; }
+function sprFrames(d) { const PA = premArt(d); if (PA && PA.frames) return PA.frames; return (d.r === 6 || d.pat === 'HOLO' || d.pat === 'FLAME' || ('wastc'.includes(d.cat) && d.r >= 4) || (d.pat && PC_PAT[d.pat] && PC_PAT[d.pat].anim)) ? 8 : 1; }
 function getItemSpr(id) {
   let s = SPR.get(id); if (s) return s;
   const d0 = getDef(id); if (d0.cat === 'b') { s = backdropSpr(d0); SPR.set(id, s); return s; }
-  const d = d0; const g = buildItemGrid(d); const nf = sprFrames(d);
+  const d = d0; const g = buildItemGrid(d); const nf = sprFrames(d); const geo = gridAnimated(d);
   const frames = [];
   for (let f = 0; f < nf; f++) {
     const pal = itemPal(d, f);
-    const pat = d.cat === 'k' ? patternFn(d.pat, d.seed, f / 8) : null;
-    frames.push(renderSpr(g, pal, pat));
+    const pat = d.cat === 'k' ? patternFn(d.pat, d.seed, f / 8) : itemPat(d, f);
+    frames.push(renderSpr(geo && f ? buildItemGrid(d, f) : g, pal, pat));
   }
   s = { frames, w: g.w, h: g.h, halo: haloOf(frames[0]), sil: null, edge: null, grid: g };
   s.sil = maskOf(frames[0], '#1e2749');
@@ -263,12 +264,12 @@ function frameOf(s) { return s.frames.length > 1 ? s.frames[Math.floor(T_NOW * 8
 function getSkinnedSpr(id, skinId) {
   if (!skinId) return getItemSpr(id);
   const key = id + '#' + skinId; let s = SPR.get(key); if (s) return s;
-  const d = getDef(id), k = getDef(skinId), g = buildItemGrid(d);
+  const d = getDef(id), k = getDef(skinId), g = buildItemGrid(d), geo = gridAnimated(d);
   const frames = [];
   const nf = Math.max(sprFrames(d), sprFrames(k));
   for (let f = 0; f < nf; f++) {
     const pal = makePal(k.ph + (k.r === 6 ? f * 45 : 0), k.ps, k.pl, { h2: k.h2, gh: d.gh, A: METALS[k.metal](), dh: k.ph });
-    frames.push(renderSpr(g, pal, patternFn(k.pat, k.seed, f / 8)));
+    frames.push(renderSpr(geo && f ? buildItemGrid(d, f) : g, pal, patternFn(k.pat, k.seed, f / 8)));
   }
   s = { frames, w: g.w, h: g.h, halo: haloOf(frames[0]), edge: getItemSpr(id).edge, white: maskOf(frames[0], '#fff'), sil: maskOf(frames[0], '#1e2749') };
   SPR.set(key, s); return s;
@@ -279,11 +280,11 @@ const HELD = new Map();
 function getHeldSpr(id, skinId) {
   const key = id + '#' + (skinId || ''); let s = HELD.get(key); if (s) return s;
   const d = getDef(id); if (d.cat !== 'w') return skinId ? getSkinnedSpr(id, skinId) : getItemSpr(id);
-  const g = shrinkGrid(buildItemGrid(d)); const frames = []; const k = skinId ? getDef(skinId) : null;
+  const geo = gridAnimated(d); const g = heldGrid(d, 0); const frames = []; const k = skinId ? getDef(skinId) : null;
   const nf = Math.max(sprFrames(d), k ? sprFrames(k) : 1);
   for (let f = 0; f < nf; f++) {
     const pal = k ? makePal(k.ph + (k.r === 6 ? f * 45 : 0), k.ps, k.pl, { h2: k.h2, gh: d.gh, A: METALS[k.metal](), dh: k.ph }) : itemPal(d, f);
-    frames.push(renderSpr(g, pal, k ? patternFn(k.pat, k.seed, f / 8) : null));
+    frames.push(renderSpr(geo && f ? heldGrid(d, f) : g, pal, k ? patternFn(k.pat, k.seed, f / 8) : itemPat(d, f)));
   }
   s = { frames, w: g.w, h: g.h }; HELD.set(key, s); if (HELD.size > 200) HELD.delete(HELD.keys().next().value); return s;
 }
