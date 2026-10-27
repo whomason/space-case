@@ -4898,8 +4898,10 @@ const BOSS_KITS = {
 function bossKitOf(pi) { return BOSS_KITS[bossBase(pi)]; }
 function setupBossKit(w, e) {
   const K = bossKitOf(w.pi); e.kit = bossBase(w.pi); e.phase = 0; e.seq = []; e.r = 18;
-  e.hp = e.maxHp = 2400 * w.hpMul * (w.pi > 20 ? 1.5 : 1) * (K.hp || 1); e.dmg = 26 * w.dmgMul; e.coin = 200; e.xp = 260;
-  e.spd = K.mv === 'chase' ? 34 : K.mv === 'slow' ? 18 : K.mv === 'root' ? 0 : 30;
+  // high-level bosses get extra on top of the planet scaling: from planet 7 up to 2.4x health, 1.6x damage, 25% faster attacks by planet 20
+  const hi = e.hi = w.demo ? 0 : clamp((w.pi - 6) / 14, 0, 1.5);
+  e.hp = e.maxHp = 2400 * w.hpMul * (w.pi > 20 ? 1.5 : 1) * (K.hp || 1) * (1 + 1.4 * hi); e.dmg = 26 * w.dmgMul * (1 + 0.6 * hi); e.coin = 200; e.xp = 260;
+  e.spd = (K.mv === 'chase' ? 34 : K.mv === 'slow' ? 18 : K.mv === 'root' ? 0 : 30) * (1 + 0.2 * hi);
   if (e.kit === 4) e.trail = [];
   if (e.kit === 16) e.shards = [0, 1, 2, 3].map(i => ({ a: i / 4 * TAU, hp: 3, flash: 0, re: 0 }));
   if (e.kit === 17) e.lures = [{ x: e.x + 60, y: e.y, vx: 0, vy: 0 }];
@@ -4921,7 +4923,7 @@ function kitAI(w, e, dt, d, a) {
   if (e.st === 'phase') { e.pt += dt; if (e.pt > 1.3) { e.invuln = false; e.st = 'idle'; e.cd = 0.4; } return; }
   bossPassive(w, e, dt);
   if (e.st === 'intro') { e.cd -= dt; if (e.cd <= 0) { e.st = 'idle'; e.cd = 1; } return; }
-  const enr = 1 + e.phase * 0.22;
+  const enr = (1 + e.phase * 0.22) * (1 + 0.25 * (e.hi || 0));
   if (e.st === 'idle') {
     bossMove(w, e, dt, d, a, K.mv);
     e.cd -= dt * enr; if (e.cd <= 0) { e.st = nextMove(e); e.pt = 0; e.n = 0; }
