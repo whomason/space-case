@@ -469,7 +469,7 @@ const SND = {
   play(name, p = 0) {
     if (!this.ac || this.muted) return;
     const now = this.ac.currentTime;
-    const lim = { tick: 0.018, hit: 0.03, crit: 0.06, gadget: 0.1, pew: 0.035, rifle: 0.03, drone: 0.05, ore: 0.04, coin: 0.03, extract: 0.09, beam: 0.07, kill: 0.04, tally: 0.03, hover: 0.05 }[name];
+    const lim = { step: 0.09, spit: 0.07, warn: 0.12, swap: 0.08, heart: 0.85, tick: 0.018, hit: 0.03, crit: 0.06, gadget: 0.1, pew: 0.035, rifle: 0.03, drone: 0.05, ore: 0.04, coin: 0.03, extract: 0.09, beam: 0.07, kill: 0.04, tally: 0.03, hover: 0.05 }[name];
     if (lim) { if (now - (this.last[name] || 0) < lim) return; this.last[name] = now; }
     const T = (f, d, ty, v, o) => this.tone(f, d, ty, v, o), N = (d, v, o) => this.noise(d, v, o), mf = this.mf;
     switch (name) {
@@ -497,10 +497,10 @@ const SND = {
       case 'kill': { const up = 1 + Math.min(p || 0, 20) * 0.04; N(0.12, 0.2, { f: 2500, f2: 300 }); T(420 * up, 0.12, 'square', 0.1, { slide: 90 * up }); T(110, 0.08, 'triangle', 0.14, { slide: 50 }); if (p >= 5) T(880 * up, 0.06, 'square', 0.05, { delay: 0.04 }); break; }
       case 'boom': N(0.45, 0.45, { f: 1600, f2: 60 }); T(110, 0.35, 'triangle', 0.3, { slide: 35 }); break;
       case 'bigboom': N(0.9, 0.55, { f: 2400, f2: 40 }); T(80, 0.8, 'triangle', 0.4, { slide: 25 }); T(55, 0.9, 'square', 0.12, { slide: 20 }); break;
-      case 'hurt': T(320, 0.16, 'sawtooth', 0.18, { slide: 110 }); N(0.08, 0.15, { f: 1800 }); break;
+      case 'hurt': T(320, 0.16, 'sawtooth', 0.18, { slide: 110 }); N(0.1, 0.2, { f: 1800, f2: 300 }); T(75, 0.12, 'sine', 0.3, { slide: 45 }); break;
       case 'ore': T(mf(84 + (p % 5) * 2), 0.06, 'triangle', 0.14); T(mf(91 + (p % 5) * 2), 0.08, 'triangle', 0.1, { delay: 0.04 }); break;
       case 'extract': T(85 + R0() * 20, 0.08, 'square', 0.06); N(0.06, 0.06, { type: 'bandpass', f: 1200 + p * 600, q: 3 }); break;
-      case 'boost': N(0.22, 0.25, { type: 'bandpass', f: 600, f2: 3500, q: 1.5 }); T(200, 0.2, 'sawtooth', 0.06, { slide: 700 }); break;
+      case 'boost': N(0.26, 0.28, { type: 'bandpass', f: 500, f2: 3800, q: 1.2 }); T(200, 0.2, 'sawtooth', 0.06, { slide: 700 }); N(0.12, 0.12, { f: 400, f2: 120 }); break;
       case 'levelup': [72, 76, 79, 84, 88].forEach((m, i) => T(mf(m), 0.14, 'square', 0.13, { delay: i * 0.07 })); break;
       case 'reveal': {
         const r = p; const base = [60, 62, 64, 65, 67, 69, 72][r];
@@ -530,6 +530,24 @@ const SND = {
       case 'freeze': T(2400, 0.12, 'triangle', 0.06, { slide: 1200 }); break;
       case 'spin': T(300 + p * 50, 0.04, 'square', 0.08); break;
       case 'flip': N(0.05, 0.15, { type: 'highpass', f: 2500 }); T(700, 0.04, 'square', 0.06); break;
+      // footsteps: p = surface + 10 * foot (left/right) + 100 if heavy gravity
+      case 'step': {
+        const k = p % 10, foot = Math.floor(p / 10) % 10, hv = p >= 100 ? 1 : 0, j = (foot ? 0.9 : 1.08) * (0.94 + R0() * 0.12), v = hv ? 1.5 : 1;
+        if (k === 0) { N(0.06, 0.11 * v, { f: 1400 * j, f2: 250 }); T(95 * j * (hv ? 0.7 : 1), 0.05, 'triangle', 0.09 * v, { slide: 50 }); }                       // grit, sand, rock
+        else if (k === 1) { N(0.05, 0.08 * v, { type: 'highpass', f: 2800 * j, f2: 6500 }); T(1900 * j, 0.025, 'triangle', 0.025); T(80 * j, 0.04, 'triangle', 0.06 * v, { slide: 50 }); } // crystal, salt, glass
+        else if (k === 2) { N(0.08, 0.09 * v, { type: 'bandpass', f: 450 * j, f2: 1300, q: 3 }); T(170 * j, 0.07, 'sine', 0.06 * v, { slide: 330 }); }            // wet, squelchy
+        else if (k === 3) { T(310 * j, 0.05, 'square', 0.035 * v, { slide: 180 }); N(0.035, 0.07 * v, { type: 'bandpass', f: 2600 * j, q: 4 }); T(70 * j, 0.05, 'triangle', 0.1 * v, { slide: 45 }); } // metal plates
+        else if (k === 5) { N(0.07, 0.1 * v, { type: 'bandpass', f: 1800 * j, f2: 900, q: 1.2 }); T(85 * j, 0.04, 'triangle', 0.08 * v, { slide: 50 }); }        // grass, moss
+        else { N(0.09, 0.11 * v, { type: 'bandpass', f: 1100 * j, f2: 2600, q: 0.8 }); N(0.03, 0.05, { type: 'highpass', f: 5000, delay: 0.03 }); T(90 * j, 0.04, 'triangle', 0.06 * v, { slide: 50 }); } // snow crunch
+        break;
+      }
+      case 'land': N(0.5, 0.35, { f: 1500, f2: 80 }); T(70, 0.4, 'triangle', 0.35, { slide: 35 }); N(0.6, 0.12, { type: 'highpass', f: 4000, f2: 1500, delay: 0.15 }); break;
+      case 'swap': T(900, 0.025, 'square', 0.07); N(0.03, 0.1, { type: 'bandpass', f: 3000, q: 3 }); T(600, 0.03, 'square', 0.07, { delay: 0.06 }); N(0.03, 0.1, { type: 'bandpass', f: 2200, q: 3, delay: 0.06 }); break;
+      case 'spit': T(260 + R0() * 60, 0.09, 'sine', 0.08, { slide: 520 }); N(0.06, 0.06, { type: 'bandpass', f: 900, f2: 2400, q: 2 }); break;
+      case 'warn': T(1100, 0.05, 'square', 0.05); T(1500, 0.06, 'square', 0.05, { delay: 0.07 }); break;
+      case 'loot': T(140, 0.18, 'sawtooth', 0.06, { slide: 90 }); N(0.2, 0.12, { type: 'bandpass', f: 600, f2: 300, q: 4 }); [79, 84, 88].forEach((m, i) => T(mf(m), 0.1, 'triangle', 0.1, { delay: 0.18 + i * 0.06 })); break;
+      case 'oreBreak': N(0.22, 0.3, { f: 3000, f2: 200 }); T(160, 0.15, 'triangle', 0.2, { slide: 60 }); [88, 91, 96].forEach((m, i) => T(mf(m + (p % 3)), 0.07, 'triangle', 0.08, { delay: 0.05 + i * 0.05 })); break;
+      case 'heart': T(60, 0.09, 'sine', 0.2, { slide: 40 }); T(55, 0.09, 'sine', 0.16, { slide: 38, delay: 0.16 }); break;
     }
   },
   // ---------- music ----------
@@ -4251,7 +4269,7 @@ function spawnBoss(w, x, y) {
   const e = { x, y, vx: 0, vy: 0, kx: 0, ky: 0, arch: 'boss', boss: true, r: 18, hp: 1100 * w.hpMul * (n > 20 ? 1.5 : 1), spd: 24, dmg: 20 * w.dmgMul, t: 0, st: 'intro', cd: 2, flash: 0, slow: 0, freeze: 0, burn: 0, poison: 0, face: 1, pat: 0, pt: 0, coin: 120, xp: 150, col: hex(hsl(p.boss[2][0], p.boss[2][1], p.boss[2][2])), col2: '#fff' };
   e.maxHp = e.hp; w.ents.push(e); w.boss = e; if (BOSS_KITS[bossBase(n)]) setupBossKit(w, e); return e;
 }
-function enemyShoot(w, e, a, spd = 85, dmg) { w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, r: 3, dmg: dmg || e.dmg, life: 4, col: e.col2 || '#f55' }); }
+function enemyShoot(w, e, a, spd = 85, dmg) { if (w.sndOn && w.player && Math.hypot(e.x - w.player.x, e.y - w.player.y) < 260) SND.play('spit'); w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, r: 3, dmg: dmg || e.dmg, life: 4, col: e.col2 || '#f55' }); }
 function updateEnemies(w, dt) {
   const pl = w.player;
   updateHazards(w, dt); updateGadgetFx(w, dt);
@@ -4295,7 +4313,7 @@ function updateEnemies(w, dt) {
         break;
       case 'spitter':
         if (d > 140) { mx = dx / d; my = dy / d; } else if (d < 95) { mx = -dx / d; my = -dy / d; } else { mx = -dy / d * 0.6; my = dx / d * 0.6; }
-        e.cd -= dt; if (e.cd <= 0 && d < 200) { e.cd = 2 + R0(); const aa = a + (R0() - 0.5) * 0.2; w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(aa) * 85, vy: Math.sin(aa) * 85, r: 3, dmg: e.dmg, life: 4, col: e.col2 || '#f55' }); if (w.sndOn) SND.play('pew'); }
+        e.cd -= dt; if (e.cd <= 0 && d < 200) { e.cd = 2 + R0(); const aa = a + (R0() - 0.5) * 0.2; w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(aa) * 85, vy: Math.sin(aa) * 85, r: 3, dmg: e.dmg, life: 4, col: e.col2 || '#f55' }); if (w.sndOn) SND.play('spit'); }
         break;
       case 'nest': e.spawnT = (e.spawnT || 3) - dt; if (e.spawnT <= 0 && (dpl < 260 || e.egg) && w.ents.length < 40) { e.spawnT = 5 + R0() * 2; if (e.egg) e.dead = true; const k = 2 + R0.int(2); for (let i = 0; i < k; i++) spawnEnemy(w, R0() < 0.5 ? 'swarm' : 'crawler', e.x + (R0() - 0.5) * 20, e.y + 8 + R0() * 8); w.fx.burst(e.x, e.y - 6, 10, { c: [e.col, '#fff'], sp: 60 }); } break;
       default: { const r = foeAI(w, e, dt, { d, a, dx, dy, da, pl }); mx = r[0]; my = r[1]; if (e.dead) continue; }
@@ -4343,6 +4361,7 @@ function bossAI(w, e, dt, d, a) {
 function updateTele(w, dt) {
   const pl = w.player;
   for (const t of w.tele) {
+    if (!t.warned) { t.warned = true; if (w.sndOn && !t.safe && t.dmg > 0 && pl && Math.hypot(pl.x - t.x, pl.y - t.y) < 140) SND.play('warn'); }
     t.t += dt;
     if (t.t >= t.max && !t.done) {
       t.done = true;
@@ -4540,6 +4559,8 @@ function updatePlayer(w, pl, inp, dt, L) {
   if (w.collide) w.collide(pl);
   if (w.bounds) { pl.x = clamp(pl.x, w.bounds[0], w.bounds[2]); pl.y = clamp(pl.y, w.bounds[1], w.bounds[3]); }
   if (pl.moving) pl.walk += dt * 9;
+  // footsteps on planets: two per walk cycle, sound depends on the ground
+  if (pl.moving && pl.boostT <= 0 && w.sndOn && !w.demo && w.stepK !== undefined) { const st = Math.floor(pl.walk / 2); if (st !== pl.lastStep) { pl.lastStep = st; SND.play('step', w.stepK + (st % 2) * 10); } }
   const ca = Math.cos(pl.aim), sa2 = Math.sin(pl.aim);
   pl.dir = Math.abs(ca) > Math.abs(sa2) * 0.9 ? (ca < 0 ? 2 : 3) : (sa2 < 0 ? 1 : 0);
   if (pl.perks.regen && !w.demo) pl.hp = Math.min(pl.maxHp, pl.hp + pl.maxHp * 0.008 * dt);
@@ -5558,6 +5579,7 @@ function startRun(pi, opt = {}) {
   const map = genPlanetMap(pi, seed);
   const L = loadout();
   const w = makeWorld({ pi });
+  w.stepK = ({ dust: 0, sand: 0, dunes: 0, ash: 0, basalt: 0, storm: 0, salt: 1, crystal: 1, dark: 2, seabed: 2, reef: 2, metal: 3, rust: 3, tiles: 3, gold: 3, grass: 5, turf: 5, moss: 5, snow: 6, tundra: 6 }[p.detail] || 0) + (p.trait === 'HEAVY GRAVITY' ? 100 : 0);
   // aliens are tough on their own planet; they get easy once you're geared for the next one (weapons gain 15% per planet reached)
   w.hpMul = 1.6 * Math.pow(1.22, pi - 1) * (1 + S.nova.count * 0.6); w.dmgMul = 1.5 * Math.pow(1.14, pi - 1) * (1 + S.nova.count * 0.4);
   // later planets hit harder still and swarm you: up to +60% health, +35% damage and ~40% more aliens by planet 20
@@ -5774,12 +5796,12 @@ function updateRun(dt) {
   if (R.choice) { updateChoiceOverlay(dt); return; }
   if (R.paused) return;
   R.t += dt; w.t += dt; R.st += dt;
-  if (R.state === 'land') { if (R.st > 1.4) { R.state = 'play'; R.st = 0; banner(R.ev ? `${R.p.name}. EVENT: ${EVENTS[R.ev.k].n}. ${EVENTS[R.ev.k].txt}` : `${R.p.name}. ${R.bossAvail ? 'BOSS: ' + R.p.boss[0] : 'BOSS RESTING'}`, R.ev ? EVENTS[R.ev.k].c : COL.cyan); } }
+  if (R.state === 'land') { if (!R.landSnd && R.st > 0.9) { R.landSnd = true; SND.play('land'); shake(3); } if (R.st > 1.4) { R.state = 'play'; R.st = 0; banner(R.ev ? `${R.p.name}. EVENT: ${EVENTS[R.ev.k].n}. ${EVENTS[R.ev.k].txt}` : `${R.p.name}. ${R.bossAvail ? 'BOSS: ' + R.p.boss[0] : 'BOSS RESTING'}`, R.ev ? EVENTS[R.ev.k].c : COL.cyan); } }
   if (R.state === 'leave') { if (R.st > 2.2) finishRun(); w.fx.update(dt); return; }
   const inp = runInput();
   if (R.state === 'play' && !pl.dead) {
-    if (inp.swap) cycleSlot(pl, w);
-    if (inp.slot !== undefined) setSlot(pl, w, inp.slot);
+    if (inp.swap) { cycleSlot(pl, w); SND.play('swap'); }
+    if (inp.slot !== undefined) { const m0 = pl.mode, w0 = pl.wi; setSlot(pl, w, inp.slot); if (pl.mode !== m0 || pl.wi !== w0) SND.play('swap'); }
     if (!R.spores.length) w.moveMul = R.baseMove; sigUpdate(R, dt);
     if (inp.gadget && pl.G) { if (pl.G.cd > 0) { if (!pl.gDenyT || w.t - pl.gDenyT > 0.4) { pl.gDenyT = w.t; SND.play('deny'); } } else if (useGadget(w, pl, inp.ax, inp.ay)) coopRecordGadget(pl, inp.ax, inp.ay); }
     updatePlayer(w, pl, inp, dt, R.L); tutTick(dt, inp);
@@ -5790,6 +5812,7 @@ function updateRun(dt) {
     // o2
     const heat = R.p.trait === 'HEAT' && !hasRelic(3) ? 1 + 0.6 * (1 - R.L.shield) : 1;
     if (!R.tut || R.tut.i >= TUT.length - 1) R.o2 -= dt * heat;
+    if (pl.hp < pl.maxHp * 0.3 && pl.hp > 0) SND.play('heart');
     if (R.o2 < R.o2max * 0.25) { ptip('o2'); R.o2warn -= dt; if (R.o2warn <= 0) { R.o2warn = R.o2 < R.o2max * 0.1 ? 0.5 : 1.2; SND.play('o2'); } }
     if (R.o2 <= 0) { if (pl.perks.reserve && !R.reserveUsed) { R.reserveUsed = true; R.o2 = R.o2max * 0.3; banner('RESERVE O2 TANK ENGAGED', COL.cyan); } else endRun('o2'); }
     // interactions
@@ -5865,7 +5888,7 @@ function updateExtract(dt, inp) {
       o.prog -= 1; o.left--;
       const n = pl.perks.tdouble && R0() < 0.2 ? 2 : 1;
       for (let k = 0; k < n; k++) R.chunks.push({ x: o.x, y: o.y - 6, vx: (R0() - 0.5) * 90, vy: -60 - R0() * 60, t: 0, pi: o.pi, delay: 0.25 });
-      if (o.left <= 0) { R.w.fx.burst(o.x, o.y - 4, 16, { c: [oreHex(o.pi), '#fff'], sp: 90, s: 2, t: 'shrink' }); SND.play('kill'); if (o.meteor && R.ev && R.ev.k === 'meteor' && R.ev.st === 'active') { R.ev.n++; banner(`METEOR DEPOSIT ${R.ev.n}/${R.ev.need}`, '#ff9a3d'); if (R.ev.n >= R.ev.need) completeEvent(R, o.x, o.y); } }
+      if (o.left <= 0) { R.w.fx.burst(o.x, o.y - 4, 16, { c: [oreHex(o.pi), '#fff'], sp: 90, s: 2, t: 'shrink' }); SND.play('oreBreak', o.tier); if (o.meteor && R.ev && R.ev.k === 'meteor' && R.ev.st === 'active') { R.ev.n++; banner(`METEOR DEPOSIT ${R.ev.n}/${R.ev.need}`, '#ff9a3d'); if (R.ev.n >= R.ev.need) completeEvent(R, o.x, o.y); } }
     }
   }
 }
@@ -5891,7 +5914,7 @@ function updateChunks(dt) {
   R.chunks = R.chunks.filter(c => !c.done);
 }
 function lootWreck(wr) {
-  const R = RUN, w = R.w; wr.looted = true; R.wrecks++; S.stats.wrecks++;
+  const R = RUN, w = R.w; wr.looted = true; R.wrecks++; S.stats.wrecks++; SND.play('loot');
   const tier = clamp(Math.floor((R.pi - 1) / 3), 0, 6);
   let clue = null;
   if (R0() < 0.3) { const opts = []; ARTIFACTS.forEach((a, k) => { const c = S.clues[k] || [0, 0, 0]; c.forEach((v, j) => { if (!v) opts.push([k, j]); }); }); if (opts.length) { const [k, j] = R0.pick(opts); (S.clues[k] = S.clues[k] || [0, 0, 0])[j] = 1; clue = `CLUE FOUND: ${ARTIFACTS[k].n} NEEDS ${getDef(artifactIngredients(k)[j]).name}`; } }

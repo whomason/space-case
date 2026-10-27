@@ -159,6 +159,7 @@ function startRun(pi, opt = {}) {
   const map = genPlanetMap(pi, seed);
   const L = loadout();
   const w = makeWorld({ pi });
+  w.stepK = ({ dust: 0, sand: 0, dunes: 0, ash: 0, basalt: 0, storm: 0, salt: 1, crystal: 1, dark: 2, seabed: 2, reef: 2, metal: 3, rust: 3, tiles: 3, gold: 3, grass: 5, turf: 5, moss: 5, snow: 6, tundra: 6 }[p.detail] || 0) + (p.trait === 'HEAVY GRAVITY' ? 100 : 0);
   // aliens are tough on their own planet; they get easy once you're geared for the next one (weapons gain 15% per planet reached)
   w.hpMul = 1.6 * Math.pow(1.22, pi - 1) * (1 + S.nova.count * 0.6); w.dmgMul = 1.5 * Math.pow(1.14, pi - 1) * (1 + S.nova.count * 0.4);
   // later planets hit harder still and swarm you: up to +60% health, +35% damage and ~40% more aliens by planet 20
@@ -375,12 +376,12 @@ function updateRun(dt) {
   if (R.choice) { updateChoiceOverlay(dt); return; }
   if (R.paused) return;
   R.t += dt; w.t += dt; R.st += dt;
-  if (R.state === 'land') { if (R.st > 1.4) { R.state = 'play'; R.st = 0; banner(R.ev ? `${R.p.name}. EVENT: ${EVENTS[R.ev.k].n}. ${EVENTS[R.ev.k].txt}` : `${R.p.name}. ${R.bossAvail ? 'BOSS: ' + R.p.boss[0] : 'BOSS RESTING'}`, R.ev ? EVENTS[R.ev.k].c : COL.cyan); } }
+  if (R.state === 'land') { if (!R.landSnd && R.st > 0.9) { R.landSnd = true; SND.play('land'); shake(3); } if (R.st > 1.4) { R.state = 'play'; R.st = 0; banner(R.ev ? `${R.p.name}. EVENT: ${EVENTS[R.ev.k].n}. ${EVENTS[R.ev.k].txt}` : `${R.p.name}. ${R.bossAvail ? 'BOSS: ' + R.p.boss[0] : 'BOSS RESTING'}`, R.ev ? EVENTS[R.ev.k].c : COL.cyan); } }
   if (R.state === 'leave') { if (R.st > 2.2) finishRun(); w.fx.update(dt); return; }
   const inp = runInput();
   if (R.state === 'play' && !pl.dead) {
-    if (inp.swap) cycleSlot(pl, w);
-    if (inp.slot !== undefined) setSlot(pl, w, inp.slot);
+    if (inp.swap) { cycleSlot(pl, w); SND.play('swap'); }
+    if (inp.slot !== undefined) { const m0 = pl.mode, w0 = pl.wi; setSlot(pl, w, inp.slot); if (pl.mode !== m0 || pl.wi !== w0) SND.play('swap'); }
     if (!R.spores.length) w.moveMul = R.baseMove; sigUpdate(R, dt);
     if (inp.gadget && pl.G) { if (pl.G.cd > 0) { if (!pl.gDenyT || w.t - pl.gDenyT > 0.4) { pl.gDenyT = w.t; SND.play('deny'); } } else if (useGadget(w, pl, inp.ax, inp.ay)) coopRecordGadget(pl, inp.ax, inp.ay); }
     updatePlayer(w, pl, inp, dt, R.L); tutTick(dt, inp);
@@ -391,6 +392,7 @@ function updateRun(dt) {
     // o2
     const heat = R.p.trait === 'HEAT' && !hasRelic(3) ? 1 + 0.6 * (1 - R.L.shield) : 1;
     if (!R.tut || R.tut.i >= TUT.length - 1) R.o2 -= dt * heat;
+    if (pl.hp < pl.maxHp * 0.3 && pl.hp > 0) SND.play('heart');
     if (R.o2 < R.o2max * 0.25) { ptip('o2'); R.o2warn -= dt; if (R.o2warn <= 0) { R.o2warn = R.o2 < R.o2max * 0.1 ? 0.5 : 1.2; SND.play('o2'); } }
     if (R.o2 <= 0) { if (pl.perks.reserve && !R.reserveUsed) { R.reserveUsed = true; R.o2 = R.o2max * 0.3; banner('RESERVE O2 TANK ENGAGED', COL.cyan); } else endRun('o2'); }
     // interactions
@@ -466,7 +468,7 @@ function updateExtract(dt, inp) {
       o.prog -= 1; o.left--;
       const n = pl.perks.tdouble && R0() < 0.2 ? 2 : 1;
       for (let k = 0; k < n; k++) R.chunks.push({ x: o.x, y: o.y - 6, vx: (R0() - 0.5) * 90, vy: -60 - R0() * 60, t: 0, pi: o.pi, delay: 0.25 });
-      if (o.left <= 0) { R.w.fx.burst(o.x, o.y - 4, 16, { c: [oreHex(o.pi), '#fff'], sp: 90, s: 2, t: 'shrink' }); SND.play('kill'); if (o.meteor && R.ev && R.ev.k === 'meteor' && R.ev.st === 'active') { R.ev.n++; banner(`METEOR DEPOSIT ${R.ev.n}/${R.ev.need}`, '#ff9a3d'); if (R.ev.n >= R.ev.need) completeEvent(R, o.x, o.y); } }
+      if (o.left <= 0) { R.w.fx.burst(o.x, o.y - 4, 16, { c: [oreHex(o.pi), '#fff'], sp: 90, s: 2, t: 'shrink' }); SND.play('oreBreak', o.tier); if (o.meteor && R.ev && R.ev.k === 'meteor' && R.ev.st === 'active') { R.ev.n++; banner(`METEOR DEPOSIT ${R.ev.n}/${R.ev.need}`, '#ff9a3d'); if (R.ev.n >= R.ev.need) completeEvent(R, o.x, o.y); } }
     }
   }
 }
@@ -492,7 +494,7 @@ function updateChunks(dt) {
   R.chunks = R.chunks.filter(c => !c.done);
 }
 function lootWreck(wr) {
-  const R = RUN, w = R.w; wr.looted = true; R.wrecks++; S.stats.wrecks++;
+  const R = RUN, w = R.w; wr.looted = true; R.wrecks++; S.stats.wrecks++; SND.play('loot');
   const tier = clamp(Math.floor((R.pi - 1) / 3), 0, 6);
   let clue = null;
   if (R0() < 0.3) { const opts = []; ARTIFACTS.forEach((a, k) => { const c = S.clues[k] || [0, 0, 0]; c.forEach((v, j) => { if (!v) opts.push([k, j]); }); }); if (opts.length) { const [k, j] = R0.pick(opts); (S.clues[k] = S.clues[k] || [0, 0, 0])[j] = 1; clue = `CLUE FOUND: ${ARTIFACTS[k].n} NEEDS ${getDef(artifactIngredients(k)[j]).name}`; } }

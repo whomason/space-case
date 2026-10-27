@@ -419,7 +419,7 @@ function spawnBoss(w, x, y) {
   const e = { x, y, vx: 0, vy: 0, kx: 0, ky: 0, arch: 'boss', boss: true, r: 18, hp: 1100 * w.hpMul * (n > 20 ? 1.5 : 1), spd: 24, dmg: 20 * w.dmgMul, t: 0, st: 'intro', cd: 2, flash: 0, slow: 0, freeze: 0, burn: 0, poison: 0, face: 1, pat: 0, pt: 0, coin: 120, xp: 150, col: hex(hsl(p.boss[2][0], p.boss[2][1], p.boss[2][2])), col2: '#fff' };
   e.maxHp = e.hp; w.ents.push(e); w.boss = e; if (BOSS_KITS[bossBase(n)]) setupBossKit(w, e); return e;
 }
-function enemyShoot(w, e, a, spd = 85, dmg) { w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, r: 3, dmg: dmg || e.dmg, life: 4, col: e.col2 || '#f55' }); }
+function enemyShoot(w, e, a, spd = 85, dmg) { if (w.sndOn && w.player && Math.hypot(e.x - w.player.x, e.y - w.player.y) < 260) SND.play('spit'); w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, r: 3, dmg: dmg || e.dmg, life: 4, col: e.col2 || '#f55' }); }
 function updateEnemies(w, dt) {
   const pl = w.player;
   updateHazards(w, dt); updateGadgetFx(w, dt);
@@ -463,7 +463,7 @@ function updateEnemies(w, dt) {
         break;
       case 'spitter':
         if (d > 140) { mx = dx / d; my = dy / d; } else if (d < 95) { mx = -dx / d; my = -dy / d; } else { mx = -dy / d * 0.6; my = dx / d * 0.6; }
-        e.cd -= dt; if (e.cd <= 0 && d < 200) { e.cd = 2 + R0(); const aa = a + (R0() - 0.5) * 0.2; w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(aa) * 85, vy: Math.sin(aa) * 85, r: 3, dmg: e.dmg, life: 4, col: e.col2 || '#f55' }); if (w.sndOn) SND.play('pew'); }
+        e.cd -= dt; if (e.cd <= 0 && d < 200) { e.cd = 2 + R0(); const aa = a + (R0() - 0.5) * 0.2; w.eshots.push({ x: e.x, y: e.y - 4, vx: Math.cos(aa) * 85, vy: Math.sin(aa) * 85, r: 3, dmg: e.dmg, life: 4, col: e.col2 || '#f55' }); if (w.sndOn) SND.play('spit'); }
         break;
       case 'nest': e.spawnT = (e.spawnT || 3) - dt; if (e.spawnT <= 0 && (dpl < 260 || e.egg) && w.ents.length < 40) { e.spawnT = 5 + R0() * 2; if (e.egg) e.dead = true; const k = 2 + R0.int(2); for (let i = 0; i < k; i++) spawnEnemy(w, R0() < 0.5 ? 'swarm' : 'crawler', e.x + (R0() - 0.5) * 20, e.y + 8 + R0() * 8); w.fx.burst(e.x, e.y - 6, 10, { c: [e.col, '#fff'], sp: 60 }); } break;
       default: { const r = foeAI(w, e, dt, { d, a, dx, dy, da, pl }); mx = r[0]; my = r[1]; if (e.dead) continue; }
@@ -511,6 +511,7 @@ function bossAI(w, e, dt, d, a) {
 function updateTele(w, dt) {
   const pl = w.player;
   for (const t of w.tele) {
+    if (!t.warned) { t.warned = true; if (w.sndOn && !t.safe && t.dmg > 0 && pl && Math.hypot(pl.x - t.x, pl.y - t.y) < 140) SND.play('warn'); }
     t.t += dt;
     if (t.t >= t.max && !t.done) {
       t.done = true;
@@ -708,6 +709,8 @@ function updatePlayer(w, pl, inp, dt, L) {
   if (w.collide) w.collide(pl);
   if (w.bounds) { pl.x = clamp(pl.x, w.bounds[0], w.bounds[2]); pl.y = clamp(pl.y, w.bounds[1], w.bounds[3]); }
   if (pl.moving) pl.walk += dt * 9;
+  // footsteps on planets: two per walk cycle, sound depends on the ground
+  if (pl.moving && pl.boostT <= 0 && w.sndOn && !w.demo && w.stepK !== undefined) { const st = Math.floor(pl.walk / 2); if (st !== pl.lastStep) { pl.lastStep = st; SND.play('step', w.stepK + (st % 2) * 10); } }
   const ca = Math.cos(pl.aim), sa2 = Math.sin(pl.aim);
   pl.dir = Math.abs(ca) > Math.abs(sa2) * 0.9 ? (ca < 0 ? 2 : 3) : (sa2 < 0 ? 1 : 0);
   if (pl.perks.regen && !w.demo) pl.hp = Math.min(pl.maxHp, pl.hp + pl.maxHp * 0.008 * dt);

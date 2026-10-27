@@ -40,7 +40,7 @@ const SND = {
   play(name, p = 0) {
     if (!this.ac || this.muted) return;
     const now = this.ac.currentTime;
-    const lim = { tick: 0.018, hit: 0.03, crit: 0.06, gadget: 0.1, pew: 0.035, rifle: 0.03, drone: 0.05, ore: 0.04, coin: 0.03, extract: 0.09, beam: 0.07, kill: 0.04, tally: 0.03, hover: 0.05 }[name];
+    const lim = { step: 0.09, spit: 0.07, warn: 0.12, swap: 0.08, heart: 0.85, tick: 0.018, hit: 0.03, crit: 0.06, gadget: 0.1, pew: 0.035, rifle: 0.03, drone: 0.05, ore: 0.04, coin: 0.03, extract: 0.09, beam: 0.07, kill: 0.04, tally: 0.03, hover: 0.05 }[name];
     if (lim) { if (now - (this.last[name] || 0) < lim) return; this.last[name] = now; }
     const T = (f, d, ty, v, o) => this.tone(f, d, ty, v, o), N = (d, v, o) => this.noise(d, v, o), mf = this.mf;
     switch (name) {
@@ -68,10 +68,10 @@ const SND = {
       case 'kill': { const up = 1 + Math.min(p || 0, 20) * 0.04; N(0.12, 0.2, { f: 2500, f2: 300 }); T(420 * up, 0.12, 'square', 0.1, { slide: 90 * up }); T(110, 0.08, 'triangle', 0.14, { slide: 50 }); if (p >= 5) T(880 * up, 0.06, 'square', 0.05, { delay: 0.04 }); break; }
       case 'boom': N(0.45, 0.45, { f: 1600, f2: 60 }); T(110, 0.35, 'triangle', 0.3, { slide: 35 }); break;
       case 'bigboom': N(0.9, 0.55, { f: 2400, f2: 40 }); T(80, 0.8, 'triangle', 0.4, { slide: 25 }); T(55, 0.9, 'square', 0.12, { slide: 20 }); break;
-      case 'hurt': T(320, 0.16, 'sawtooth', 0.18, { slide: 110 }); N(0.08, 0.15, { f: 1800 }); break;
+      case 'hurt': T(320, 0.16, 'sawtooth', 0.18, { slide: 110 }); N(0.1, 0.2, { f: 1800, f2: 300 }); T(75, 0.12, 'sine', 0.3, { slide: 45 }); break;
       case 'ore': T(mf(84 + (p % 5) * 2), 0.06, 'triangle', 0.14); T(mf(91 + (p % 5) * 2), 0.08, 'triangle', 0.1, { delay: 0.04 }); break;
       case 'extract': T(85 + R0() * 20, 0.08, 'square', 0.06); N(0.06, 0.06, { type: 'bandpass', f: 1200 + p * 600, q: 3 }); break;
-      case 'boost': N(0.22, 0.25, { type: 'bandpass', f: 600, f2: 3500, q: 1.5 }); T(200, 0.2, 'sawtooth', 0.06, { slide: 700 }); break;
+      case 'boost': N(0.26, 0.28, { type: 'bandpass', f: 500, f2: 3800, q: 1.2 }); T(200, 0.2, 'sawtooth', 0.06, { slide: 700 }); N(0.12, 0.12, { f: 400, f2: 120 }); break;
       case 'levelup': [72, 76, 79, 84, 88].forEach((m, i) => T(mf(m), 0.14, 'square', 0.13, { delay: i * 0.07 })); break;
       case 'reveal': {
         const r = p; const base = [60, 62, 64, 65, 67, 69, 72][r];
@@ -101,6 +101,24 @@ const SND = {
       case 'freeze': T(2400, 0.12, 'triangle', 0.06, { slide: 1200 }); break;
       case 'spin': T(300 + p * 50, 0.04, 'square', 0.08); break;
       case 'flip': N(0.05, 0.15, { type: 'highpass', f: 2500 }); T(700, 0.04, 'square', 0.06); break;
+      // footsteps: p = surface + 10 * foot (left/right) + 100 if heavy gravity
+      case 'step': {
+        const k = p % 10, foot = Math.floor(p / 10) % 10, hv = p >= 100 ? 1 : 0, j = (foot ? 0.9 : 1.08) * (0.94 + R0() * 0.12), v = hv ? 1.5 : 1;
+        if (k === 0) { N(0.06, 0.11 * v, { f: 1400 * j, f2: 250 }); T(95 * j * (hv ? 0.7 : 1), 0.05, 'triangle', 0.09 * v, { slide: 50 }); }                       // grit, sand, rock
+        else if (k === 1) { N(0.05, 0.08 * v, { type: 'highpass', f: 2800 * j, f2: 6500 }); T(1900 * j, 0.025, 'triangle', 0.025); T(80 * j, 0.04, 'triangle', 0.06 * v, { slide: 50 }); } // crystal, salt, glass
+        else if (k === 2) { N(0.08, 0.09 * v, { type: 'bandpass', f: 450 * j, f2: 1300, q: 3 }); T(170 * j, 0.07, 'sine', 0.06 * v, { slide: 330 }); }            // wet, squelchy
+        else if (k === 3) { T(310 * j, 0.05, 'square', 0.035 * v, { slide: 180 }); N(0.035, 0.07 * v, { type: 'bandpass', f: 2600 * j, q: 4 }); T(70 * j, 0.05, 'triangle', 0.1 * v, { slide: 45 }); } // metal plates
+        else if (k === 5) { N(0.07, 0.1 * v, { type: 'bandpass', f: 1800 * j, f2: 900, q: 1.2 }); T(85 * j, 0.04, 'triangle', 0.08 * v, { slide: 50 }); }        // grass, moss
+        else { N(0.09, 0.11 * v, { type: 'bandpass', f: 1100 * j, f2: 2600, q: 0.8 }); N(0.03, 0.05, { type: 'highpass', f: 5000, delay: 0.03 }); T(90 * j, 0.04, 'triangle', 0.06 * v, { slide: 50 }); } // snow crunch
+        break;
+      }
+      case 'land': N(0.5, 0.35, { f: 1500, f2: 80 }); T(70, 0.4, 'triangle', 0.35, { slide: 35 }); N(0.6, 0.12, { type: 'highpass', f: 4000, f2: 1500, delay: 0.15 }); break;
+      case 'swap': T(900, 0.025, 'square', 0.07); N(0.03, 0.1, { type: 'bandpass', f: 3000, q: 3 }); T(600, 0.03, 'square', 0.07, { delay: 0.06 }); N(0.03, 0.1, { type: 'bandpass', f: 2200, q: 3, delay: 0.06 }); break;
+      case 'spit': T(260 + R0() * 60, 0.09, 'sine', 0.08, { slide: 520 }); N(0.06, 0.06, { type: 'bandpass', f: 900, f2: 2400, q: 2 }); break;
+      case 'warn': T(1100, 0.05, 'square', 0.05); T(1500, 0.06, 'square', 0.05, { delay: 0.07 }); break;
+      case 'loot': T(140, 0.18, 'sawtooth', 0.06, { slide: 90 }); N(0.2, 0.12, { type: 'bandpass', f: 600, f2: 300, q: 4 }); [79, 84, 88].forEach((m, i) => T(mf(m), 0.1, 'triangle', 0.1, { delay: 0.18 + i * 0.06 })); break;
+      case 'oreBreak': N(0.22, 0.3, { f: 3000, f2: 200 }); T(160, 0.15, 'triangle', 0.2, { slide: 60 }); [88, 91, 96].forEach((m, i) => T(mf(m + (p % 3)), 0.07, 'triangle', 0.08, { delay: 0.05 + i * 0.05 })); break;
+      case 'heart': T(60, 0.09, 'sine', 0.2, { slide: 40 }); T(55, 0.09, 'sine', 0.16, { slide: 38, delay: 0.16 }); break;
     }
   },
   // ---------- music ----------
