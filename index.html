@@ -5570,7 +5570,7 @@ function paintDetails(G, p, R, solidP, GW, GH, rmp) {
 function startRun(pi, opt = {}) {
   const p = planetDef(pi); S.planet.landings++; S.planet.cur = pi; const boost = S.nextBoost || {}; S.nextBoost = null;
   if (!S.planet.visited[pi]) { S.planet.visited[pi] = 1; toast(`${p.name} SALVAGE CRATES UNLOCKED`, COL.mint); }
-  if (pi > S.planet.reached && (!opt.guest || canWarp(pi))) S.planet.reached = pi;   // a co-op guest doesn't skip ahead
+  if (pi > S.planet.reached && (!opt.guest || canWarp(pi))) { S.planet.reached = pi; track('reach', { pl: pi }); }   // a co-op guest doesn't skip ahead
   for (const b in S.planet.bossCd) if (S.planet.bossCd[b] > 0) S.planet.bossCd[b]--;
   const evKey = S.tutorial.planet && S.planet.landings > 1 && !opt.guest ? (S.planet.ev[pi] || rollEvent(pi)) : null;
   S.planet.ev[pi] = rollEvent(pi, evKey);
@@ -5708,7 +5708,7 @@ function onRunKill(e) {
     if (q === 'scavenger' && R0() < 0.15) R.chunks.push({ x: e.x, y: e.y - 6, vx: (R0() - 0.5) * 90, vy: -60, t: 0, pi: R.pi, delay: 0.25 });
     const sa = pl.setAb || {}; if (sa[4] && R0() < (sa[4] > 1 ? 0.35 : 0.22)) R.chunks.push({ x: e.x, y: e.y - 6, vx: (R0() - 0.5) * 60, vy: -50, t: 0, heal: true, delay: 0.3 });
   } else {
-    R.bossBeaten = true; w.boss = null; passXP(400); firstTime('boss');
+    R.bossBeaten = true; w.boss = null; passXP(400); firstTime('boss'); track('boss', { p: R.pi, t: Math.round(R.t) });
     const first = !S.planet.bosses[R.pi];
     const nC = first ? 3 : 1;
     S.planet.bosses[R.pi] = (S.planet.bosses[R.pi] || 0) + 1; S.planet.bossCd[R.pi] = 2;
@@ -7036,7 +7036,7 @@ function startOpen(kind, tier, n) {
   if (poolSize(kind) === 0) { SND.play('deny'); toast('THIS CRATE IS EMPTY. YOU OWN EVERYTHING IN IT', COL.dim); BAY.kind = 'weapon'; return; }
   const cost = crateCost(kind, tier) * n;
   if (S.coins < cost) { SND.play('deny'); toast('NOT ENOUGH COINS. HAUL MORE ORE', COL.coral); return; }
-  S.coins -= cost; S.stats.crates += n; passXP(25 * n); firstTime('crate'); dirty();
+  S.coins -= cost; S.stats.crates += n; passXP(25 * n); firstTime('crate'); track('crate', { k: kind, t: tier, n, c: cost }); dirty();
   OPEN = { kind, tier, n, cost, t: 0, st: BAY.upgrader ? 'upgrade' : 'insert', st_t: 0, results: [], shadow: {}, keysFly: [], parts: new Particles(1200), cards: [], sel: -1, demo: null, upg: null, list: null };
   if (tier >= 7) OPEN.st = 'insert';
   if (OPEN.st === 'upgrade') OPEN.upg = { a: 0, v: 14 + R0() * 4, done: false, p: UPG_CHANCE[tier] };
@@ -7046,7 +7046,7 @@ function startOpen(kind, tier, n) {
 // crates earned during a haul open for free right after it
 function startHaulOpen(list) {
   if (!list.length) return goHub();
-  S.stats.crates += list.length; passXP(25 * list.length); dirty();
+  S.stats.crates += list.length; passXP(25 * list.length); track('crate', { k: 'haul', n: list.length }); dirty();
   const best = list.reduce((a, c) => c.tier > a.tier ? c : a, list[0]);
   OPEN = { kind: list.length === 1 ? list[0].kind : 'galaxy', tier: best.tier, n: list.length, cost: 0, t: 0, st: 'insert', st_t: 0, results: [], shadow: {}, keysFly: [], parts: new Particles(1200), cards: [], sel: -1, demo: null, upg: null, list, haul: true };
   rollResults();
@@ -9579,7 +9579,7 @@ async function arJoinServer(id, code) {
   if (!NET.callsign) { openNameUI(false); return; }
   try { await netFlush(); } catch (e) { }
   const s = await rpc('arena_join', { p_server: id || null, p_code: code || null });
-  arStart({ mode: 'ffa', server: s, live: true });
+  arStart({ mode: 'ffa', server: s, live: true }); track('arena', { priv: s.private ? 1 : 0 });
 }
 // matchmaking: look for a real pilot for a few seconds, then match an AI pilot
 // with a friend code you only meet whoever typed the same code, and there is no AI
@@ -10984,7 +10984,7 @@ function storeProfile(st) {
 // ===== META: analytics, crash logs, bug reports, legal pages, and the moderator stats screen =====
 // Analytics are our own (no outside trackers): a random id per browser, a few events, no personal info.
 const GAME_VER = '2026.10.27';
-const META = { q: [], sendT: 5, beatT: 60, sess: Math.random().toString(36).slice(2, 10), t0: Date.now(), crashes: new Set(), on: false };
+const META = { q: [], sendT: 5, beatT: 60, sess: Math.random().toString(36).slice(2, 10), t0: Date.now(), act: 0, crashes: new Set(), on: false };
 // only talk to a real server (the website, or the local test server); never from a saved copy of the page
 META.on = (() => { try { return location.protocol === 'https:' || /^http:\/\/(localhost|127\.0\.0\.1)/.test(NET.url); } catch (e) { return false; } })();
 function deviceId() {
@@ -11008,13 +11008,13 @@ function metaFlush() {
 }
 function metaTick(dt) {
   if (!META.on) return;
-  if (!META.started) { META.started = true; track('session', { v: GAME_VER, w: innerWidth, h: innerHeight, touch: IN.touch ? 1 : 0, lv: S ? S.lvl : 0, pl: S ? S.planet.reached : 0, ref: (() => { try { return document.referrer ? new URL(document.referrer).hostname.slice(0, 40) : ''; } catch (e) { return ''; } })() }); }
-  if (!document.hidden) { META.beatT -= dt; if (META.beatT <= 0) { META.beatT = 120; track('beat', { s: META.sess, m: Math.round((Date.now() - META.t0) / 60000), sc: SCENE }); } }
+  if (!META.started) { META.started = true; track('session', { s: META.sess, v: GAME_VER, w: innerWidth, h: innerHeight, touch: IN.touch ? 1 : 0, lv: S ? S.lvl : 0, pl: S ? S.planet.reached : 0, ref: (() => { try { return document.referrer ? new URL(document.referrer).hostname.slice(0, 40) : ''; } catch (e) { return ''; } })() }); }
+  if (!document.hidden) { META.act += Math.min(dt, 0.25); META.beatT -= dt; if (META.beatT <= 0) { META.beatT = 120; track('beat', { s: META.sess, m: Math.round(META.act / 60), sc: SCENE }); } }   // minutes actually on screen
   META.sendT -= dt; if (META.sendT <= 0) { META.sendT = 15; metaFlush(); }
   if (S && NET.st === 'on') firstTime('signup');
   if (S && S.stats && S.stats.equips > 0) firstTime('equip');
 }
-addEventListener('pagehide', () => { try { if (META.on && META.q.length) { const b = JSON.stringify({ p_device: deviceId(), p_events: META.q.splice(0, 40) }); fetch(NET.url + '/rest/v1/rpc/track', { method: 'POST', keepalive: true, headers: { apikey: NET_KEY, 'Content-Type': 'application/json' }, body: b }).catch(() => { }); } } catch (e) { } });
+addEventListener('pagehide', () => { try { if (META.on && META.started) track('end', { s: META.sess, m: Math.round(META.act / 6) / 10, sc: SCENE }); if (META.on && META.q.length) { const b = JSON.stringify({ p_device: deviceId(), p_events: META.q.splice(0, 40) }); fetch(NET.url + '/rest/v1/rpc/track', { method: 'POST', keepalive: true, headers: { apikey: NET_KEY, 'Content-Type': 'application/json' }, body: b }).catch(() => { }); } } catch (e) { } });
 
 // ---------- crashes: every error the game catches gets logged once per session ----------
 function logCrash(e) {
@@ -11311,7 +11311,7 @@ function coopGuestStart(d) {
   if (RUN || SCENE === 'arena' || SCENE === 'open' || SCENE === 'range' || SCENE === 'results' || SCENE === 'warp') { COOP.room && COOP.room.send('busy', {}); return; }
   if (HUB.panel) HUB.panel = null;
   COOP.ui = null; COOP.live = true; COOP.st = 'live';
-  startRun(clamp(d.pi | 0, 1, 60), { seed: (d.seed >>> 0) || 1, guest: true });
+  startRun(clamp(d.pi | 0, 1, 60), { seed: (d.seed >>> 0) || 1, guest: true }); track('coop', { p: d.pi | 0, guest: 1 });
   RUN.coop = 'guest'; coopRunSetup();
   banner(`LANDED WITH ${COOP.partner ? COOP.partner.cs : 'YOUR FRIEND'}. STICK TOGETHER!`, '#7dffb0');
 }
@@ -11540,7 +11540,7 @@ function coopOverlay() {
 function coopLaunch() {
   const n = COOP.planet, p = planetDef(n);
   if (typeof buyBoosts === 'function' && !buyBoosts(p)) return;
-  MAP.init = false; HUB.panel = null; startRun(n);
+  MAP.init = false; HUB.panel = null; startRun(n); track('coop', { p: n, guest: 0 });
 }
 // a little bar under the station header while you are in a co-op lobby
 function coopLobbyChip() {

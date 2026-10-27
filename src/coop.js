@@ -75,7 +75,7 @@ function coopGuestStart(d) {
   if (RUN || SCENE === 'arena' || SCENE === 'open' || SCENE === 'range' || SCENE === 'results' || SCENE === 'warp') { COOP.room && COOP.room.send('busy', {}); return; }
   if (HUB.panel) HUB.panel = null;
   COOP.ui = null; COOP.live = true; COOP.st = 'live';
-  startRun(clamp(d.pi | 0, 1, 60), { seed: (d.seed >>> 0) || 1, guest: true });
+  startRun(clamp(d.pi | 0, 1, 60), { seed: (d.seed >>> 0) || 1, guest: true }); track('coop', { p: d.pi | 0, guest: 1 });
   RUN.coop = 'guest'; coopRunSetup();
   banner(`LANDED WITH ${COOP.partner ? COOP.partner.cs : 'YOUR FRIEND'}. STICK TOGETHER!`, '#7dffb0');
 }
@@ -304,7 +304,7 @@ function coopOverlay() {
 function coopLaunch() {
   const n = COOP.planet, p = planetDef(n);
   if (typeof buyBoosts === 'function' && !buyBoosts(p)) return;
-  MAP.init = false; HUB.panel = null; startRun(n);
+  MAP.init = false; HUB.panel = null; startRun(n); track('coop', { p: n, guest: 0 });
 }
 // a little bar under the station header while you are in a co-op lobby
 function coopLobbyChip() {

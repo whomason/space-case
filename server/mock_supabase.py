@@ -50,6 +50,7 @@ def make_handler(M):
         def do_GET(self):
             p = urlparse(self.path).path
             if p in ('/', '/index.html', '/space-case.html'): return self.send(200, raw=open(GAME, 'rb').read(), ctype='text/html; charset=utf-8')
+            if p == '/board.html': return self.send(200, raw=open(os.path.join(HERE, '..', 'board.html'), 'rb').read(), ctype='text/html; charset=utf-8')
             self.send(404, {'message': 'not found'})
         def do_PUT(self):
             u = urlparse(self.path); n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')

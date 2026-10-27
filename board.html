@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Space Crates Data Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b1024; --surface: #121a36; --surface-2: #18224a; --line: #263162; --grid: #212b56;
+  --ink: #eef1fb; --ink-2: #b7bfdc; --ink-3: #7f89b3;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --seq-0: #184f95; --seq-1: #1c5cab; --seq-2: #2a78d6; --seq-3: #5598e7; --seq-4: #86b6ef;
+  --good: #2fbf71; --bad: #e66767; --gold: #fca311;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 Inter, system-ui, sans-serif; }
+body { min-height: 100vh; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 20px 16px 60px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-bottom: 18px; }
+h1 { font: 16px/1.3 'Press Start 2P', monospace; margin: 0; letter-spacing: .5px; }
+h1 small { display: block; font: 500 12px Inter, sans-serif; color: var(--ink-3); margin-top: 6px; letter-spacing: 0; }
+.ctrls { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: none; border: 0; color: var(--ink-2); padding: 7px 12px; font: 600 13px Inter; cursor: pointer; }
+.seg button.on { background: var(--surface-2); color: var(--ink); }
+.btn { background: var(--surface); color: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font: 600 13px Inter; cursor: pointer; }
+.btn:hover, .seg button:hover { color: var(--ink); }
+.btn.primary { background: var(--s1); border-color: var(--s1); color: #fff; }
+.upd { color: var(--ink-3); font-size: 12px; }
+.grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.c3 { grid-column: span 3; } .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+@media (max-width: 980px) { .c3 { grid-column: span 6; } .c4, .c5, .c6, .c7, .c8 { grid-column: span 12; } }
+@media (max-width: 560px) { .c3 { grid-column: span 12; } }
+.card h2 { margin: 0 0 2px; font-size: 14px; font-weight: 700; }
+.card .sub { margin: 0 0 12px; color: var(--ink-3); font-size: 12px; }
+.section { grid-column: span 12; margin: 14px 0 -2px; font: 11px 'Press Start 2P', monospace; color: var(--ink-3); letter-spacing: .5px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; grid-column: span 12; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.tile .k { color: var(--ink-3); font-size: 12px; font-weight: 600; }
+.tile .v { font-size: 28px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.tile .h { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+.tile.live .v::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--good); margin: 0 8px 4px 0; box-shadow: 0 0 0 4px #2fbf7133; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart text { fill: var(--ink-3); font: 11px Inter; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: -4px 0 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.tip { position: absolute; pointer-events: none; background: #050816ee; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 12px; color: var(--ink); white-space: nowrap; transform: translate(-50%, -110%); opacity: 0; transition: opacity .08s; z-index: 5; }
+.tip b { font-weight: 700; } .tip .m { color: var(--ink-3); }
+.hbar { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; gap: 8px 10px; align-items: center; font-size: 13px; }
+.hbar .l { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar .t { height: 14px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.hbar .f { height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; }
+.hbar .n { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; min-width: 52px; }
+.hbar .n span { color: var(--ink-3); margin-left: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th { text-align: right; color: var(--ink-3); font-weight: 600; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); color: var(--ink); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+.scroll { overflow-x: auto; }
+.heat { display: inline-block; min-width: 46px; padding: 2px 6px; border-radius: 4px; text-align: center; }
+.muted { color: var(--ink-3); }
+.empty { color: var(--ink-3); font-size: 13px; padding: 16px 0; text-align: center; }
+.login { max-width: 380px; margin: 12vh auto 0; }
+.login .card { padding: 24px; }
+.login label { display: block; color: var(--ink-2); font-size: 12px; font-weight: 600; margin: 14px 0 6px; }
+.login input { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 14px Inter; }
+.login .btn { width: 100%; margin-top: 18px; padding: 10px; }
+.err { color: var(--bad); font-size: 13px; margin-top: 12px; min-height: 18px; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
+.split { display: flex; height: 16px; border-radius: 5px; overflow: hidden; gap: 2px; margin: 8px 0 10px; }
+.note { color: var(--ink-3); font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="tip" id="tip"></div>
+<script>
+// ===== Space Crates data board: signs in as a moderator and reads public.admin_board() =====
+const Q = new URLSearchParams(location.search);
+const API = Q.get('api') || 'https://covyfmkuqynrlzsaieme.supabase.co';
+const KEY = 'sb_publishable_ImfcmYTq1l8lW_Y-rnHqBA_PwwgC6JV';   // the public key the game already ships with
+const SK = 'scboard.sess' + (Q.get('api') ? '.test' : '');
+const S = { sess: null, days: 30, d: null, err: '', busy: false, t: null };
+try { S.sess = JSON.parse(localStorage.getItem(SK) || 'null'); } catch (e) { }
+try { S.days = +localStorage.getItem('scboard.days') || 30; } catch (e) { }
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = n => n == null ? '–' : Math.round(n).toLocaleString('en-US');
+const fmt1 = n => n == null ? '–' : (+n).toLocaleString('en-US', { maximumFractionDigits: 1 });
+const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
+const money = c => '$' + (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const mins = m => m == null ? '–' : m < 60 ? fmt1(m) + ' min' : fmt1(m / 60) + ' h';
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+async function call(path, body, auth) {
+  const h = { apikey: KEY, 'Content-Type': 'application/json' }; if (auth) h.Authorization = 'Bearer ' + auth;
+  const r = await fetch(API + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) });
+  const t = await r.text(); let j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { }
+  if (!r.ok) { const e = new Error((j && (j.message || j.msg || j.error_description || j.error)) || 'Server error ' + r.status); e.status = r.status; throw e; }
+  return j;
+}
+function saveSess(j) { S.sess = j ? { at: j.access_token, rt: j.refresh_token, exp: Date.now() + (j.expires_in || 3600) * 1000 } : null; try { localStorage.setItem(SK, JSON.stringify(S.sess)); } catch (e) { } }
+async function token() {
+  if (!S.sess) throw new Error('signin');
+  if (Date.now() > S.sess.exp - 60000) { try { saveSess(await call('/auth/v1/token?grant_type=refresh_token', { refresh_token: S.sess.rt })); } catch (e) { saveSess(null); throw new Error('signin'); } }
+  return S.sess.at;
+}
+async function load() {
+  if (S.busy) return; S.busy = true;
+  try { S.d = await call('/rest/v1/rpc/admin_board', { p_days: S.days }, await token()); S.err = ''; S.t = new Date(); render(); }
+  catch (e) {
+    if (e.message === 'signin' || e.status === 401) { saveSess(null); renderLogin(); }
+    else { S.err = /MODERATORS ONLY/.test(e.message) ? 'This account is not a moderator. Add it to the admins table in Supabase.' : e.message; S.d ? render() : renderLogin(S.err); }
+  } finally { S.busy = false; }
+}
+
+// ---------- sign in ----------
+function renderLogin(msg) {
+  $('#app').innerHTML = `<div class="login"><h1>SPACE CRATES<small>Data board. Sign in with your moderator account.</small></h1>
+    <form class="card" id="lf" style="margin-top:18px"><label for="em">Email</label><input id="em" type="email" autocomplete="username" required>
+    <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required>
+    <button class="btn primary" type="submit">Sign in</button><div class="err" id="le">${esc(msg || '')}</div></form></div>`;
+  $('#lf').onsubmit = async ev => {
+    ev.preventDefault(); $('#le').textContent = 'Signing in…';
+    try { saveSess(await call('/auth/v1/token?grant_type=password', { email: $('#em').value.trim().toLowerCase(), password: $('#pw').value })); $('#le').textContent = 'Loading…'; await load(); }
+    catch (e) { $('#le').textContent = e.message === 'signin' ? 'Sign in failed' : e.message; }
+  };
+}
+
+// ---------- tooltips ----------
+const tip = $('#tip');
+function showTip(ev, html) { tip.innerHTML = html; tip.style.opacity = 1; tip.style.left = ev.pageX + 'px'; tip.style.top = (ev.pageY - 8) + 'px'; }
+function hideTip() { tip.style.opacity = 0; }
+document.addEventListener('pointermove', ev => { const t = ev.target.closest('[data-tip]'); if (t) showTip(ev, t.getAttribute('data-tip')); else hideTip(); });
+
+// ---------- charts (plain SVG) ----------
+const shortDay = s => { const d = new Date(s + 'T12:00:00'); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+// axis top + gridline count with whole-number steps (1, 2, 5 x 10^k) so labels never read 12.5
+function axis(v) { let best = null; for (const n of [4, 5]) { const raw = Math.max(1, v) / n, p = Math.pow(10, Math.floor(Math.log10(raw))); for (const m of [1, 2, 5, 10]) { const st = Math.max(1, m * p); if (st * n >= v) { if (!best || st * n < best.max) best = { max: st * n, n }; break; } } } return best; }
+// columns over categories; series = [{name, color, values}], stacked never, grouped when 2
+function columns(labels, series, o = {}) {
+  const Wd = 640, Ht = o.h || 200, L = 34, B = 22, T = 8, ax = axis(Math.max(1, ...series.flatMap(s => s.values))), max = ax.max;
+  const n = labels.length, cw = (Wd - L) / n, gap = Math.max(2, Math.min(8, cw * 0.25)), bw = (cw - gap) / series.length;
+  let g = '';
+  for (let i = 0; i <= ax.n; i++) { const v = max * i / ax.n, y = T + (Ht - T - B) * (1 - i / ax.n); g += `<line x1="${L}" x2="${Wd}" y1="${y}" y2="${y}" stroke="${css('--grid')}" stroke-width="1"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${fmt(v)}</text>`; }
+  const every = Math.ceil(n / (o.ticks || 10));
+  labels.forEach((lb, i) => {
+    const x0 = L + i * cw + gap / 2;
+    series.forEach((s, k) => { const v = s.values[i] || 0, h = (Ht - T - B) * v / max, x = x0 + k * bw, y = Ht - B - h;
+      if (h > 0) g += `<path d="M${x},${Ht - B} V${y + Math.min(4, h)} q0,-${Math.min(4, h)} ${Math.min(4, bw / 2)},-${Math.min(4, h)} H${x + bw - 1 - Math.min(4, bw / 2)} q${Math.min(4, bw / 2)},0 ${Math.min(4, bw / 2)},${Math.min(4, h)} V${Ht - B} Z" fill="${s.color}"/>`; });
+    const tipH = `<b>${esc(o.tipLabel ? o.tipLabel(lb) : lb)}</b><br>` + series.map(s => `<span class="m">${esc(s.name)}:</span> ${o.fmtV ? o.fmtV(s.values[i] || 0) : fmt(s.values[i] || 0)}`).join('<br>');
+    g += `<rect x="${L + i * cw}" y="${T}" width="${cw}" height="${Ht - T - B}" fill="transparent" data-tip="${esc(tipH)}"/>`;
+    if (i % every === 0) g += `<text x="${L + i * cw + cw / 2}" y="${Ht - 6}" text-anchor="middle">${esc(o.xLabel ? o.xLabel(lb) : lb)}</text>`;
+  });
+  g += `<line x1="${L}" x2="${Wd}" y1="${Ht - B}" y2="${Ht - B}" stroke="${css('--line')}"/>`;
+  return `<div class="chart"><svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${esc(o.aria || '')}">${g}</svg></div>`;
+}
+// lines over days, with a hover column per day
+function lines(labels, series, o = {}) {
+  const Wd = 640, Ht = o.h || 220, L = 34, B = 22, T = 10, ax = axis(Math.max(1, ...series.flatMap(s => s.values))), max = ax.max;
+  const n = labels.length, X = i => L + (n === 1 ? (Wd - L) / 2 : i * (Wd - L - 6) / (n - 1)), Y = v => T + (Ht - T - B) * (1 - v / max);
+  let g = '';
+  for (let i = 0; i <= ax.n; i++) { const v = max * i / ax.n, y = Y(v); g += `<line x1="${L}" x2="${Wd}" y1="${y}" y2="${y}" stroke="${css('--grid')}"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${fmt(v)}</text>`; }
+  for (const s of series) {
+    g += `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${s.values.map((v, i) => X(i) + ',' + Y(v || 0)).join(' ')}"/>`;
+    const li = n - 1; g += `<circle cx="${X(li)}" cy="${Y(s.values[li] || 0)}" r="4" fill="${s.color}" stroke="${css('--surface')}" stroke-width="2"/>`;
+  }
+  const every = Math.ceil(n / 8), cw = (Wd - L) / Math.max(1, n);
+  labels.forEach((lb, i) => {
+    if ((i % every === 0 && n - 1 - i >= every * 0.6) || i === n - 1) g += `<text x="${X(i)}" y="${Ht - 6}" text-anchor="${i === n - 1 ? 'end' : 'middle'}">${esc(shortDay(lb))}</text>`;
+    const th = `<b>${esc(shortDay(lb))}</b><br>` + series.map(s => `<span class="m">${esc(s.name)}:</span> ${fmt(s.values[i] || 0)}`).join('<br>');
+    g += `<rect x="${X(i) - cw / 2}" y="${T}" width="${cw}" height="${Ht - T - B}" fill="transparent" data-tip="${esc(th)}"/>`;
+  });
+  g += `<line x1="${L}" x2="${Wd}" y1="${Ht - B}" y2="${Ht - B}" stroke="${css('--line')}"/>`;
+  return `<div class="chart"><svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${esc(o.aria || '')}">${g}</svg></div>`;
+}
+function legend(series) { return `<div class="legend">${series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>`; }
+function hbars(rows, o = {}) {
+  if (!rows.length) return `<div class="empty">No data yet</div>`;
+  const max = Math.max(1, ...rows.map(r => r.v)), tot = o.total ?? rows.reduce((a, r) => a + r.v, 0);
+  return `<div class="hbar">${rows.map(r => `<div class="l" title="${esc(r.l)}">${esc(r.l)}</div><div class="t" data-tip="${esc(`<b>${esc(r.l)}</b><br>${o.fmtV ? o.fmtV(r.v) : fmt(r.v)}${o.pct !== false && tot ? ` <span class=m>(${pct(r.v, tot)}%)</span>` : ''}`)}"><div class="f" style="width:${Math.max(r.v ? 1.5 : 0, 100 * r.v / max)}%;${r.c ? 'background:' + r.c : ''}"></div></div><div class="n">${o.fmtV ? o.fmtV(r.v) : fmt(r.v)}${o.pct !== false && tot ? `<span>${pct(r.v, tot)}%</span>` : ''}</div>`).join('')}</div>`;
+}
+const heatCol = v => v == null ? 'transparent' : v >= 40 ? css('--seq-4') : v >= 25 ? css('--seq-3') : v >= 15 ? css('--seq-2') : v >= 5 ? css('--seq-1') : css('--seq-0');
+const heatInk = v => v != null && v >= 25 ? '#0b1024' : css('--ink');
+
+// ---------- the board ----------
+const SCENES = { planet: 'On a planet', hub: 'Space station', open: 'Opening crates', crates: 'Crate bay', map: 'Star map', arena: 'Arena / 1v1', range: 'Test range', results: 'Haul results', warp: 'Warping', title: 'Title screen' };
+const CRATES = { weapon: 'Weapon', armor: 'Armor', ship: 'Ship parts', mining: 'Mining tools', skin: 'Skins', cosmetic: 'Cosmetics', backdrop: 'Backdrops', gadget: 'Gadgets', pet: 'Pets', galaxy: 'Galaxy', haul: 'Free from hauls' };
+const crateName = k => CRATES[k] || (k.startsWith('class:') ? k.slice(6).replace(/^./, c => c.toUpperCase()) + ' crate' : k.startsWith('finisher:') ? 'Finisher crate' : k);
+const PLANETS = ['DUSTMOOR', 'VERDANCE', 'GLACIS', 'PYRRHOS', 'SALTMERE', 'NIMBUS', 'OSSUARY', 'UMBRA', 'CORALIS', 'GRAVOS', 'FUNGARA', 'FERROX', 'AURORAE', 'MIRAGE', 'VOLTARA', 'CRYSTALLOS', 'ABYSSIA', 'CINDERFALL', 'CHRONOS', 'XENITH'];
+const pName = p => (PLANETS[p - 1] || 'PLANET ' + p);
+const tileH = (k, v, h, cls = '') => `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || '&nbsp;'}</div></div>`;
+
+function render() {
+  const d = S.d, T = d.totals, days = d.days || [], lab = days.map(x => x.day), per = `last ${d.days_n} days`;
+  const L = d.lengths || {}, F = d.funnel || {}, M = d.modes || {}, D = d.devices || {}, ST = d.store || {}, HL = d.health || {};
+  const scenes = Object.entries(d.scenes || {}).map(([k, v]) => ({ l: SCENES[k] || k, v })).sort((a, b) => b.v - a.v);
+  const crates = Object.entries(d.crates || {}).map(([k, v]) => ({ l: crateName(k), v })).sort((a, b) => b.v - a.v).slice(0, 10);
+  const reach = Object.entries(d.reach || {}).map(([k, v]) => [+k, v]).filter(x => x[0] > 0).sort((a, b) => a[0] - b[0]);
+  const planets = d.planets || [];
+  const s1 = css('--s1'), s2 = css('--s2'), s3 = css('--s3');
+  const actS = [{ name: 'Active players', color: s1, values: days.map(x => x.active) }, { name: 'New players', color: s2, values: days.map(x => x.new) }];
+  const hrs = d.hours || []; const hrLab = hrs.map((_, i) => i);
+  const lenRows = [['Under 2 min', L.u2], ['2–5 min', L.m2_5], ['5–15 min', L.m5_15], ['15–30 min', L.m15_30], ['30–60 min', L.m30_60], ['Over 1 hour', L.m60]];
+  const fun = [['Opened the game', F.opened], ['Opened a crate', F.crate], ['Equipped an item', F.equip], ['Finished a landing', F.land], ['Beat a boss', F.boss], ['Made an account', F.signup]];
+  const touch = D.touch || 0, desk = D.desktop || 0;
+  $('#app').innerHTML = `
+  <header>
+    <h1>SPACE CRATES<small>Data board · ${esc(per)} · times in Detroit time</small></h1>
+    <div class="ctrls">
+      <div class="seg" role="group" aria-label="Time range">${[7, 14, 30, 90].map(n => `<button data-days="${n}" class="${n === S.days ? 'on' : ''}">${n}d</button>`).join('')}</div>
+      <button class="btn" id="rf">Refresh</button><button class="btn" id="so">Sign out</button>
+      <span class="upd">${S.err ? `<span style="color:var(--bad)">${esc(S.err)}</span>` : 'Updated ' + S.t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · refreshes every minute'}</span>
+    </div>
+  </header>
+  <div class="grid">
+    <div class="tiles">
+      ${tileH('Playing right now', fmt(T.online), 'active in the last 5 min', 'live')}
+      ${tileH('Players today', fmt(T.dau), `${fmt(T.wau)} this week · ${fmt(T.mau)} this month`)}
+      ${tileH('New players', fmt(T.new_period), `${fmt(T.new_today)} today`)}
+      ${tileH('All-time players', fmt(T.players), `${fmt(T.accounts)} with an account`)}
+      ${tileH('Avg session', mins(T.avg_mins), `median ${mins(T.med_mins)}`)}
+      ${tileH('Total play time', fmt1(T.play_hours) + ' h', `${fmt(T.sessions)} sessions`)}
+      ${tileH('Revenue', money(ST.cents || 0), `${money(ST.cents_all || 0)} all-time · ${fmt(ST.buyers)} buyers`)}
+    </div>
+
+    <div class="section">WHO PLAYS</div>
+    <div class="card c8"><h2>Players per day</h2><p class="sub">Everyone who played that day, and how many of them were brand new</p>${legend(actS)}${lines(lab, actS, { aria: 'Active and new players per day' })}</div>
+    <div class="card c4"><h2>Coming back</h2><p class="sub">Of the players who started on a day, % who played again 1, 3 and 7 days later</p>
+      <div class="scroll" style="max-height:236px;overflow-y:auto"><table><thead><tr><th>Started</th><th>New</th><th>Day 1</th><th>Day 3</th><th>Day 7</th></tr></thead><tbody>
+      ${(d.cohorts || []).filter(c => c.size > 0).map(c => `<tr><td>${esc(shortDay(c.day))}</td><td>${fmt(c.size)}</td>${['d1', 'd3', 'd7'].map(k => `<td>${c[k] == null ? '<span class="muted">soon</span>' : `<span class="heat" style="background:${heatCol(c[k])};color:${heatInk(c[k])}">${c[k]}%</span>`}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="5" class="empty">No new players in the last 3 weeks</td></tr>`}
+      </tbody></table></div></div>
+
+    <div class="section">HOW LONG THEY PLAY</div>
+    <div class="card c6"><h2>Play time per day</h2><p class="sub">Minutes on screen, all players added up</p>${columns(lab, [{ name: 'Minutes played', color: s1, values: days.map(x => x.minutes) }], { xLabel: shortDay, tipLabel: shortDay, ticks: 8, aria: 'Minutes played per day' })}</div>
+    <div class="card c6"><h2>Session length</h2><p class="sub">How long one sitting lasts (${fmt(T.sessions)} sessions)</p>${hbars(lenRows.map(([l, v]) => ({ l, v: v || 0 })))}
+      <p class="note">Counts only time with the game on screen, not time in another tab.</p></div>
+    <div class="card c6"><h2>When people play</h2><p class="sub">Activity by hour of day, Detroit time</p>${columns(hrLab, [{ name: 'Activity', color: s1, values: hrs }], { xLabel: h => h % 3 ? '' : (h % 12 || 12) + (h < 12 ? 'a' : 'p'), tipLabel: h => (h % 12 || 12) + ':00 ' + (h < 12 ? 'AM' : 'PM'), ticks: 24, aria: 'Activity by hour' })}</div>
+    <div class="card c6"><h2>Top players</h2><p class="sub">Most time played, ${esc(per)}</p>
+      <div class="scroll"><table><thead><tr><th>Player</th><th>Time</th><th>Sessions</th><th>Last seen</th></tr></thead><tbody>
+      ${(d.top || []).map(p => `<tr><td>${esc(p.who)}</td><td>${mins(p.mins)}</td><td>${fmt(p.sessions)}</td><td class="muted">${esc(new Date(p.last_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}</td></tr>`).join('') || `<tr><td colspan="4" class="empty">No sessions yet</td></tr>`}
+      </tbody></table></div></div>
+
+    <div class="section">WHAT THEY DO</div>
+    <div class="card c6"><h2>Where the time goes</h2><p class="sub">Share of play time on each screen</p>${hbars(scenes, { fmtV: mins })}</div>
+    <div class="card c6"><h2>New player path</h2><p class="sub">Of ${fmt(F.opened)} new players, how many reached each step</p>${hbars(fun.map(([l, v], i) => ({ l, v: v || 0, c: i === 0 ? css('--seq-2') : s1 })), { total: F.opened || 0 })}</div>
+    <div class="card c12"><h2>Planets</h2><p class="sub">Every finished landing, ${esc(per)}</p>
+      <div class="scroll"><table><thead><tr><th>Planet</th><th>Landings</th><th>Players</th><th>Died</th><th>Avg ore</th><th>Avg kills</th><th>Avg time</th><th>Players stuck here</th></tr></thead><tbody>
+      ${planets.map(p => `<tr><td>${p.p}. ${esc(pName(p.p))}</td><td>${fmt(p.landings)}</td><td>${fmt(p.players)}</td><td><span style="color:${p.died >= 50 ? css('--bad') : 'inherit'}">${p.died}%</span></td><td>${fmt(p.ore)}</td><td>${fmt(p.kills)}</td><td>${p.secs ? Math.floor(p.secs / 60) + ':' + String(p.secs % 60).padStart(2, '0') : '–'}</td><td>${fmt((d.reach || {})[p.p] || 0)}</td></tr>`).join('') || `<tr><td colspan="8" class="empty">No landings yet</td></tr>`}
+      </tbody></table></div><p class="note">"Players stuck here" is how many players have this as their furthest planet, all-time.</p></div>
+    <div class="card c6"><h2>Furthest planet reached</h2><p class="sub">All-time, one count per player</p>${reach.length ? columns(reach.map(r => r[0]), [{ name: 'Players', color: s1, values: reach.map(r => r[1]) }], { tipLabel: p => p + '. ' + pName(p), ticks: 20, aria: 'Furthest planet reached' }) : '<div class="empty">No data yet</div>'}</div>
+    <div class="card c6"><h2>Crates opened</h2><p class="sub">${fmt(T.crates)} crates, ${esc(per)}</p>${hbars(crates)}</div>
+    <div class="card c6"><h2>Other modes</h2><p class="sub">${esc(per)}</p>${hbars([
+      { l: '1v1 duels played', v: M.duels || 0 }, { l: '  vs AI pilots', v: M.duel_ai || 0 }, { l: 'Arena servers joined', v: M.arena || 0 }, { l: 'Co-op landings', v: M.coop || 0 },
+      { l: 'Bosses beaten', v: M.bosses || 0 }, { l: 'Daily rewards claimed', v: M.dailies || 0 }, { l: 'Pass missions done', v: M.missions || 0 }], { pct: false })}
+      <p class="note">Duel win rate: ${M.duel_win ?? 0}% · Landings: ${fmt(T.landings)}</p></div>
+    <div class="card c6"><h2>Devices and where players come from</h2><p class="sub">${esc(per)}</p>
+      <div class="legend"><span><i style="background:${s1}"></i>Computer ${pct(desk, desk + touch)}%</span><span><i style="background:${s3}"></i>Phone / tablet ${pct(touch, desk + touch)}%</span></div>
+      <div class="split">${desk ? `<div style="flex:${desk};background:${s1}" data-tip="<b>Computer</b><br>${fmt(desk)} players"></div>` : ''}${touch ? `<div style="flex:${touch};background:${s3}" data-tip="<b>Phone / tablet</b><br>${fmt(touch)} players"></div>` : ''}${!desk && !touch ? `<div style="flex:1;background:var(--grid)"></div>` : ''}</div>
+      ${hbars((D.refs || []).map(r => ({ l: r.ref === 'direct' ? 'Typed the link / bookmark' : r.ref, v: r.n })))}</div>
+
+    <div class="section">MONEY AND HEALTH</div>
+    <div class="card c6"><h2>Store</h2><p class="sub">Clicks on buy buttons vs real purchases, ${esc(per)}</p>
+      ${hbars(Object.entries(ST.clicks || {}).map(([k, v]) => ({ l: k, v })).sort((a, b) => b.v - a.v), { pct: false })}
+      <p class="note">Purchases: ${Object.entries(ST.by || {}).map(([k, v]) => `${esc(k)} ×${v}`).join(', ') || 'none yet'} · ${money(ST.cents || 0)}</p></div>
+    <div class="card c6"><h2>Bugs and crashes</h2><p class="sub">${esc(per)}</p>
+      ${hbars([{ l: 'Open bug reports', v: HL.bugs_open || 0, c: (HL.bugs_open ? css('--bad') : '') }, { l: 'Crash events', v: HL.crashes || 0, c: (HL.crashes ? css('--bad') : '') }], { pct: false })}
+      <p class="note">${HL.top_crash ? 'Most common crash: <code>' + esc(HL.top_crash) + '</code>' : 'No crashes logged.'} Read and close bug reports in the game: Social → STATS tab.</p></div>
+  </div>`;
+  document.querySelectorAll('[data-days]').forEach(b => b.onclick = () => { S.days = +b.dataset.days; try { localStorage.setItem('scboard.days', S.days); } catch (e) { } load(); });
+  $('#rf').onclick = () => load();
+  $('#so').onclick = () => { saveSess(null); S.d = null; renderLogin(); };
+}
+
+if (S.sess) { $('#app').innerHTML = '<div class="empty" style="margin-top:20vh">Loading the board…</div>'; load(); } else renderLogin();
+setInterval(() => { if (S.d && !document.hidden) load(); }, 60000);
+</script>
+</body>
+</html>

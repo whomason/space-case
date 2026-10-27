@@ -1,7 +1,7 @@
 // ===== META: analytics, crash logs, bug reports, legal pages, and the moderator stats screen =====
 // Analytics are our own (no outside trackers): a random id per browser, a few events, no personal info.
 const GAME_VER = '2026.10.27';
-const META = { q: [], sendT: 5, beatT: 60, sess: Math.random().toString(36).slice(2, 10), t0: Date.now(), crashes: new Set(), on: false };
+const META = { q: [], sendT: 5, beatT: 60, sess: Math.random().toString(36).slice(2, 10), t0: Date.now(), act: 0, crashes: new Set(), on: false };
 // only talk to a real server (the website, or the local test server); never from a saved copy of the page
 META.on = (() => { try { return location.protocol === 'https:' || /^http:\/\/(localhost|127\.0\.0\.1)/.test(NET.url); } catch (e) { return false; } })();
 function deviceId() {
@@ -25,13 +25,13 @@ function metaFlush() {
 }
 function metaTick(dt) {
   if (!META.on) return;
-  if (!META.started) { META.started = true; track('session', { v: GAME_VER, w: innerWidth, h: innerHeight, touch: IN.touch ? 1 : 0, lv: S ? S.lvl : 0, pl: S ? S.planet.reached : 0, ref: (() => { try { return document.referrer ? new URL(document.referrer).hostname.slice(0, 40) : ''; } catch (e) { return ''; } })() }); }
-  if (!document.hidden) { META.beatT -= dt; if (META.beatT <= 0) { META.beatT = 120; track('beat', { s: META.sess, m: Math.round((Date.now() - META.t0) / 60000), sc: SCENE }); } }
+  if (!META.started) { META.started = true; track('session', { s: META.sess, v: GAME_VER, w: innerWidth, h: innerHeight, touch: IN.touch ? 1 : 0, lv: S ? S.lvl : 0, pl: S ? S.planet.reached : 0, ref: (() => { try { return document.referrer ? new URL(document.referrer).hostname.slice(0, 40) : ''; } catch (e) { return ''; } })() }); }
+  if (!document.hidden) { META.act += Math.min(dt, 0.25); META.beatT -= dt; if (META.beatT <= 0) { META.beatT = 120; track('beat', { s: META.sess, m: Math.round(META.act / 60), sc: SCENE }); } }   // minutes actually on screen
   META.sendT -= dt; if (META.sendT <= 0) { META.sendT = 15; metaFlush(); }
   if (S && NET.st === 'on') firstTime('signup');
   if (S && S.stats && S.stats.equips > 0) firstTime('equip');
 }
-addEventListener('pagehide', () => { try { if (META.on && META.q.length) { const b = JSON.stringify({ p_device: deviceId(), p_events: META.q.splice(0, 40) }); fetch(NET.url + '/rest/v1/rpc/track', { method: 'POST', keepalive: true, headers: { apikey: NET_KEY, 'Content-Type': 'application/json' }, body: b }).catch(() => { }); } } catch (e) { } });
+addEventListener('pagehide', () => { try { if (META.on && META.started) track('end', { s: META.sess, m: Math.round(META.act / 6) / 10, sc: SCENE }); if (META.on && META.q.length) { const b = JSON.stringify({ p_device: deviceId(), p_events: META.q.splice(0, 40) }); fetch(NET.url + '/rest/v1/rpc/track', { method: 'POST', keepalive: true, headers: { apikey: NET_KEY, 'Content-Type': 'application/json' }, body: b }).catch(() => { }); } } catch (e) { } });
 
 // ---------- crashes: every error the game catches gets logged once per session ----------
 function logCrash(e) {

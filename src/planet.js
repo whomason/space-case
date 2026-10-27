@@ -150,7 +150,7 @@ function paintDetails(G, p, R, solidP, GW, GH, rmp) {
 function startRun(pi, opt = {}) {
   const p = planetDef(pi); S.planet.landings++; S.planet.cur = pi; const boost = S.nextBoost || {}; S.nextBoost = null;
   if (!S.planet.visited[pi]) { S.planet.visited[pi] = 1; toast(`${p.name} SALVAGE CRATES UNLOCKED`, COL.mint); }
-  if (pi > S.planet.reached && (!opt.guest || canWarp(pi))) S.planet.reached = pi;   // a co-op guest doesn't skip ahead
+  if (pi > S.planet.reached && (!opt.guest || canWarp(pi))) { S.planet.reached = pi; track('reach', { pl: pi }); }   // a co-op guest doesn't skip ahead
   for (const b in S.planet.bossCd) if (S.planet.bossCd[b] > 0) S.planet.bossCd[b]--;
   const evKey = S.tutorial.planet && S.planet.landings > 1 && !opt.guest ? (S.planet.ev[pi] || rollEvent(pi)) : null;
   S.planet.ev[pi] = rollEvent(pi, evKey);
@@ -288,7 +288,7 @@ function onRunKill(e) {
     if (q === 'scavenger' && R0() < 0.15) R.chunks.push({ x: e.x, y: e.y - 6, vx: (R0() - 0.5) * 90, vy: -60, t: 0, pi: R.pi, delay: 0.25 });
     const sa = pl.setAb || {}; if (sa[4] && R0() < (sa[4] > 1 ? 0.35 : 0.22)) R.chunks.push({ x: e.x, y: e.y - 6, vx: (R0() - 0.5) * 60, vy: -50, t: 0, heal: true, delay: 0.3 });
   } else {
-    R.bossBeaten = true; w.boss = null; passXP(400); firstTime('boss');
+    R.bossBeaten = true; w.boss = null; passXP(400); firstTime('boss'); track('boss', { p: R.pi, t: Math.round(R.t) });
     const first = !S.planet.bosses[R.pi];
     const nC = first ? 3 : 1;
     S.planet.bosses[R.pi] = (S.planet.bosses[R.pi] || 0) + 1; S.planet.bossCd[R.pi] = 2;

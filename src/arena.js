@@ -499,7 +499,7 @@ async function arJoinServer(id, code) {
   if (!NET.callsign) { openNameUI(false); return; }
   try { await netFlush(); } catch (e) { }
   const s = await rpc('arena_join', { p_server: id || null, p_code: code || null });
-  arStart({ mode: 'ffa', server: s, live: true });
+  arStart({ mode: 'ffa', server: s, live: true }); track('arena', { priv: s.private ? 1 : 0 });
 }
 // matchmaking: look for a real pilot for a few seconds, then match an AI pilot
 // with a friend code you only meet whoever typed the same code, and there is no AI

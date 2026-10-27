@@ -168,7 +168,7 @@ function startOpen(kind, tier, n) {
   if (poolSize(kind) === 0) { SND.play('deny'); toast('THIS CRATE IS EMPTY. YOU OWN EVERYTHING IN IT', COL.dim); BAY.kind = 'weapon'; return; }
   const cost = crateCost(kind, tier) * n;
   if (S.coins < cost) { SND.play('deny'); toast('NOT ENOUGH COINS. HAUL MORE ORE', COL.coral); return; }
-  S.coins -= cost; S.stats.crates += n; passXP(25 * n); firstTime('crate'); dirty();
+  S.coins -= cost; S.stats.crates += n; passXP(25 * n); firstTime('crate'); track('crate', { k: kind, t: tier, n, c: cost }); dirty();
   OPEN = { kind, tier, n, cost, t: 0, st: BAY.upgrader ? 'upgrade' : 'insert', st_t: 0, results: [], shadow: {}, keysFly: [], parts: new Particles(1200), cards: [], sel: -1, demo: null, upg: null, list: null };
   if (tier >= 7) OPEN.st = 'insert';
   if (OPEN.st === 'upgrade') OPEN.upg = { a: 0, v: 14 + R0() * 4, done: false, p: UPG_CHANCE[tier] };
@@ -178,7 +178,7 @@ function startOpen(kind, tier, n) {
 // crates earned during a haul open for free right after it
 function startHaulOpen(list) {
   if (!list.length) return goHub();
-  S.stats.crates += list.length; passXP(25 * list.length); dirty();
+  S.stats.crates += list.length; passXP(25 * list.length); track('crate', { k: 'haul', n: list.length }); dirty();
   const best = list.reduce((a, c) => c.tier > a.tier ? c : a, list[0]);
   OPEN = { kind: list.length === 1 ? list[0].kind : 'galaxy', tier: best.tier, n: list.length, cost: 0, t: 0, st: 'insert', st_t: 0, results: [], shadow: {}, keysFly: [], parts: new Particles(1200), cards: [], sel: -1, demo: null, upg: null, list, haul: true };
   rollResults();

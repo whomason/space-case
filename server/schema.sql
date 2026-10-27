@@ -1813,6 +1813,110 @@ begin
   return 'OK';
 end $$;
 
+-- ------------------------------------------------- the data board (board.html): everything about how people play
+create or replace function public.admin_board(p_days int default 30) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare uid uuid := sc_private.me(); d int := least(greatest(coalesce(p_days, 30), 7), 90); tz text := 'America/Detroit';
+        since timestamptz; today timestamptz; r jsonb;
+begin
+  if not sc_private.is_admin(uid) then raise exception 'MODERATORS ONLY'; end if;
+  today := date_trunc('day', now() at time zone tz) at time zone tz;
+  since := today - (d - 1) * interval '1 day';
+  -- one row per play session: its length is the last heartbeat's minute count
+  create temp table if not exists _bs (device text, s text, mins numeric, last_at timestamptz) on commit drop;
+  truncate pg_temp._bs;
+  insert into pg_temp._bs select e.device, e.data ->> 's', max(sc_private.num(e.data -> 'm')), max(e.at)
+    from public.events e where e.kind in ('beat', 'end') and e.at >= since and e.data ? 's' group by e.device, e.data ->> 's';
+  r := jsonb_build_object(
+    'now', now(), 'days_n', d, 'tz', tz,
+    'totals', jsonb_build_object(
+      'players', (select count(*) from public.devices),
+      'accounts', (select count(*) from public.profiles where callsign is not null),
+      'online', (select count(distinct device) from public.events where at > now() - interval '5 minutes' and device <> 'server'),
+      'dau', (select count(distinct device) from public.events where at > now() - interval '1 day' and device <> 'server'),
+      'wau', (select count(distinct device) from public.events where at > now() - interval '7 days' and device <> 'server'),
+      'mau', (select count(distinct device) from public.events where at > now() - interval '30 days' and device <> 'server'),
+      'new_today', (select count(*) from public.devices where first_at >= today),
+      'new_period', (select count(*) from public.devices where first_at >= since),
+      'sessions', (select count(*) from public.events where kind = 'session' and at >= since),
+      'avg_mins', (select round(avg(mins), 1) from pg_temp._bs where mins > 0),
+      'med_mins', (select percentile_cont(0.5) within group (order by mins) from pg_temp._bs where mins > 0),
+      'play_hours', (select round(coalesce(sum(mins), 0) / 60.0, 1) from pg_temp._bs),
+      'landings', (select count(*) from public.events where kind = 'land' and at >= since),
+      'crates', (select coalesce(sum(coalesce(sc_private.num(data -> 'n'), 1)), 0) from public.events where kind = 'crate' and at >= since),
+      'duels', (select count(*) from public.events where kind = 'duel' and at >= since)),
+    'days', (select coalesce(jsonb_agg(x order by x.day), '[]'::jsonb) from (
+      select to_char(g.day, 'YYYY-MM-DD') as day,
+        (select count(distinct e.device) from public.events e where e.at >= g.day at time zone tz and e.at < (g.day + interval '1 day') at time zone tz and e.device <> 'server') as active,
+        (select count(*) from public.devices v where v.first_at >= g.day at time zone tz and v.first_at < (g.day + interval '1 day') at time zone tz) as new,
+        (select count(*) from public.events e where e.kind = 'session' and e.at >= g.day at time zone tz and e.at < (g.day + interval '1 day') at time zone tz) as sessions,
+        (select round(coalesce(sum(b.mins), 0)) from pg_temp._bs b where b.last_at >= g.day at time zone tz and b.last_at < (g.day + interval '1 day') at time zone tz) as minutes,
+        (select count(*) from public.events e where e.kind = 'land' and e.at >= g.day at time zone tz and e.at < (g.day + interval '1 day') at time zone tz) as landings,
+        (select count(distinct e.device) from public.events e where e.kind = 'first' and e.data ->> 'what' = 'signup' and e.at >= g.day at time zone tz and e.at < (g.day + interval '1 day') at time zone tz) as signups
+      from generate_series((now() at time zone tz)::date - (d - 1), (now() at time zone tz)::date, interval '1 day') g(day)) x),
+    'lengths', (select jsonb_build_object(
+      'u2', greatest(0, (select count(*) from public.events where kind = 'session' and at >= since) - (select count(*) from pg_temp._bs)) + (select count(*) from pg_temp._bs where mins < 2),
+      'm2_5', count(*) filter (where mins >= 2 and mins < 5), 'm5_15', count(*) filter (where mins >= 5 and mins < 15),
+      'm15_30', count(*) filter (where mins >= 15 and mins < 30), 'm30_60', count(*) filter (where mins >= 30 and mins < 60), 'm60', count(*) filter (where mins >= 60)) from pg_temp._bs),
+    'scenes', (select coalesce(jsonb_object_agg(sc, n), '{}'::jsonb) from (
+      select coalesce(e.data ->> 'sc', '?') as sc, count(*) * 2 as n from public.events e where e.kind = 'beat' and e.at >= since group by 1) q),
+    'hours', (select coalesce(jsonb_agg(n order by h), '[]'::jsonb) from (
+      select g.h, (select count(*) from public.events e where e.kind in ('beat', 'session') and e.at >= since and extract(hour from e.at at time zone tz) = g.h) as n
+      from generate_series(0, 23) g(h)) q),
+    'cohorts', (select coalesce(jsonb_agg(c order by c.day desc), '[]'::jsonb) from (
+      select to_char(g.day, 'YYYY-MM-DD') as day, count(v.device) as size,
+        case when now() > (g.day + interval '2 days') at time zone tz then round(100.0 * count(v.device) filter (where exists (select 1 from public.events e where e.device = v.device and e.at >= (g.day + interval '1 day') at time zone tz and e.at < (g.day + interval '2 days') at time zone tz)) / greatest(count(v.device), 1)) end as d1,
+        case when now() > (g.day + interval '4 days') at time zone tz then round(100.0 * count(v.device) filter (where exists (select 1 from public.events e where e.device = v.device and e.at >= (g.day + interval '3 days') at time zone tz and e.at < (g.day + interval '4 days') at time zone tz)) / greatest(count(v.device), 1)) end as d3,
+        case when now() > (g.day + interval '8 days') at time zone tz then round(100.0 * count(v.device) filter (where exists (select 1 from public.events e where e.device = v.device and e.at >= (g.day + interval '7 days') at time zone tz and e.at < (g.day + interval '8 days') at time zone tz)) / greatest(count(v.device), 1)) end as d7
+      from generate_series((now() at time zone tz)::date - 20, (now() at time zone tz)::date, interval '1 day') g(day)
+      left join public.devices v on v.first_at >= g.day at time zone tz and v.first_at < (g.day + interval '1 day') at time zone tz
+      group by g.day) c),
+    'funnel', (select jsonb_build_object(
+      'opened', (select count(*) from public.devices where first_at >= since),
+      'crate', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'crate' and at >= since),
+      'equip', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'equip' and at >= since),
+      'land', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'land' and at >= since),
+      'boss', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'boss' and at >= since),
+      'signup', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'signup' and at >= since))),
+    'planets', (select coalesce(jsonb_agg(q order by q.p), '[]'::jsonb) from (
+      select (e.data ->> 'p')::int as p, count(*) as landings, count(distinct e.device) as players,
+        round(100.0 * count(*) filter (where e.data ->> 'lost' = '1') / count(*)) as died,
+        round(avg(sc_private.num(e.data -> 'ore'))) as ore, round(avg(sc_private.num(e.data -> 'k'))) as kills, round(avg(sc_private.num(e.data -> 's'))) as secs
+      from public.events e where e.kind = 'land' and e.at >= since and e.data ->> 'p' ~ '^[0-9]{1,3}$' group by 1) q),
+    'reach', (select coalesce(jsonb_object_agg(p, n), '{}'::jsonb) from (
+      select p, count(*) as n from (select e.device, max(sc_private.num(e.data -> 'pl'))::int as p from public.events e where e.kind in ('session', 'reach') group by e.device) z group by p) q),
+    'crates', (select coalesce(jsonb_object_agg(k, n), '{}'::jsonb) from (
+      select coalesce(e.data ->> 'k', '?') as k, sum(coalesce(sc_private.num(e.data -> 'n'), 1)) as n from public.events e where e.kind = 'crate' and e.at >= since group by 1) q),
+    'modes', jsonb_build_object(
+      'duels', (select count(*) from public.events where kind = 'duel' and at >= since),
+      'duel_win', (select round(100.0 * count(*) filter (where data ->> 'won' = '1') / greatest(count(*), 1)) from public.events where kind = 'duel' and at >= since),
+      'duel_ai', (select count(*) from public.events where kind = 'duel' and data ->> 'ai' = '1' and at >= since),
+      'arena', (select count(*) from public.events where kind = 'arena' and at >= since),
+      'coop', (select count(*) from public.events where kind = 'coop' and at >= since),
+      'dailies', (select count(*) from public.events where kind = 'daily' and at >= since),
+      'missions', (select count(*) from public.events where kind = 'mission' and at >= since),
+      'bosses', (select count(*) from public.events where kind = 'boss' and at >= since)),
+    'devices', jsonb_build_object(
+      'touch', (select count(distinct device) filter (where data ->> 'touch' = '1') from public.events where kind = 'session' and at >= since),
+      'desktop', (select count(distinct device) filter (where coalesce(data ->> 'touch', '0') <> '1') from public.events where kind = 'session' and at >= since),
+      'refs', (select coalesce(jsonb_agg(q order by q.n desc), '[]'::jsonb) from (select coalesce(nullif(data ->> 'ref', ''), 'direct') as ref, count(distinct device) as n from public.events where kind = 'session' and at >= since group by 1 order by 2 desc limit 8) q)),
+    'top', (select coalesce(jsonb_agg(q order by q.mins desc), '[]'::jsonb) from (
+      select coalesce((select p.callsign from public.devices v join public.profiles p on p.id = v.user_id where v.device = b.device), 'GUEST ' || upper(right(b.device, 4))) as who,
+        round(sum(b.mins)) as mins, count(*) as sessions, max(b.last_at) as last_at
+      from pg_temp._bs b group by b.device order by sum(b.mins) desc limit 12) q),
+    'store', jsonb_build_object(
+      'clicks', (select coalesce(jsonb_object_agg(k, n), '{}'::jsonb) from (select coalesce(data ->> 'product', '?') as k, count(*) as n from public.events where kind = 'store_click' and at >= since group by 1) q),
+      'cents', (select coalesce(sum(cents) filter (where not refunded), 0) from public.purchases where created_at >= since),
+      'cents_all', (select coalesce(sum(cents) filter (where not refunded), 0) from public.purchases),
+      'buyers', (select count(distinct user_id) from public.purchases where not refunded),
+      'by', (select coalesce(jsonb_object_agg(product, n), '{}'::jsonb) from (select product, count(*) as n from public.purchases where not refunded and created_at >= since group by 1) z)),
+    'health', jsonb_build_object(
+      'bugs_open', (select count(*) from public.bugs where status in ('new', 'seen')),
+      'crashes', (select coalesce(sum(n), 0) from public.crash_log where last_at >= since),
+      'top_crash', (select message from public.crash_log where last_at >= since order by n desc limit 1)));
+  return r;
+end $$;
+
 -- ------------------------------------------------- who may call what
 do $$
 declare f record;
@@ -1830,7 +1934,7 @@ begin
              'arena_list', 'arena_create', 'arena_join', 'arena_ping', 'arena_leave', 'arena_report',
              'duel_find', 'duel_cancel', 'duel_ai', 'duel_report', 'leaderboard', 'my_arena', 'online_counts',
              'report_player', 'mod_queue', 'mod_action', 'daily_status', 'daily_claim', 'market_list', 'market_cancel', 'market_buy', 'market_browse',
-             'challenge_send', 'challenge_respond', 'pulse', 'premium_get', 'premium_spend', 'pass_claim', 'admin_stats', 'admin_bug', 'coop_invite') loop
+             'challenge_send', 'challenge_respond', 'pulse', 'premium_get', 'premium_spend', 'pass_claim', 'admin_stats', 'admin_board', 'admin_bug', 'coop_invite') loop
     execute format('revoke all on function %s from public, anon', f.sig);
     execute format('grant execute on function %s to authenticated', f.sig);
   end loop;
