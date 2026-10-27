@@ -385,6 +385,7 @@ function panel(x, y, w, h, opt = {}) {
 const BTN_KIND = {
   primary: { bg: '#fca311', hov: '#ffb83f', pr: '#d9860a', bd: '#ffe2a8', tc: '#14213d' },
   blue: { bg: '#7161ef', hov: '#8577ff', pr: '#5a4bd0', bd: '#c9c0ff', tc: '#fafaff' },
+  white: { bg: '#ffffff', hov: '#fff6c2', pr: '#d8d8e8', bd: '#ffffff', tc: '#14213d' },
   cream: { bg: '#efd9ce', hov: '#fafaff', pr: '#d6bfb2', bd: '#ffffff', tc: '#14213d' },
   danger: { bg: '#3a1430', hov: '#521c42', pr: '#26091f', bd: '#f25f7a', tc: '#ff9fb2' },
   outline: { bg: '#14213d', hov: '#1e2749', pr: '#0e1630', bd: '#e0b1cb', tc: '#e0b1cb' },
@@ -7461,11 +7462,12 @@ function drawShow(O, i, single) {
     }
     if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 222, 176, 18, 'TEST IT IN THE RANGE FIRST', { font: FS, tip: 'TRY IT ON TARGETS, THEN COME BACK' })) { startRange(id, 'open'); return; }
   } else {
-    if (button(bx, 150, 176, 20, 'BACK TO ALL PULLS') || kp('Escape')) { O.st = 'summary'; O.demo = null; return; }
+    // sell sits up top; going back to the whole haul is the big white button at the bottom, so it's hard to sell by accident
+    if (!r.lost && !r.sold && button(bx, 150, 176, 20, `SELL IT: +${fmt(pullValue(r))} COINS`, { kind: 'cream', font: FS })) { const v = sellPull(r); toast(`SOLD FOR ${fmt(v)} COINS`, COL.gold); O.st = 'summary'; O.demo = null; return; }
     const canD = d.r < 6 && !r.lost && !r.sold;
     if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
     if ((d.cat === 'w' || d.cat === 'g') && !r.lost && !r.sold && button(bx, 198, 176, 20, 'TEST IT IN THE RANGE', { kind: 'blue', font: FS })) { startRange(id, 'open'); return; }
-    if (!r.lost && !r.sold && button(bx, 222, 176, 18, `SELL IT: +${fmt(pullValue(r))} COINS`, { kind: 'cream', font: FS })) { const v = sellPull(r); toast(`SOLD FOR ${fmt(v)} COINS`, COL.gold); O.st = 'summary'; O.demo = null; return; }
+    if (button(bx, 224, 176, 22, 'BACK TO ALL PULLS', { kind: 'white' }) || kp('Escape')) { O.st = 'summary'; O.demo = null; return; }
   }
 }
 function drawCards(O) {
@@ -11075,7 +11077,7 @@ function coachBay() {
 function coachReveal(single) {
   coach('reveal', [
     { title: 'YOUR NEW ITEM', r: [6, 20, 284, 120], side: 'below', t: 'ITS NAME, RARITY AND STATS. THE TAG UNDER THE STATS TELLS YOU IF IT BEATS WHAT YOU HAVE EQUIPPED.' },
-    { title: 'KEEP OR SELL', r: single ? [296, 150, 176, 20] : [296, 222, 176, 18], side: 'left', t: single ? 'COLLECT KEEPS IT. SELL TURNS IT INTO COINS RIGHT AWAY.' : 'SELL TURNS IT INTO COINS RIGHT AWAY. ANYTHING YOU DO NOT SELL IS KEPT.' },
+    { title: 'KEEP OR SELL', r: [296, 150, 176, 20], side: 'left', t: single ? 'COLLECT KEEPS IT. SELL TURNS IT INTO COINS RIGHT AWAY.' : 'SELL TURNS IT INTO COINS RIGHT AWAY. ANYTHING YOU DO NOT SELL IS KEPT.' },
     { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS ARE 45%, RARER ITEMS ARE HARDER.' },
   ]);
 }

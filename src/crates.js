@@ -635,11 +635,12 @@ function drawShow(O, i, single) {
     }
     if ((d.cat === 'w' || d.cat === 'g') && !r.lost && button(bx, 222, 176, 18, 'TEST IT IN THE RANGE FIRST', { font: FS, tip: 'TRY IT ON TARGETS, THEN COME BACK' })) { startRange(id, 'open'); return; }
   } else {
-    if (button(bx, 150, 176, 20, 'BACK TO ALL PULLS') || kp('Escape')) { O.st = 'summary'; O.demo = null; return; }
+    // sell sits up top; going back to the whole haul is the big white button at the bottom, so it's hard to sell by accident
+    if (!r.lost && !r.sold && button(bx, 150, 176, 20, `SELL IT: +${fmt(pullValue(r))} COINS`, { kind: 'cream', font: FS })) { const v = sellPull(r); toast(`SOLD FOR ${fmt(v)} COINS`, COL.gold); O.st = 'summary'; O.demo = null; return; }
     const canD = d.r < 6 && !r.lost && !r.sold;
     if (donButton(bx, 174, 176, 20, r, canD)) startDoN(i);
     if ((d.cat === 'w' || d.cat === 'g') && !r.lost && !r.sold && button(bx, 198, 176, 20, 'TEST IT IN THE RANGE', { kind: 'blue', font: FS })) { startRange(id, 'open'); return; }
-    if (!r.lost && !r.sold && button(bx, 222, 176, 18, `SELL IT: +${fmt(pullValue(r))} COINS`, { kind: 'cream', font: FS })) { const v = sellPull(r); toast(`SOLD FOR ${fmt(v)} COINS`, COL.gold); O.st = 'summary'; O.demo = null; return; }
+    if (button(bx, 224, 176, 22, 'BACK TO ALL PULLS', { kind: 'white' }) || kp('Escape')) { O.st = 'summary'; O.demo = null; return; }
   }
 }
 function drawCards(O) {

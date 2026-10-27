@@ -370,6 +370,7 @@ function panel(x, y, w, h, opt = {}) {
 const BTN_KIND = {
   primary: { bg: '#fca311', hov: '#ffb83f', pr: '#d9860a', bd: '#ffe2a8', tc: '#14213d' },
   blue: { bg: '#7161ef', hov: '#8577ff', pr: '#5a4bd0', bd: '#c9c0ff', tc: '#fafaff' },
+  white: { bg: '#ffffff', hov: '#fff6c2', pr: '#d8d8e8', bd: '#ffffff', tc: '#14213d' },
   cream: { bg: '#efd9ce', hov: '#fafaff', pr: '#d6bfb2', bd: '#ffffff', tc: '#14213d' },
   danger: { bg: '#3a1430', hov: '#521c42', pr: '#26091f', bd: '#f25f7a', tc: '#ff9fb2' },
   outline: { bg: '#14213d', hov: '#1e2749', pr: '#0e1630', bd: '#e0b1cb', tc: '#e0b1cb' },
