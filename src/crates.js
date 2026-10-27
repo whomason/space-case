@@ -140,7 +140,7 @@ function drawCrateBay(dt) {
   if (kind.startsWith('boss:')) mods.push(['BOSS GEAR ONLY, RARE OR BETTER', COL.pink]);
   if (kind.startsWith('finisher:')) mods.push([`ONLY YOUR ${tot} MISSING PIECES`, COL.gold]);
   if (BAY.upgrader && tier < 7) mods.push([`UPGRADER: ${Math.round(UPG_CHANCE[tier] * 100)}% BUMP, ${100 - Math.round(UPG_CHANCE[tier] * 100)}% BURN`, COL.pink]);
-  mods.push([`DOUBLE OR NOTHING ${donChance(0)}%, THEN ${donChance(1)}%, ${donChance(2)}%..`, COL.dim]);
+  mods.push([`DOUBLE OR NOTHING: ${donChance(0)}% ON COMMONS, LESS THE RARER IT IS`, COL.dim]);
   for (const [m, c] of mods) { if (yy > H - 12) break; text(m, RX + 6, yy, c, FS); yy += 8; }
 }
 function drawCoinMini(x, y, c = COL.gold) { x = Math.floor(x); y = Math.floor(y); rect(x + 1, y, 3, 5, c); rect(x, y + 1, 5, 3, c); px(x + 1, y + 1, c === COL.gold ? '#fff2c4' : c); }
@@ -329,14 +329,14 @@ function donButton(x, y, w, h, r, can) {
   const dx = x + 6, dy = y + 4; rect(dx, dy, 12, 12, '#fff'); rect(dx + 1, dy + 1, 10, 10, '#ffe3f2');
   for (const [a, b] of [[3, 3], [8, 8], [3, 8], [8, 3], [5.5, 5.5]]) rect(dx + a, dy + b, 2, 2, '#a8286a');
   text('DOUBLE OR NOTHING', x + 24, y + 3, '#ffffff', FB);
-  text(`${donChance(r.dons || 0)}% TO WIN`, x + 24, y + 12, '#ffe3f2', FS);
+  text(`${donChance(getDef(r.id).r)}% TO WIN`, x + 24, y + 12, '#ffe3f2', FS);
   text('X2', x + w - 8, y + 6, Math.floor(T_NOW * 4) % 2 ? '#fff25a' : '#ffffff', FB, 2);
   return hit;
 }
 function startDoN(i) {
   const O = OPEN; const r = O.results[i]; const d = getDef(r.id); if (d.r >= 6 || r.lost) return;
   const kd = r.kind || O.kind; const up = rollUpSame(r.id, d.r) || rollUp(kd.startsWith('finisher') ? 'galaxy' : kd, d.r); if (!up) { toast('NOTHING HIGHER IN THIS POOL', COL.dim); return; }
-  O.don = { i, t: 0, a: 0, v: 16 + R0() * 3, win: null, up, from: r.id, back: O.st, p: donChance(r.dons || 0) / 100 };
+  O.don = { i, t: 0, a: 0, v: 16 + R0() * 3, win: null, up, from: r.id, back: O.st, p: donChance(d.r) / 100 };
   O.st = 'don'; SND.play('click');
 }
 function updateDoN(dt) {

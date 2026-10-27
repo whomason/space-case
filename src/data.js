@@ -32,7 +32,9 @@ const comboPay = m => 1 + (m - 1) / 3;
 const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
-function donChance(stacks = 0) { return Math.round((45 + S.skills.luck) * Math.pow(0.72, stacks)); } // double or nothing gets harder each time it stacks
+// double or nothing: the rarer the item, the harder it is to double (common 45% ... mythic 7%). Doubling makes it rarer, so stacking gets harder on its own
+const DON_BY_R = [45, 36, 28, 20, 13, 7];
+function donChance(r = 0) { return Math.min(95, (DON_BY_R[clamp(r, 0, 5)] || 0) + S.skills.luck); }
 
 const CLASSES = ['blaster', 'rifle', 'shotgun', 'sniper', 'railgun', 'launcher', 'beam', 'blade', 'throwing', 'mine', 'drone'];
 const CLS = {
