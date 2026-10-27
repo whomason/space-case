@@ -44,10 +44,8 @@ async def main():
         ok('the store loads from the server', await wait_for(A, "!!STORE.p && STORE.p.sd === 0"))
         # ---- buy stardust: checkout opens, the webhook pays out, the game notices
         await A.evaluate("HUB.ps.store.tab = 3"); await A.wait_for_timeout(300); await A.screenshot(path=OUT + 'st_dust.png')
-        await A.mouse.click(2 * 182, 2 * 190); await A.wait_for_timeout(200)
-        ok('the first click only asks to confirm', not getattr(M, 'checkouts', None) and await A.evaluate("confirming('sd_500')"))
         await A.mouse.click(2 * 182, 2 * 190); await A.wait_for_timeout(800)
-        ok('BUY $4.99 asks the server for a checkout', any(c[2] == 'sd_500' for c in getattr(M, 'checkouts', [])), getattr(M, 'checkouts', None))
+        ok('one click on BUY $4.99 asks the server for a checkout', any(c[2] == 'sd_500' for c in getattr(M, 'checkouts', [])), getattr(M, 'checkouts', None))
         ok('the webhook grants it', fake_webhook('sd_500') == 'granted')
         ok('the game sees 500 stardust without a reload', await wait_for(A, "STORE.p && STORE.p.sd === 500", 15000), await A.evaluate("STORE.p && STORE.p.sd"))
         # ---- the pass with stardust, then claim tiers

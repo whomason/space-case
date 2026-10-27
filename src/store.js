@@ -236,12 +236,11 @@ function pricePill(x, y, w, label, ok, sd) {
   if (hov) IN.cursor = 'pointer';
   return hov && IN.pr;
 }
-// buying anything takes two clicks, so nobody spends by accident
+// one click buys: real-money buys still go through Stripe's own checkout page before anything is charged
 function confirmBuy(key) {
-  if (STORE.confirm && STORE.confirm.k === key && T_NOW - STORE.confirm.t < 3) { STORE.confirm = null; IN.pr = false; return true; }
-  STORE.confirm = { k: key, t: T_NOW }; SND.play('click'); IN.pr = false; return false;
+  STORE.confirm = null; IN.pr = false; return true;
 }
-const confirming = key => STORE.confirm && STORE.confirm.k === key && T_NOW - STORE.confirm.t < 3;
+const confirming = key => false;
 // the store button in the station's top bar
 function drawStoreButton(x, y) {
   const sd = STORE.p ? fmt(STORE.p.sd) : '', w = 34 + (sd ? textW(sd, FS) + 12 : 0);

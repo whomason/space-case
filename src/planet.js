@@ -267,7 +267,7 @@ function onRunKill(e) {
   if (R.coop === 'host') coopKill(e);
   if (!e.boss) {
     if (!e.nest) { w.combo = (w.comboT > 0 ? w.combo + 1 : 1); w.comboT = w.comboMax; }
-    const mult = Math.min(10, 1 + Math.floor(w.combo / 3));
+    const mult = Math.min(10, 1 + Math.floor(w.combo / 3)); if (mult >= 3) ptip('combo');
     R.bestCombo = Math.max(R.bestCombo, mult);
     const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * comboPay(mult) * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN);
     R.coins += val; R.kills++; R.xp += e.xp; passXP(e.elite ? 80 : e.nest ? 30 : 4);
@@ -389,18 +389,18 @@ function updateRun(dt) {
     // o2
     const heat = R.p.trait === 'HEAT' && !hasRelic(3) ? 1 + 0.6 * (1 - R.L.shield) : 1;
     if (!R.tut || R.tut.i >= TUT.length - 1) R.o2 -= dt * heat;
-    if (R.o2 < R.o2max * 0.25) { R.o2warn -= dt; if (R.o2warn <= 0) { R.o2warn = R.o2 < R.o2max * 0.1 ? 0.5 : 1.2; SND.play('o2'); } }
+    if (R.o2 < R.o2max * 0.25) { ptip('o2'); R.o2warn -= dt; if (R.o2warn <= 0) { R.o2warn = R.o2 < R.o2max * 0.1 ? 0.5 : 1.2; SND.play('o2'); } }
     if (R.o2 <= 0) { if (pl.perks.reserve && !R.reserveUsed) { R.reserveUsed = true; R.o2 = R.o2max * 0.3; banner('RESERVE O2 TANK ENGAGED', COL.cyan); } else endRun('o2'); }
     // interactions
     const dShip = Math.hypot(pl.x - map.shipX, pl.y - map.shipY - 10);
     R.prompt = null;
     if (dShip < 30) { R.prompt = { x: map.shipX, y: map.shipY - 30, t: `E  LAUNCH (${R.cargoN} ORE)` }; if (kp('KeyE')) endRun('launch'); }
-    for (const wr of map.wrecks) if (!wr.looted && Math.hypot(pl.x - wr.x, pl.y - wr.y) < 28) { R.prompt = { x: wr.x, y: wr.y - 22, t: 'E  SEARCH WRECK' }; if (kp('KeyE')) lootWreck(wr); }
+    for (const wr of map.wrecks) if (!wr.looted && Math.hypot(pl.x - wr.x, pl.y - wr.y) < 28) { ptip('wreck'); R.prompt = { x: wr.x, y: wr.y - 22, t: 'E  SEARCH WRECK' }; if (kp('KeyE')) lootWreck(wr); }
     updateProps(R, dt); sigInteract(R);
     updateEvent(R, dt);
     updateSignal(R, dt);
     // boss lair
-    if (R.bossAvail && R.coop !== 'guest' && !w.boss && !R.bossBeaten && (Math.hypot(pl.x - map.lair.x, pl.y - map.lair.y) < 95 || (w.allies && w.allies.some(a => a && a.alive && Math.hypot(a.x - map.lair.x, a.y - map.lair.y) < 95)))) { spawnBoss(w, map.lair.x, map.lair.y); SND.play('bossroar'); SND.playSong('boss'); shake(6); banner(`${R.p.boss[0]}. HIT IT WHEN IT WINDS UP, PUNISH THE GLOWING CORE`, COL.coral); R.bossHit = false; }
+    if (R.bossAvail && R.coop !== 'guest' && !w.boss && !R.bossBeaten && (Math.hypot(pl.x - map.lair.x, pl.y - map.lair.y) < 95 || (w.allies && w.allies.some(a => a && a.alive && Math.hypot(a.x - map.lair.x, a.y - map.lair.y) < 95)))) { spawnBoss(w, map.lair.x, map.lair.y); ptip('boss'); SND.play('bossroar'); SND.playSong('boss'); shake(6); banner(`${R.p.boss[0]}. HIT IT WHEN IT WINDS UP, PUNISH THE GLOWING CORE`, COL.coral); R.bossHit = false; }
     // spawns
     R.spawnT -= dt * (R.tut ? (R.tut.i < 1 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
     if (R.spawnT <= 0) {
@@ -415,7 +415,7 @@ function updateRun(dt) {
     if (!w.boss && !R.carrier && !R.tut && R.coop !== 'guest') R.carrierT -= dt;
     if (R.carrierT <= 0 && !R.carrier) {
       R.carrierT = 38 + R0() * 22;
-      for (let tries = 0; tries < 14; tries++) { const a = R0() * TAU, d = 150 + R0() * 60; const x = pl.x + Math.cos(a) * d, y = pl.y + Math.sin(a) * d; if (!w.solid(x, y) && x > 40 && y > 40 && x < map.GW - 40 && y < map.GH - 40) { const e = spawnEnemy(w, 'crawler', x, y); e.carrier = true; e.hp = e.maxHp = e.hp * 6; e.spd *= 1.35; e.dmg *= 0.3; e.coin *= 3; e.life = 30; R.carrier = e; banner('A CRATE CARRIER APPEARED! CHASE IT DOWN', COL.gold); SND.play('upgradeHint'); break; } }
+      for (let tries = 0; tries < 14; tries++) { const a = R0() * TAU, d = 150 + R0() * 60; const x = pl.x + Math.cos(a) * d, y = pl.y + Math.sin(a) * d; if (!w.solid(x, y) && x > 40 && y > 40 && x < map.GW - 40 && y < map.GH - 40) { const e = spawnEnemy(w, 'crawler', x, y); e.carrier = true; e.hp = e.maxHp = e.hp * 6; e.spd *= 1.35; e.dmg *= 0.3; e.coin *= 3; e.life = 30; R.carrier = e; banner('A CRATE CARRIER APPEARED! CHASE IT DOWN', COL.gold); ptip('carrier'); SND.play('upgradeHint'); break; } }
     }
     if (R.carrier) { const e = R.carrier; if (e.dead) R.carrier = null; else { e.life -= dt; if (e.life <= 0) { e.dead = true; w.fx.burst(e.x, e.y - 6, 24, { c: [COL.blueL, '#fff'], sp: 120, life: 0.6, s: 2 }); banner('THE CRATE CARRIER WARPED AWAY', COL.dim); SND.play('deny'); R.carrier = null; } } }
     // hazards
@@ -449,8 +449,8 @@ function updateExtract(dt, inp) {
   R.extracting = null;
   if (!best || !inp.fire) return;
   const isProp = !!best.kind;
-  if (R.L.toolTier < best.tier) { if (Math.random() < dt * 2) { R.w.fx.text(best.x, best.y - 16, `NEEDS A TIER ${best.tier} TOOL`, COL.coral, { f: FS }); SND.play('deny'); } return; }
-  if (!isProp && R.cargoN >= R.L.cargo) { if (Math.random() < dt * 2) { R.w.fx.text(pl.x, pl.y - 30, 'CARGO FULL. RETURN TO SHIP', COL.gold, { f: FS }); } return; }
+  if (R.L.toolTier < best.tier) { ptip('ore'); if (Math.random() < dt * 2) { R.w.fx.text(best.x, best.y - 16, `NEEDS A TIER ${best.tier} TOOL`, COL.coral, { f: FS }); SND.play('deny'); } return; }
+  if (!isProp && R.cargoN >= R.L.cargo) { ptip('cargo'); if (Math.random() < dt * 2) { R.w.fx.text(pl.x, pl.y - 30, 'CARGO FULL. RETURN TO SHIP', COL.gold, { f: FS }); } return; }
   R.extracting = best;
   const hard = 0.9 + best.tier * 0.12;
   best.prog += dt * R.L.extract * 2.6 / hard; best.shake = 0.1;
@@ -570,7 +570,7 @@ function drawRun() {
   if (R.prompt) { const t = R.prompt.t, ww = textW(t, FS) + 8; const x = Math.floor(R.prompt.x - cx - ww / 2), y = Math.floor(R.prompt.y - cy + Math.sin(T_NOW * 4) * 1.5); panel(x, y, ww, 11, { bg: COL.void0, bd: COL.gold }); text(t, x + ww / 2, y + 3, COL.gold, FS, 1); }
   drawTutWorld(R, cx, cy);
   drawRunHUD(R); sigHUD(R); if (R.coop) coopHUD(R);
-  drawTut(R);
+  drawTut(R); drawPTip(R, 1 / 60);
   if (R.paused) drawPause(R);
   if (R.choice) drawChoiceOverlay();
 }
@@ -681,7 +681,7 @@ function drawRunHUD(R) {
   // bottom-left: weapon / tool
   const slot = (x, id, active, label, skin, key) => { panel(x, H - 30, 40, 26, { bg: active ? COL.void3 : 'rgba(5,6,15,0.82)', bd: active ? COL.cyan : COL.steel }); if (id) drawItemIn(id, x + 2, H - 28, 36, 18, { skin, maxSc: 1, noFx: true }); else text('EMPTY', x + 20, H - 21, COL.mute, FS, 1); text(label, x + 20, H - 9, active ? COL.cyan : COL.mute, FS, 1); if (!IN.touch) { rect(x + 1, H - 29, 7, 7, active ? COL.cyan : COL.void3); text(key, x + 3, H - 28, active ? COL.navy : COL.dim, FS); } };
   slot(4, pl.Ws[0] && pl.Ws[0].id, pl.mode === 'weapon' && pl.wi === 0, 'WEAPON', S.eq.skin_weapon, '1'); gadgetSlot(46, pl); slot(88, S.eq.tool, pl.mode === 'tool', `TOOL T${L.toolTier}`, S.eq.skin_tool, '3');
-  if (!IN.touch) { const kw = keycap(132, H - 29, 'Q', R.tut && TUT[R.tut.i] && TUT[R.tut.i].keys[0] === 'Q' && Math.floor(T_NOW * 2) % 2 === 0); text('SWAP', 135 + kw, H - 27, COL.dim, FS); const sw = keycap(132, H - 16, 'SPACE'); text('BOOST', 135 + sw, H - 14, COL.dim, FS); }
+  if (!IN.touch) { const kw = keycap(132, H - 29, 'Q', R.tut && TUT[R.tut.i] && TUT[R.tut.i].keys[0] === 'Q' && Math.floor(T_NOW * 2) % 2 === 0); text('SWAP', 135 + kw, H - 27, COL.dim, FS); const sw = keycap(132, H - 16, 'SPACE'); text('BOOST', 135 + sw, H - 14, COL.dim, FS); const ew = keycap(188, H - 29, 'P'); text('PAUSE + CONTROLS', 191 + ew, H - 27, COL.dim, FS); }
   const cx0 = IN.touch ? 132 : 188, cy0 = IN.touch ? H - 10 : H - 13; for (let i = 0; i < pl.maxCharges; i++) { const ready = i < pl.charges; rect(cx0 + i * 8, cy0, 6, 4, ready ? COL.gold : COL.void3); if (!ready && i === pl.charges) rect(cx0 + i * 8, cy0, Math.floor(6 * (1 - Math.max(0, pl.boostCd) / L.boostCd)), 4, '#7a5a10'); }
   if (pl.focusT > 0) textO('FOCUS X1.5', 132, H - 40, COL.gold, '#000', FS);
   // bottom-right: cargo
@@ -711,7 +711,7 @@ function drawPause(R) {
   if (button(W / 2 - 70, 100, 140, 18, 'RESUME') || kp('Escape')) { R.paused = false; IN.kp.delete('Escape'); }
   if (button(W / 2 - 70, 122, 140, 18, 'EVACUATE (LOSE HALF ORE)', { col: '#5a1d2a' })) { R.paused = false; endRun('o2'); }
   if (button(W / 2 - 70, 144, 140, 18, SND.muted ? 'SOUND: OFF' : 'SOUND: ON')) { SND.setMute(!SND.muted); S.settings.mute = SND.muted; dirty(); }
-  text('WASD MOVE  MOUSE AIM  CLICK FIRE', W / 2, 172, COL.dim, FS, 1); text('Q OR 1 2 3 SWAP  SPACE BOOST  E USE', W / 2, 180, COL.dim, FS, 1);
+  drawControlsCard(10, 60); drawPlayTips(W - 142, 60);
 }
 
 // ---------- results ----------
@@ -764,8 +764,10 @@ function drawResults(dt) {
   if (!nCr && !r.choices) text('NO CRATES THIS HAUL. TRY CARRIERS, BOSSES, EVENTS, SEALS AND CACHES', W / 2, y + 2, COL.mute, FS, 1);
   if (done || r.t > 1) {
     if (nCr) {
+      coachResults(true);
       if (button(W / 2 - 100, 224, 200, 22, `OPEN ${nCr} HAUL CRATE${nCr > 1 ? 'S' : ''}`, { kind: 'primary' }) || kp('Enter') || kp('Space')) { startHaulOpen(S.haulCrates.splice(0)); return; }
     } else {
+      coachResults(false);
       if (button(W / 2 - 150, 226, 140, 18, r.choices ? 'PICK YOUR SALVAGE' : 'BACK TO STATION', { kind: 'primary' }) || kp('Enter')) { goHub(); }
       if (button(W / 2 + 10, 226, 140, 18, 'LAND AGAIN', { kind: 'blue' })) { startRun(r.pi); }
     }

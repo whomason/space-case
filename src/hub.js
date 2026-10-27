@@ -163,6 +163,8 @@ function drawHub(dt) {
   if (HUB.panel) drawPanel();
   if (HUB.choice) drawChoiceOverlay();
   coopLobbyChip();
+  if (NAMEUI.open || !S.nameAsked) HUB.nameT = T_NOW;   // let the callsign box finish closing before any tips
+  if (!HUB.panel && !HUB.choice && LT === null && T_NOW - (HUB.nameT || 0) > 1.2) coachHub();
 }
 function drawHubTop() {
   // level pill + title + xp
@@ -262,11 +264,11 @@ function drawNextUp() {
   if (hov) { IN.cursor = 'pointer'; TIP.set(`${T.t}: ${T.cur}/${T.need}${T.sub ? '. ' + T.sub : ''}. CLICK TO GO THERE`); if (clickIn(x, ty, w, 20)) openStation(T.go); }
 }
 // ---------- panels ----------
-function panelFrame(title, color = COL.gold, coins = false) {
+function panelFrame(title, color = COL.gold, coins = false, help) {
   ctx.globalAlpha = 0.72; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   panel(6, 6, W - 12, H - 12, { bg: COL.void1, bd: COL.steel });
   rect(7, 7, W - 14, 18, COL.void2); rect(7, 25, W - 14, 1, COL.steel); rect(7, 7, 3, 18, color);
-  text(title, 16, 11, COL.ink, FB, 0, 1); rect(16, 20, textW(title), 1, color);
+  text(title, 16, 11, COL.ink, FB, 0, 1); rect(16, 20, textW(title), 1, color); if (help) helpButton(16 + textW(title) + 7, 10, help);
   if (coins) { const cs = fmt(S.coins); drawCoinIcon(W - 84 - textW(cs), 11); text(cs, W - 74, 11, COL.gold, FB, 2); }
   if (button(W - 66, 8, 58, 16, 'CLOSE', { font: FS, kind: 'cream', tip: 'OR PRESS ESC', icon: (x, y, w, h, c) => { line(x + 6, y + 5, x + 11, y + 10, c); line(x + 11, y + 5, x + 6, y + 10, c); } })) { HUB.panel = null; SND.play('click'); return true; }
   return false;
@@ -373,7 +375,7 @@ function drawFuseReveal(st, x, y, w, h) {
   if (F.t > 0.6 && (button(cx - 30, y + h - 22, 60, 16, 'NICE', { kind: 'primary', font: FS }) || kp('Enter'))) st.fuseRes = null;
 }
 function panelLocker(st) {
-  if (panelFrame('LOCKER', COL.gold, true)) return;
+  if (panelFrame('LOCKER', COL.gold, true, 'locker')) return;
   // preview
   panel(14, 30, 80, 100, { bg: '#05070f', bd: COL.steel });
   ctx.globalAlpha = 0.35; for (let gx = 14; gx < 94; gx += 10) rect(gx, 31, 1, 98, COL.steel); for (let gy = 34; gy < 130; gy += 10) rect(15, gy, 78, 1, COL.steel); ctx.globalAlpha = 1;
@@ -395,6 +397,7 @@ function panelLocker(st) {
   // grid
   rect(192, 30, 1, H - 44, COL.void3);
   equipSlotGrid(st, 198, 42, W - 212, H - 58);
+  coachLocker();
 }
 function panelHangar(st) {
   if (panelFrame('HANGAR', COL.gold, true)) return;
@@ -654,7 +657,8 @@ function drawMap(dt) {
     if (n === (S.planet.cur || 1) && S.planet.landings) { const b = Math.round(Math.sin(T_NOW * 5) * 2); text('YOU', x, y - r - 18 + b, COL.pink, FS, 1); }
     if (hov) { IN.cursor = 'pointer'; if (IN.rl && Math.abs(IN.dragX) < 5) { MAP.sel = n; SND.play('click'); } }
   }
-  if (drawTopBar('STAR MAP', true) || (kp('Escape') && !COOP.ui)) { MAP.init = false; goHub(); return; }
+  if (drawTopBar('STAR MAP', true, 'map') || (kp('Escape') && !COOP.ui)) { MAP.init = false; goHub(); return; }
+  coachMap();
   if (button(170, 3, 112, 14, COOP.st === 'idle' ? 'LAND WITH A FRIEND' : 'CO-OP LOBBY', { font: FS, kind: COOP.partner ? 'primary' : 'blue', tip: 'INVITE A FRIEND TO THIS PLANET. YOU FIGHT THE SAME ALIENS' })) coopOpen(MAP.sel);
   // info panel
   const n = MAP.sel, p = planetDef(n), req = PLANET_REQ(n), ok = n <= S.planet.reached || rt >= req;

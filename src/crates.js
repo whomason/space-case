@@ -5,11 +5,11 @@ let OPEN = null;
 // ---------- mini helpers ----------
 function emblemDraw(kind, x, y, c) { const em = EMBLEM[kindInfo(kind).em] || EMBLEM.weapon; em.split('|').forEach((row, yy) => { for (let xx = 0; xx < row.length; xx++) if (row[xx] === '#') px(x + xx, y + yy, c); }); }
 function tierColor(t) { return t === 7 ? rainbow(T_NOW) : hex(hsl(TIERS[t].h, TIERS[t].s, 0.62)); }
-function drawTopBar(title, back) {
+function drawTopBar(title, back, help) {
   rect(0, 0, W, 20, COL.void1); rect(0, 20, W, 1, COL.steel);
   let clicked = false;
   if (back) clicked = button(4, 3, 62, 14, '< STATION', { font: FS });
-  if (title) { text(title, back ? 74 : 8, 7, COL.ink, FB); rect(back ? 74 : 8, 15, textW(title), 1, COL.gold); }
+  if (title) { text(title, back ? 74 : 8, 7, COL.ink, FB); rect(back ? 74 : 8, 15, textW(title), 1, COL.gold); if (help) helpButton((back ? 74 : 8) + textW(title) + 7, 5, help); }
   let x = W - 6;
   const seg = (str, col, icon, sc = 1) => { const w = textW(str, FB, sc); x -= w; text(str, x, sc > 1 ? 3 : 7, col, FB, 0, sc); x -= 11; icon(x, 7); x -= 12; };
   seg(fmt(S.research), COL.dim, (x, y) => { rect(x + 1, y, 5, 7, COL.mauve); rect(x + 2, y + 1, 3, 2, COL.lilac); });
@@ -34,7 +34,7 @@ function bestTier(kind) { let b = 0; for (let t = 0; t < 8; t++) if (tierUnlocke
 function fmtPct(o) { return o === 0 ? '-' : o < 0.1 ? o.toFixed(3) + '%' : o < 1 ? o.toFixed(2) + '%' : o.toFixed(1) + '%'; }
 function drawCrateBay(dt) {
   drawBayBackground();
-  if (drawTopBar('CRATE BAY', true) || kp('Escape')) { goHub(); return; }
+  if (drawTopBar('CRATE BAY', true, 'bay') || kp('Escape')) { goHub(); return; }
   // ---- left: crate types
   const LX = 4, LY = 24, LW = 120, LH = H - LY - 4;
   panel(LX, LY, LW, LH, { bg: COL.void1 });
@@ -142,6 +142,7 @@ function drawCrateBay(dt) {
   if (BAY.upgrader && tier < 7) mods.push([`UPGRADER: ${Math.round(UPG_CHANCE[tier] * 100)}% BUMP, ${100 - Math.round(UPG_CHANCE[tier] * 100)}% BURN`, COL.pink]);
   mods.push([`DOUBLE OR NOTHING: ${donChance(0)}% ON COMMONS, LESS THE RARER IT IS`, COL.dim]);
   for (const [m, c] of mods) { if (yy > H - 12) break; text(m, RX + 6, yy, c, FS); yy += 8; }
+  coachBay();
 }
 function drawCoinMini(x, y, c = COL.gold) { x = Math.floor(x); y = Math.floor(y); rect(x + 1, y, 3, 5, c); rect(x, y + 1, 5, 3, c); px(x + 1, y + 1, c === COL.gold ? '#fff2c4' : c); }
 function drawBeam(cx, y0, y1, wd, c) {
@@ -621,6 +622,7 @@ function drawShow(O, i, single) {
   if (O.demo && O.demo.id === id) drawDemo(O.demo, 296, 22, 176, 120);
   const bx = 296;
   if (single && O.after) { drawAfterCollect(O, r, d, bx); return; }
+  if (O.st_t > 0.6 && !r.lost) coachReveal(single);
   if (single) {
     if (r.lost) { if (button(bx, 150, 176, 20, 'CONTINUE', { kind: 'def' }) || kp('Space') || kp('Enter')) { collectOpen(); finishOpen(); return; } }
     else if (button(bx, 150, 112, 20, 'COLLECT', { kind: 'primary' }) || kp('Space') || kp('Enter')) { collectOpen(); if (slotOf(d)) { O.after = true; O.afterT = 0; SND.play('pickup'); } else finishOpen(); return; }

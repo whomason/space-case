@@ -651,6 +651,7 @@ function drawEnemy(w, e, ox, oy) {
   ctx.restore();
   if (e.freeze > 0) iceWorldFx(w, e, x, y, sw, sh);
   if (e.boss && e.kit) drawBossExtra(w, e, x, y); else drawFoeExtra(w, e, x, y, sh);
+  if (winding && typeof RUN !== 'undefined' && RUN && RUN.w === w && !e.boss) ptip('windup');
   if (winding) { const by = y - sh - 10 + Math.round(Math.sin(T_NOW * 16)); rect(x - 1, by, 3, 6, '#fff2a0'); rect(x - 1, by + 7, 3, 2, '#fff2a0'); if (e.boss || e.elite) text('HIT IT!', x, by - 8, '#fff2a0', FS, 1); }
   if (e.stun > 0) for (let i = 0; i < 3; i++) { const a = T_NOW * 6 + i * TAU / 3; px(x + Math.cos(a) * (sw * 0.4 + 2), y - sh - 2 + Math.sin(a) * 2, i ? COL.gold : '#fff'); }
   // status pips
