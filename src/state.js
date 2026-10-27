@@ -192,7 +192,7 @@ function oddsFor(kind, tier, extraLuck = 0) {
   const pool = poolFor(kind); let o = TIERS[tier].odds.slice();
   if (kind.startsWith('finisher:')) { return pool.map(p => p.length ? 100 * p.length / pool.reduce((a, b) => a + b.length, 0) : 0); }
   const f = (luckPct() + extraLuck) / 100;
-  if (f > 0) { const n = o.slice(); for (let k = 0; k < 7; k++) n[k] = o[k] * (k < 6 ? 1 - f : 1) + (k > 0 ? o[k - 1] * f : 0); o = n; }
+  if (f > 0) { const n = o.slice(); for (let k = 0; k < 7; k++) n[k] = o[k] * (k < 6 ? 1 - (k === 5 ? f * 0.1 : f) : 1) + (k > 0 ? o[k - 1] * (k === 6 ? f * 0.1 : f) : 0); o = n; }
   for (let k = 0; k < 7; k++) if (!pool[k].length) o[k] = 0;
   const s = o.reduce((a, b) => a + b, 0) || 1; return o.map(v => v / s * 100);
 }

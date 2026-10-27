@@ -304,7 +304,7 @@ function equipSlotGrid(st, x, y, w, h) {
   if ((slot === 'weapon' || slot === 'gadget') && S.eq[slot] && !st.sell && !st.fuse && button(x + w - 160, y - 14, 44, 12, 'TEST IT', { font: FS, kind: 'blue', tip: 'TRY IT IN THE TEST RANGE' })) { startRange(S.eq[slot], 'locker'); return; }
   const mode = st.sell ? 'sell' : st.fuse ? 'fuse' : null;
   if (!st.fuse && button(x + w - 64, y - 14, 64, 12, st.sell ? 'DONE SELLING' : 'SELL ITEMS', { font: FS, kind: st.sell ? 'cream' : 'def', tip: 'SELL GEAR YOU DO NOT NEED FOR COINS' })) { st.sell = !st.sell; st.pick = []; SND.play('click'); }
-  if (!st.sell && button(x + w - (st.fuse ? 64 : 112), y - 14, st.fuse ? 64 : 44, 12, st.fuse ? 'DONE FUSING' : 'FUSE', { font: FS, kind: st.fuse ? 'cream' : 'blue', tip: '5 OF ONE RARITY BECOME 1 OF THE NEXT' })) { st.fuse = !st.fuse; st.pick = []; SND.play('click'); }
+  if (!st.sell && button(x + w - (st.fuse ? 64 : 112), y - 14, st.fuse ? 64 : 44, 12, st.fuse ? 'DONE FUSING' : 'FUSE', { font: FS, kind: st.fuse ? 'cream' : 'blue', tip: '5 OF ONE RARITY BECOME 1 OF THE NEXT. 10 MYTHICS MAKE A COSMIC' })) { st.fuse = !st.fuse; st.pick = []; SND.play('click'); }
   st.pick = (st.pick || []).filter(id => S.inv[id] && !isEquipped(id));
   const gh = mode ? h - 26 : h;
   const c = itemGrid(st, list, x, y, w, gh, { cw: big ? 40 : 30, ch: big ? 22 : 26, sel: mode ? null : S.eq[slot], multi: mode ? st.pick : null, empty: 'OPEN CRATES TO FIND MORE', eqd: mode ? Object.values(S.eq) : null });
@@ -327,11 +327,11 @@ function equipSlotGrid(st, x, y, w, h) {
   if (mode === 'fuse') {
     const by = y + h - 22; panel(x, by, w, 22, { bg: '#16102a', bd: COL.cyan });
     const r = st.pick.length ? getDef(st.pick[0]).r : -1;
-    if (!st.pick.length) text('PICK 5 OF THE SAME RARITY. THEY BECOME 1 RANDOM ITEM ONE RARITY UP', x + 6, by + 8, COL.dim, FS);
+    if (!st.pick.length) text('PICK 5 OF THE SAME RARITY (10 MYTHICS FOR A COSMIC). THEY BECOME 1 ITEM ONE RARITY UP', x + 6, by + 8, COL.dim, FS);
     else {
-      text(`${st.pick.length}/5 ${RAR[r].n}`, x + 6, by + 4, rcol(r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(r), FS);
+      text(`${st.pick.length}/${fuseNeed(r)} ${RAR[r].n}`, x + 6, by + 4, rcol(r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(r), FS);
       text(`BECOMES 1 ${RAR[Math.min(6, r + 1)].n}`, x + 6, by + 12, COL.mute, FS);
-      if (button(x + w - 144, by + 4, 88, 14, st.pick.length === 5 ? 'FUSE!' : 'FUSE (NEED 5)', { kind: 'primary', font: FS, disabled: st.pick.length < 5 })) doFuse(st, slot);
+      if (button(x + w - 144, by + 4, 88, 14, st.pick.length === fuseNeed(r) ? 'FUSE!' : `FUSE (NEED ${fuseNeed(r)})`, { kind: 'primary', font: FS, disabled: st.pick.length < fuseNeed(r) })) doFuse(st, slot);
       if (button(x + w - 52, by + 4, 46, 14, 'CLEAR', { font: FS })) st.pick = [];
     }
     if (c && c !== 'NONE') {
@@ -340,7 +340,7 @@ function equipSlotGrid(st, x, y, w, h) {
       else if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); }
       else if (!fusable(c)) { SND.play('deny'); toast(d.r >= 6 ? 'COSMIC IS THE TOP. NOTHING TO FUSE INTO' : isPremiumId(c) ? 'STORE AND REWARD ITEMS CANNOT BE FUSED' : 'ONE-OF-A-KIND ITEMS CANNOT BE FUSED', COL.coral); }
       else if (st.pick.length && d.r !== r) { SND.play('deny'); toast(`PICK ${RAR[r].n} ITEMS ONLY, OR CLEAR FIRST`, COL.coral); }
-      else if (st.pick.length >= 5) { SND.play('deny'); toast('5 IS ENOUGH. HIT FUSE!', COL.coral); }
+      else if (st.pick.length >= fuseNeed(r)) { SND.play('deny'); toast(`${fuseNeed(r)} IS ENOUGH. HIT FUSE!`, COL.coral); }
       else { st.pick.push(c); SND.play('click'); }
     }
     return;
@@ -348,10 +348,11 @@ function equipSlotGrid(st, x, y, w, h) {
   if (c === 'NONE') { delete S.eq[slot]; SND.play('click'); dirty(); }
   else if (c) { equipped(c); if (S.eq[slot] !== c) S.stats.equips++; S.eq[slot] = c; SND.play('pickup'); dirty(); }
 }
-// ---------- fusion: 5 of a rarity -> 1 of the next ----------
+// ---------- fusion: 5 of a rarity -> 1 of the next (10 mythics for a cosmic) ----------
+const fuseNeed = r => r >= 5 ? 10 : 5;
 function fusable(id) { const d = getDef(id); return d.r < 6 && !/^(u|e)\|/.test(id) && !(d.o && d.o.t === 'art') && !d.nova && !isPremiumId(id); }
 function doFuse(st, slot) {
-  const ids = st.pick.slice(); if (ids.length !== 5 || ids.some(id => !S.inv[id] || isEquipped(id) || !fusable(id))) return;
+  const ids = st.pick.slice(); if (!ids.length || ids.length !== fuseNeed(getDef(ids[0]).r) || ids.some(id => !S.inv[id] || isEquipped(id) || !fusable(id))) return;
   const d0 = getDef(ids[0]), r = d0.r + 1, cat = d0.cat;
   const pool = ((POOLS[cat] || [])[r] || []).filter(i => fusable(i) || r === 6).filter(i => slotOf(getDef(i)) === slot);
   if (!pool.length) { toast('NOTHING TO FUSE INTO FOR THIS SLOT', COL.coral); return; }

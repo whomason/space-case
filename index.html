@@ -577,14 +577,14 @@ const RAR_DIST = [30, 22, 18, 13, 9, 5, 3];
 const RAR_BOSS_DIST = [0, 0, 26, 30, 25, 12, 7];
 
 const TIERS = [
-  { n: 'ASTEROID', cost: 1, odds: [72, 20, 6, 1.6, 0.35, 0.045, 0.005], unlock: 1, h: 28, s: 0.35 },
-  { n: 'COMET', cost: 2, odds: [62, 25, 9, 3, 0.8, 0.17, 0.03], unlock: 2, h: 195, s: 0.6 },
-  { n: 'METEOR', cost: 4, odds: [50, 29, 14, 5, 1.6, 0.34, 0.06], unlock: 4, h: 18, s: 0.9 },
-  { n: 'NEBULA', cost: 8, odds: [38, 31, 19, 8.5, 2.8, 0.6, 0.1], unlock: 7, h: 300, s: 0.7 },
-  { n: 'PULSAR', cost: 16, odds: [26, 31, 24, 13, 4.8, 1, 0.2], unlock: 10, h: 185, s: 0.9 },
-  { n: 'QUASAR', cost: 32, odds: [14, 27, 29, 19, 8, 2.4, 0.6], unlock: 13, h: 48, s: 0.95 },
-  { n: 'BLACK HOLE', cost: 64, odds: [5, 18, 30, 27, 13.5, 5, 1.5], unlock: 16, h: 270, s: 0.8 },
-  { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
+  { n: 'ASTEROID', cost: 1, odds: [72, 20, 6, 1.6, 0.35, 0.045, 0.001], unlock: 1, h: 28, s: 0.35 },
+  { n: 'COMET', cost: 2, odds: [62, 25, 9, 3, 0.8, 0.17, 0.008], unlock: 2, h: 195, s: 0.6 },
+  { n: 'METEOR', cost: 4, odds: [50, 29, 14, 5, 1.6, 0.34, 0.015], unlock: 4, h: 18, s: 0.9 },
+  { n: 'NEBULA', cost: 8, odds: [38, 31, 19, 8.5, 2.8, 0.6, 0.03], unlock: 7, h: 300, s: 0.7 },
+  { n: 'PULSAR', cost: 16, odds: [26, 31, 24, 13, 4.8, 1, 0.05], unlock: 10, h: 185, s: 0.9 },
+  { n: 'QUASAR', cost: 32, odds: [14.45, 27, 29, 19, 8, 2.4, 0.15], unlock: 13, h: 48, s: 0.95 },
+  { n: 'BLACK HOLE', cost: 64, odds: [6.1, 18, 30, 27, 13.5, 5, 0.4], unlock: 16, h: 270, s: 0.8 },
+  { n: 'SINGULARITY', cost: 128, odds: [0, 10.8, 24, 33, 21, 10, 1.2], unlock: 'nova', h: 0, s: 1 },
 ];
 const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
 const ENEMY_COIN = 0.5; // aliens drop this many times their old coins. Mining is the main way to earn
@@ -594,9 +594,9 @@ const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy few
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
 // double or nothing: the rarer the item, the harder it is to double (common 45% ... mythic 1%). Doubling makes it rarer, so stacking gets harder on its own
-const DON_BY_R = [45, 30, 18, 9, 4, 1];
+const DON_BY_R = [45, 28, 15, 5, 0.75, 0.1];   // common > uncommon ... legendary > mythic 0.75%, mythic > cosmic 0.1%
 // luck makes it up to 50% more likely (it used to add a flat +10%, which made mythic doubles 11x likelier)
-function donChance(r = 0) { const v = (DON_BY_R[clamp(r, 0, 5)] || 0) * (1 + S.skills.luck * 0.05); return v >= 10 ? Math.round(v) : Math.round(v * 10) / 10; }
+function donChance(r = 0) { const v = (DON_BY_R[clamp(r, 0, 5)] || 0) * (1 + S.skills.luck * 0.05); return v >= 10 ? Math.round(v) : v >= 1 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100; }
 
 const CLASSES = ['blaster', 'rifle', 'shotgun', 'sniper', 'railgun', 'launcher', 'beam', 'blade', 'throwing', 'mine', 'drone'];
 const CLS = {
@@ -3128,7 +3128,7 @@ function oddsFor(kind, tier, extraLuck = 0) {
   const pool = poolFor(kind); let o = TIERS[tier].odds.slice();
   if (kind.startsWith('finisher:')) { return pool.map(p => p.length ? 100 * p.length / pool.reduce((a, b) => a + b.length, 0) : 0); }
   const f = (luckPct() + extraLuck) / 100;
-  if (f > 0) { const n = o.slice(); for (let k = 0; k < 7; k++) n[k] = o[k] * (k < 6 ? 1 - f : 1) + (k > 0 ? o[k - 1] * f : 0); o = n; }
+  if (f > 0) { const n = o.slice(); for (let k = 0; k < 7; k++) n[k] = o[k] * (k < 6 ? 1 - (k === 5 ? f * 0.1 : f) : 1) + (k > 0 ? o[k - 1] * (k === 6 ? f * 0.1 : f) : 0); o = n; }
   for (let k = 0; k < 7; k++) if (!pool[k].length) o[k] = 0;
   const s = o.reduce((a, b) => a + b, 0) || 1; return o.map(v => v / s * 100);
 }
@@ -7867,7 +7867,7 @@ function equipSlotGrid(st, x, y, w, h) {
   if ((slot === 'weapon' || slot === 'gadget') && S.eq[slot] && !st.sell && !st.fuse && button(x + w - 160, y - 14, 44, 12, 'TEST IT', { font: FS, kind: 'blue', tip: 'TRY IT IN THE TEST RANGE' })) { startRange(S.eq[slot], 'locker'); return; }
   const mode = st.sell ? 'sell' : st.fuse ? 'fuse' : null;
   if (!st.fuse && button(x + w - 64, y - 14, 64, 12, st.sell ? 'DONE SELLING' : 'SELL ITEMS', { font: FS, kind: st.sell ? 'cream' : 'def', tip: 'SELL GEAR YOU DO NOT NEED FOR COINS' })) { st.sell = !st.sell; st.pick = []; SND.play('click'); }
-  if (!st.sell && button(x + w - (st.fuse ? 64 : 112), y - 14, st.fuse ? 64 : 44, 12, st.fuse ? 'DONE FUSING' : 'FUSE', { font: FS, kind: st.fuse ? 'cream' : 'blue', tip: '5 OF ONE RARITY BECOME 1 OF THE NEXT' })) { st.fuse = !st.fuse; st.pick = []; SND.play('click'); }
+  if (!st.sell && button(x + w - (st.fuse ? 64 : 112), y - 14, st.fuse ? 64 : 44, 12, st.fuse ? 'DONE FUSING' : 'FUSE', { font: FS, kind: st.fuse ? 'cream' : 'blue', tip: '5 OF ONE RARITY BECOME 1 OF THE NEXT. 10 MYTHICS MAKE A COSMIC' })) { st.fuse = !st.fuse; st.pick = []; SND.play('click'); }
   st.pick = (st.pick || []).filter(id => S.inv[id] && !isEquipped(id));
   const gh = mode ? h - 26 : h;
   const c = itemGrid(st, list, x, y, w, gh, { cw: big ? 40 : 30, ch: big ? 22 : 26, sel: mode ? null : S.eq[slot], multi: mode ? st.pick : null, empty: 'OPEN CRATES TO FIND MORE', eqd: mode ? Object.values(S.eq) : null });
@@ -7890,11 +7890,11 @@ function equipSlotGrid(st, x, y, w, h) {
   if (mode === 'fuse') {
     const by = y + h - 22; panel(x, by, w, 22, { bg: '#16102a', bd: COL.cyan });
     const r = st.pick.length ? getDef(st.pick[0]).r : -1;
-    if (!st.pick.length) text('PICK 5 OF THE SAME RARITY. THEY BECOME 1 RANDOM ITEM ONE RARITY UP', x + 6, by + 8, COL.dim, FS);
+    if (!st.pick.length) text('PICK 5 OF THE SAME RARITY (10 MYTHICS FOR A COSMIC). THEY BECOME 1 ITEM ONE RARITY UP', x + 6, by + 8, COL.dim, FS);
     else {
-      text(`${st.pick.length}/5 ${RAR[r].n}`, x + 6, by + 4, rcol(r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(r), FS);
+      text(`${st.pick.length}/${fuseNeed(r)} ${RAR[r].n}`, x + 6, by + 4, rcol(r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(r), FS);
       text(`BECOMES 1 ${RAR[Math.min(6, r + 1)].n}`, x + 6, by + 12, COL.mute, FS);
-      if (button(x + w - 144, by + 4, 88, 14, st.pick.length === 5 ? 'FUSE!' : 'FUSE (NEED 5)', { kind: 'primary', font: FS, disabled: st.pick.length < 5 })) doFuse(st, slot);
+      if (button(x + w - 144, by + 4, 88, 14, st.pick.length === fuseNeed(r) ? 'FUSE!' : `FUSE (NEED ${fuseNeed(r)})`, { kind: 'primary', font: FS, disabled: st.pick.length < fuseNeed(r) })) doFuse(st, slot);
       if (button(x + w - 52, by + 4, 46, 14, 'CLEAR', { font: FS })) st.pick = [];
     }
     if (c && c !== 'NONE') {
@@ -7903,7 +7903,7 @@ function equipSlotGrid(st, x, y, w, h) {
       else if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); }
       else if (!fusable(c)) { SND.play('deny'); toast(d.r >= 6 ? 'COSMIC IS THE TOP. NOTHING TO FUSE INTO' : isPremiumId(c) ? 'STORE AND REWARD ITEMS CANNOT BE FUSED' : 'ONE-OF-A-KIND ITEMS CANNOT BE FUSED', COL.coral); }
       else if (st.pick.length && d.r !== r) { SND.play('deny'); toast(`PICK ${RAR[r].n} ITEMS ONLY, OR CLEAR FIRST`, COL.coral); }
-      else if (st.pick.length >= 5) { SND.play('deny'); toast('5 IS ENOUGH. HIT FUSE!', COL.coral); }
+      else if (st.pick.length >= fuseNeed(r)) { SND.play('deny'); toast(`${fuseNeed(r)} IS ENOUGH. HIT FUSE!`, COL.coral); }
       else { st.pick.push(c); SND.play('click'); }
     }
     return;
@@ -7911,10 +7911,11 @@ function equipSlotGrid(st, x, y, w, h) {
   if (c === 'NONE') { delete S.eq[slot]; SND.play('click'); dirty(); }
   else if (c) { equipped(c); if (S.eq[slot] !== c) S.stats.equips++; S.eq[slot] = c; SND.play('pickup'); dirty(); }
 }
-// ---------- fusion: 5 of a rarity -> 1 of the next ----------
+// ---------- fusion: 5 of a rarity -> 1 of the next (10 mythics for a cosmic) ----------
+const fuseNeed = r => r >= 5 ? 10 : 5;
 function fusable(id) { const d = getDef(id); return d.r < 6 && !/^(u|e)\|/.test(id) && !(d.o && d.o.t === 'art') && !d.nova && !isPremiumId(id); }
 function doFuse(st, slot) {
-  const ids = st.pick.slice(); if (ids.length !== 5 || ids.some(id => !S.inv[id] || isEquipped(id) || !fusable(id))) return;
+  const ids = st.pick.slice(); if (!ids.length || ids.length !== fuseNeed(getDef(ids[0]).r) || ids.some(id => !S.inv[id] || isEquipped(id) || !fusable(id))) return;
   const d0 = getDef(ids[0]), r = d0.r + 1, cat = d0.cat;
   const pool = ((POOLS[cat] || [])[r] || []).filter(i => fusable(i) || r === 6).filter(i => slotOf(getDef(i)) === slot);
   if (!pool.length) { toast('NOTHING TO FUSE INTO FOR THIS SLOT', COL.coral); return; }

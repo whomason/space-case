@@ -16,14 +16,14 @@ const RAR_DIST = [30, 22, 18, 13, 9, 5, 3];
 const RAR_BOSS_DIST = [0, 0, 26, 30, 25, 12, 7];
 
 const TIERS = [
-  { n: 'ASTEROID', cost: 1, odds: [72, 20, 6, 1.6, 0.35, 0.045, 0.005], unlock: 1, h: 28, s: 0.35 },
-  { n: 'COMET', cost: 2, odds: [62, 25, 9, 3, 0.8, 0.17, 0.03], unlock: 2, h: 195, s: 0.6 },
-  { n: 'METEOR', cost: 4, odds: [50, 29, 14, 5, 1.6, 0.34, 0.06], unlock: 4, h: 18, s: 0.9 },
-  { n: 'NEBULA', cost: 8, odds: [38, 31, 19, 8.5, 2.8, 0.6, 0.1], unlock: 7, h: 300, s: 0.7 },
-  { n: 'PULSAR', cost: 16, odds: [26, 31, 24, 13, 4.8, 1, 0.2], unlock: 10, h: 185, s: 0.9 },
-  { n: 'QUASAR', cost: 32, odds: [14, 27, 29, 19, 8, 2.4, 0.6], unlock: 13, h: 48, s: 0.95 },
-  { n: 'BLACK HOLE', cost: 64, odds: [5, 18, 30, 27, 13.5, 5, 1.5], unlock: 16, h: 270, s: 0.8 },
-  { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
+  { n: 'ASTEROID', cost: 1, odds: [72, 20, 6, 1.6, 0.35, 0.045, 0.001], unlock: 1, h: 28, s: 0.35 },
+  { n: 'COMET', cost: 2, odds: [62, 25, 9, 3, 0.8, 0.17, 0.008], unlock: 2, h: 195, s: 0.6 },
+  { n: 'METEOR', cost: 4, odds: [50, 29, 14, 5, 1.6, 0.34, 0.015], unlock: 4, h: 18, s: 0.9 },
+  { n: 'NEBULA', cost: 8, odds: [38, 31, 19, 8.5, 2.8, 0.6, 0.03], unlock: 7, h: 300, s: 0.7 },
+  { n: 'PULSAR', cost: 16, odds: [26, 31, 24, 13, 4.8, 1, 0.05], unlock: 10, h: 185, s: 0.9 },
+  { n: 'QUASAR', cost: 32, odds: [14.45, 27, 29, 19, 8, 2.4, 0.15], unlock: 13, h: 48, s: 0.95 },
+  { n: 'BLACK HOLE', cost: 64, odds: [6.1, 18, 30, 27, 13.5, 5, 0.4], unlock: 16, h: 270, s: 0.8 },
+  { n: 'SINGULARITY', cost: 128, odds: [0, 10.8, 24, 33, 21, 10, 1.2], unlock: 'nova', h: 0, s: 1 },
 ];
 const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
 const ENEMY_COIN = 0.5; // aliens drop this many times their old coins. Mining is the main way to earn
@@ -33,9 +33,9 @@ const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy few
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
 // double or nothing: the rarer the item, the harder it is to double (common 45% ... mythic 1%). Doubling makes it rarer, so stacking gets harder on its own
-const DON_BY_R = [45, 30, 18, 9, 4, 1];
+const DON_BY_R = [45, 28, 15, 5, 0.75, 0.1];   // common > uncommon ... legendary > mythic 0.75%, mythic > cosmic 0.1%
 // luck makes it up to 50% more likely (it used to add a flat +10%, which made mythic doubles 11x likelier)
-function donChance(r = 0) { const v = (DON_BY_R[clamp(r, 0, 5)] || 0) * (1 + S.skills.luck * 0.05); return v >= 10 ? Math.round(v) : Math.round(v * 10) / 10; }
+function donChance(r = 0) { const v = (DON_BY_R[clamp(r, 0, 5)] || 0) * (1 + S.skills.luck * 0.05); return v >= 10 ? Math.round(v) : v >= 1 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100; }
 
 const CLASSES = ['blaster', 'rifle', 'shotgun', 'sniper', 'railgun', 'launcher', 'beam', 'blade', 'throwing', 'mine', 'drone'];
 const CLS = {
