@@ -627,3 +627,48 @@ function killFlair(F, x, y, r, big = 1) {
 function trailFlair(w, x, y, r) {
   if (r >= 4 && R0() < [0, 0, 0, 0, 0.15, 0.3, 0.45][r]) w.fx.add({ x: x + (R0() - 0.5) * 10, y: y - 4 - R0() * 12, vx: 0, vy: -6, life: 0.6, c: r === 6 ? rainbow(T_NOW, R0() * 360) : '#ffffff', t: 'pat', pat: r >= 5 && R0() < 0.4 ? TRAIL_PAT.spark4 : TRAIL_PAT.star, drag: 1 });
 }
+
+// ---------- feel: hitmarkers, kill punch, gadget punch ----------
+const HITM = { t: 0, crit: false, kill: false, bloom: 0 };
+function hitMark(crit) { HITM.t = 0.16; if (crit) HITM.crit = true; }
+function drawHitMark(x, y, dt) {
+  HITM.bloom = Math.max(0, HITM.bloom - dt * 8);
+  if (HITM.t <= 0) { HITM.crit = HITM.kill = false; return; }
+  HITM.t -= dt; const k = HITM.t / 0.16, c = HITM.kill ? '#ff4a5a' : HITM.crit ? COL.gold : '#ffffff', g = (HITM.kill ? 6 : 4) + Math.round((1 - k) * 2);
+  ctx.globalAlpha = Math.min(1, k * 2.5);
+  line(x - g - 3, y - g - 3, x - g, y - g, c); line(x + g + 3, y - g - 3, x + g, y - g, c); line(x - g - 3, y + g + 3, x - g, y + g, c); line(x + g + 3, y + g + 3, x + g, y + g, c);
+  if (HITM.kill) { line(x - g - 2, y - g - 3, x - g + 1, y - g, c); line(x + g + 2, y - g - 3, x + g - 1, y - g, c); }
+  ctx.globalAlpha = 1;
+}
+// a kill should land: a beat of hitstop, chunks of the alien, a flash ring, a sound that climbs with your combo
+function killJuice(w, e) {
+  if (w.demo || !w.fx) return;
+  const big = e.boss ? 3 : e.elite ? 2 : 1, c = e.col || '#9f9';
+  if (!w.arena && !w.visualOnly) FX.hitstop = Math.max(FX.hitstop, e.boss ? 0.2 : e.elite ? 0.07 : 0.025);
+  if (w.player && (!w.arena)) { HITM.t = 0.22; HITM.kill = true; }
+  w.fx.add({ x: e.x, y: e.y - 4, life: 0.12, c: '#ffffff', s: 6 + e.r, t: 'hitflash' });
+  w.fx.add({ x: e.x, y: e.y - 4, life: 0.25, c: '#ffffff', s: e.r * 2 + 6, t: 'ring' });
+  for (let i = 0; i < 5 * big; i++) { const a = R0() * TAU, sp = 50 + R0() * 90; w.fx.add({ x: e.x, y: e.y - 4, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, g: 260, life: 0.5 + R0() * 0.3, c: R0() < 0.3 ? (e.col2 || '#ffffff') : c, s: 2, drag: 1.5 }); }
+  if (big > 1) shake(big * 1.5); else if (w.combo >= 10 && R0() < 0.5) shake(0.8);
+}
+// every gadget lands with a punch; the big ones shake the screen
+const GADGET_PUNCH = { blackhole: ['#b066ff', 2, 'launch'], cluster: ['#ff9a3d', 1.5, 'throw'], dome: ['#9fe7ff', 2, 'unlock'], timewarp: ['#7fe9ff', 1, 'charge'], decoy: ['#b79ced', 1, 'unlock'], orbital: ['#fff6c0', 1.5, 'charge'], freeze: ['#bff6ff', 4, 'freeze'], blink: ['#bff3ff', 1.5, 'zap'], turret: ['#9fe7ff', 1.5, 'mine'], medkit: ['#7dffb0', 1, 'levelup'], emp: ['#fff25a', 3.5, 'zap'], slam: ['#c9c0ff', 3, 'launch'] };
+function gadgetJuice(w, pl, k) {
+  if (!w.fx) return; const P = GADGET_PUNCH[k] || ['#ffffff', 1.5]; const c = P[0];
+  w.fx.add({ x: pl.x, y: pl.y - 8, life: 0.3, c, s: 26, t: 'ring' }); w.fx.add({ x: pl.x, y: pl.y - 8, life: 0.18, c: '#ffffff', s: 14, t: 'ring' });
+  for (let i = 0; i < 10; i++) { const a = i / 10 * TAU; w.fx.add({ x: pl.x, y: pl.y - 8, vx: Math.cos(a) * 120, vy: Math.sin(a) * 90, life: 0.25, c: i % 2 ? c : '#ffffff', s: 1, t: 'spark', drag: 4 }); }
+  if (w.demo) return;
+  shake(P[1]); if (!w.arena) FX.hitstop = Math.max(FX.hitstop, 0.035); FX.flash = Math.max(FX.flash || 0, 0.12); FX.flashCol = c;
+  if (k === 'freeze') {
+    for (let r = 0; r < 3; r++) w.fx.add({ x: pl.x, y: pl.y - 4, life: 0.35 + r * 0.12, c: r ? '#bff6ff' : '#ffffff', s: (pl.G ? pl.G.rad : 90) * (0.6 + r * 0.25), t: 'ring' });
+    for (let i = 0; i < 22; i++) { const a = R0() * TAU, sp = 90 + R0() * 120; w.fx.add({ x: pl.x, y: pl.y - 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, life: 0.5, c: R0() < 0.5 ? '#ffffff' : '#bff6ff', t: R0() < 0.4 ? 'pat' : 'spark', pat: TRAIL_PAT.flake, s: 1, drag: 2.5 }); }
+    let n = 0; for (const e of w.ents) if (!e.dead && e.freeze > 0 && n < 10 && Math.hypot(e.x - pl.x, e.y - pl.y) < (pl.G ? pl.G.rad : 90)) { iceBurst(w, e.x, e.y - 6); n++; }
+  }
+  if (k === 'emp') { FX.flash = 0.2; FX.flashCol = '#fff25a'; }
+  if (k === 'blink') { const g = w.gx && w.gx[w.gx.length - 1]; if (g && g.k === 'blink') g.ghost = true; }
+}
+// cooldown done: a ping and a ring so you know it's back
+function gadgetReady(w, pl) {
+  if (!w.fx || w.demo) return; const P = GADGET_PUNCH[pl.G.k] || ['#ffffff'];
+  w.fx.add({ x: pl.x, y: pl.y - 10, life: 0.35, c: P[0], s: 16, t: 'ring' }); w.fx.text(pl.x, pl.y - 30, 'GADGET READY', P[0], { f: FS, life: 0.6 }); wsnd(w, 'tick', 1400);
+}

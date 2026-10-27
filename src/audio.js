@@ -40,7 +40,7 @@ const SND = {
   play(name, p = 0) {
     if (!this.ac || this.muted) return;
     const now = this.ac.currentTime;
-    const lim = { tick: 0.018, hit: 0.03, pew: 0.035, rifle: 0.03, drone: 0.05, ore: 0.04, coin: 0.03, extract: 0.09, beam: 0.07, kill: 0.04, tally: 0.03, hover: 0.05 }[name];
+    const lim = { tick: 0.018, hit: 0.03, crit: 0.06, gadget: 0.1, pew: 0.035, rifle: 0.03, drone: 0.05, ore: 0.04, coin: 0.03, extract: 0.09, beam: 0.07, kill: 0.04, tally: 0.03, hover: 0.05 }[name];
     if (lim) { if (now - (this.last[name] || 0) < lim) return; this.last[name] = now; }
     const T = (f, d, ty, v, o) => this.tone(f, d, ty, v, o), N = (d, v, o) => this.noise(d, v, o), mf = this.mf;
     switch (name) {
@@ -50,8 +50,10 @@ const SND = {
       case 'tick': T(p || 900, 0.03, 'square', 0.12); N(0.015, 0.05, { type: 'highpass', f: 6000 }); break;
       case 'coin': T(988, 0.05, 'square', 0.12); T(1319, 0.08, 'square', 0.12, { delay: 0.05 }); break;
       case 'tally': T(500 + p * 40, 0.04, 'square', 0.1); break;
-      case 'pew': T(900 + R0() * 80, 0.08, 'square', 0.1, { slide: 260 }); break;
-      case 'rifle': T(650, 0.05, 'square', 0.08, { slide: 220 }); N(0.03, 0.06, { f: 4000 }); break;
+      case 'pew': T(900 + R0() * 80, 0.08, 'square', 0.1, { slide: 260 }); T(160, 0.05, 'triangle', 0.12, { slide: 70 }); break;
+      case 'rifle': T(650, 0.05, 'square', 0.08, { slide: 220 }); N(0.04, 0.09, { f: 3000, f2: 600 }); T(130, 0.05, 'triangle', 0.13, { slide: 60 }); break;
+      case 'crit': T(1700, 0.05, 'square', 0.07, { slide: 2600 }); T(2600, 0.06, 'triangle', 0.06, { delay: 0.03 }); break;
+      case 'gadget': N(0.12, 0.15, { type: 'bandpass', f: 1200, f2: 3000 }); T(300, 0.12, 'triangle', 0.16, { slide: 900 }); T(1200, 0.08, 'square', 0.05, { delay: 0.06 }); break;
       case 'shotgun': N(0.18, 0.35, { f: 2500, f2: 200 }); T(180, 0.12, 'square', 0.15, { slide: 60 }); break;
       case 'sniper': T(1600, 0.2, 'sawtooth', 0.12, { slide: 150 }); N(0.12, 0.25, { f: 5000, f2: 400 }); break;
       case 'charge': T(200 + p * 900, 0.06, 'sawtooth', 0.05); break;
@@ -63,7 +65,7 @@ const SND = {
       case 'mine': T(520, 0.03, 'square', 0.12); T(780, 0.03, 'square', 0.1, { delay: 0.05 }); break;
       case 'drone': T(1500, 0.03, 'square', 0.04, { slide: 900 }); break;
       case 'hit': N(0.04, 0.12, { f: 3500 }); T(280, 0.04, 'square', 0.06, { slide: 140 }); break;
-      case 'kill': N(0.12, 0.2, { f: 2500, f2: 300 }); T(420, 0.12, 'square', 0.1, { slide: 90 }); break;
+      case 'kill': { const up = 1 + Math.min(p || 0, 20) * 0.04; N(0.12, 0.2, { f: 2500, f2: 300 }); T(420 * up, 0.12, 'square', 0.1, { slide: 90 * up }); T(110, 0.08, 'triangle', 0.14, { slide: 50 }); if (p >= 5) T(880 * up, 0.06, 'square', 0.05, { delay: 0.04 }); break; }
       case 'boom': N(0.45, 0.45, { f: 1600, f2: 60 }); T(110, 0.35, 'triangle', 0.3, { slide: 35 }); break;
       case 'bigboom': N(0.9, 0.55, { f: 2400, f2: 40 }); T(80, 0.8, 'triangle', 0.4, { slide: 25 }); T(55, 0.9, 'square', 0.12, { slide: 20 }); break;
       case 'hurt': T(320, 0.16, 'sawtooth', 0.18, { slide: 110 }); N(0.08, 0.15, { f: 1800 }); break;

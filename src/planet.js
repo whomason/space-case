@@ -702,7 +702,7 @@ function drawRunHUD(R) {
     else text('DRAG LEFT SIDE TO MOVE. TOUCH RIGHT SIDE TO AIM AND FIRE', W / 2, H - 40, COL.mute, FS, 1);
   }
   // crosshair
-  if (!R.paused && !R.choice && !IN.touch) { const c = pl.mode === 'tool' ? COL.mint : COL.ink; const x = Math.floor(IN.mx), y = Math.floor(IN.my); rect(x - 4, y, 3, 1, c); rect(x + 2, y, 3, 1, c); rect(x, y - 4, 1, 3, c); rect(x, y + 2, 1, 3, c); }
+  if (!R.paused && !R.choice && !IN.touch) { const c = pl.mode === 'tool' ? COL.mint : COL.ink; const x = Math.floor(IN.mx), y = Math.floor(IN.my), b = Math.round(HITM.bloom * 2); rect(x - 4 - b, y, 3, 1, c); rect(x + 2 + b, y, 3, 1, c); rect(x, y - 4 - b, 1, 3, c); rect(x, y + 2 + b, 1, 3, c); drawHitMark(x, y, 1 / 60); }
 }
 function drawPause(R) {
   ctx.globalAlpha = 0.7; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;

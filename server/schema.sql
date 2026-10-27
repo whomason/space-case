@@ -995,6 +995,21 @@ begin
   return jsonb_build_object('match', mid, 'host', true, 'ranked', coalesce(p_ranked, false));
 end $$;
 
+alter table public.duels add column if not exists left_by uuid;     -- the pilot who quit: their late report counts as a loss
+alter table public.duels add column if not exists a_coins int;
+alter table public.duels add column if not exists b_coins int;
+
+-- 1v1 coins follow how far you've got: a win is worth a couple of crates at your current tier, ranked or not
+create or replace function sc_private.duel_coins(uid uuid, won boolean, vs_ai boolean) returns int language plpgsql stable set search_path = '' as $$
+declare reached int; crate int;
+begin
+  select coalesce(case when jsonb_typeof(data -> 'planet' -> 'reached') = 'number' then (data -> 'planet' ->> 'reached')::int end, 1) into reached from public.saves where user_id = uid;
+  reached := greatest(1, coalesce(reached, 1));
+  crate := 200 * (case when reached >= 16 then 64 when reached >= 13 then 32 when reached >= 10 then 16 when reached >= 7 then 8 when reached >= 4 then 4 when reached >= 2 then 2 else 1 end);
+  return greatest(case when won then 200 else 60 end,
+    round(crate * case when won then (case when vs_ai then 1.0 else 2.5 end) else (case when vs_ai then 0.25 else 0.5 end) end)::int);
+end $$;
+
 create or replace function sc_private.duel_settle(uid uuid, won boolean, ranked boolean, vs_ai boolean) returns jsonb language plpgsql volatile set search_path = '' as $$
 declare st public.arena_stats; dt int := 0; coins int;
 begin
@@ -1005,38 +1020,49 @@ begin
     duels_won = duels_won + (case when won then 1 else 0 end), duels_lost = duels_lost + (case when won then 0 else 1 end),
     ranked_won = ranked_won + (case when ranked and won then 1 else 0 end), ranked_lost = ranked_lost + (case when ranked and not won then 1 else 0 end), updated_at = now()
     where user_id = uid;
-  coins := case when won then (case when vs_ai then 80 else 200 end) else (case when vs_ai then 25 else 60 end) end;
+  coins := sc_private.duel_coins(uid, won, vs_ai);
   insert into public.deliveries (user_id, coins, crates, reason) values (uid, coins,
     case when won and ranked and random() < 0.35 then jsonb_build_array(least(6, 2 + sc_private.rank_idx(st.trophies + dt) / 2)) else '[]'::jsonb end, case when won then 'duel won' else 'duel played' end);
   return jsonb_build_object('won', won, 'trophy_change', dt, 'trophies', st.trophies + dt, 'rank', sc_private.rank_of(st.trophies + dt), 'coins', coins);
 end $$;
 
 drop function if exists public.duel_report(uuid, boolean);
-create or replace function public.duel_report(p_match uuid, p_won boolean, p_ai boolean default false) returns jsonb
+drop function if exists public.duel_report(uuid, boolean, boolean);
+-- p_forfeit: the other pilot left the match, so this pilot wins right away. Whoever leaves loses, even if their report comes in later.
+create or replace function public.duel_report(p_match uuid, p_won boolean, p_ai boolean default false, p_forfeit boolean default false) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare uid uuid := sc_private.me(); dl record; mine text := case when p_won then 'win' else 'loss' end; other text; res jsonb; oth jsonb; is_a boolean;
+declare uid uuid := sc_private.me(); dl record; mine text := case when p_won then 'win' else 'loss' end; other text; res jsonb; oth jsonb; is_a boolean; opp uuid;
 begin
   select * into dl from public.duels where id = p_match for update;
   if not found or uid not in (dl.a, coalesce(dl.b, dl.a)) then raise exception 'NOT YOUR MATCH'; end if;
-  is_a := uid = dl.a;
+  is_a := uid = dl.a; opp := case when is_a then dl.b else dl.a end;
   if dl.done or (dl.b is not null and (case when is_a then dl.a_change else dl.b_change end) is not null and (case when is_a then dl.a_ai else dl.b_ai end)) then
     return jsonb_build_object('done', true, 'won', case when (case when is_a then dl.a_ai else dl.b_ai end) then (case when is_a then dl.a_result else dl.b_result end) = 'win' else dl.winner is not null and dl.winner = uid end,
       'disputed', dl.winner is null and dl.b is not null and not dl.a_ai and not dl.b_ai,
-      'trophy_change', coalesce(case when is_a then dl.a_change else dl.b_change end, 0),
+      'left', dl.left_by is not null and dl.left_by <> uid,
+      'trophy_change', coalesce(case when is_a then dl.a_change else dl.b_change end, 0), 'coins', coalesce(case when is_a then dl.a_coins else dl.b_coins end, 0),
       'trophies', (select trophies from public.arena_stats where user_id = uid), 'rank', sc_private.rank_of(coalesce((select trophies from public.arena_stats where user_id = uid), 0)));
   end if;
   if dl.created_at < now() - interval '30 minutes' then raise exception 'THAT MATCH IS TOO OLD'; end if;
   if dl.b is null then   -- against an AI pilot
     update public.duels set a_result = mine where id = dl.id;
     res := sc_private.duel_settle(uid, p_won, dl.ranked, true);
-    update public.duels set done = true, winner = case when p_won then uid else null end, a_change = (res ->> 'trophy_change')::int where id = dl.id;
+    update public.duels set done = true, winner = case when p_won then uid else null end, a_change = (res ->> 'trophy_change')::int, a_coins = (res ->> 'coins')::int where id = dl.id;
     return jsonb_build_object('done', true) || res;
   end if;
-  -- the other pilot never connected (or dropped), so an AI pilot stood in: settle just this side, as an AI match
-  if p_ai or (is_a and dl.b_ai) or (not is_a and dl.a_ai) then
-    res := sc_private.duel_settle(uid, p_won, dl.ranked, true);
-    if is_a then update public.duels set a_result = mine, a_ai = true, a_change = (res ->> 'trophy_change')::int where id = dl.id;
-    else update public.duels set b_result = mine, b_ai = true, b_change = (res ->> 'trophy_change')::int where id = dl.id; end if;
+  -- the other pilot left: this pilot wins now, the leaver gets their loss when (if) they report
+  if p_forfeit and p_won and (case when is_a then dl.b_result else dl.a_result end) is null then
+    res := sc_private.duel_settle(uid, true, dl.ranked, false);
+    if is_a then update public.duels set a_result = 'win', a_ai = true, a_change = (res ->> 'trophy_change')::int, a_coins = (res ->> 'coins')::int, left_by = opp, winner = uid where id = dl.id;
+    else update public.duels set b_result = 'win', b_ai = true, b_change = (res ->> 'trophy_change')::int, b_coins = (res ->> 'coins')::int, left_by = opp, winner = uid where id = dl.id; end if;
+    return jsonb_build_object('done', true, 'left', true) || res;
+  end if;
+  -- this pilot left (the other side already took the win), or one side fought an AI stand-in: settle just this side
+  if dl.left_by = uid or p_ai or (is_a and dl.b_ai) or (not is_a and dl.a_ai) then
+    if dl.left_by = uid then mine := 'loss'; res := sc_private.duel_settle(uid, false, dl.ranked, false);
+    else res := sc_private.duel_settle(uid, p_won, dl.ranked, true); end if;
+    if is_a then update public.duels set a_result = mine, a_ai = true, a_change = (res ->> 'trophy_change')::int, a_coins = (res ->> 'coins')::int where id = dl.id;
+    else update public.duels set b_result = mine, b_ai = true, b_change = (res ->> 'trophy_change')::int, b_coins = (res ->> 'coins')::int where id = dl.id; end if;
     update public.duels set done = (a_change is not null and b_change is not null) where id = dl.id;
     return jsonb_build_object('done', true) || res;
   end if;
@@ -1047,11 +1073,15 @@ begin
   end if;
   update public.duels set done = true where id = dl.id;
   if other is not null and other = mine then return jsonb_build_object('done', true, 'disputed', true); end if;   -- both claim the same: nobody gains
-  if p_won then update public.duels set winner = uid where id = dl.id; else update public.duels set winner = case when is_a then dl.b else dl.a end where id = dl.id; end if;
+  if p_won then update public.duels set winner = uid where id = dl.id; else update public.duels set winner = opp where id = dl.id; end if;
+  -- reporting a loss before the other side has reported means this pilot quit
+  if not p_won and other is null then update public.duels set left_by = uid where id = dl.id; end if;
   res := sc_private.duel_settle(uid, p_won, dl.ranked, false);
-  oth := sc_private.duel_settle(case when is_a then dl.b else dl.a end, not p_won, dl.ranked, false);
+  oth := sc_private.duel_settle(opp, not p_won, dl.ranked, false);
   update public.duels set a_change = case when is_a then (res ->> 'trophy_change')::int else (oth ->> 'trophy_change')::int end,
-                          b_change = case when is_a then (oth ->> 'trophy_change')::int else (res ->> 'trophy_change')::int end where id = dl.id;
+                          b_change = case when is_a then (oth ->> 'trophy_change')::int else (res ->> 'trophy_change')::int end,
+                          a_coins = case when is_a then (res ->> 'coins')::int else (oth ->> 'coins')::int end,
+                          b_coins = case when is_a then (oth ->> 'coins')::int else (res ->> 'coins')::int end where id = dl.id;
   return jsonb_build_object('done', true) || res;
 end $$;
 

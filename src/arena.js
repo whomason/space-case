@@ -105,7 +105,7 @@ function arLeave(quiet) {
   const A = AM; if (!A) return;
   if (A.spec) { if (A.room) try { A.room.leave(); } catch (e) { } AM = null; goHub(); if (!quiet) { openStation('arena'); HUB.ps.arena.tab = 1; } return; }
   const rep = A.mode !== 'duel' && !A.practice ? arReport(true) : null;
-  if (A.mode === 'duel' && !A.ended && !A.practice) { arDuelReport(false); }
+  if (A.mode === 'duel' && !A.ended && !A.practice && !A.spec) { A.ended = true; arDuelReport(false); }   // leaving a duel is a loss; the other pilot wins
   if (A.room) { try { A.room.send('bye', {}); A.room.leave(); } catch (e) { } }
   if (A.server && !A.practice) Promise.resolve(rep).catch(() => { }).then(() => rpc('arena_leave')).catch(() => { });
   AM = null; goHub(); if (!quiet) openStation('arena');
@@ -270,7 +270,7 @@ function arOnMsg(ev, d, from) {
     return;
   }
   if (ev === 'd') { const v = A.fighters.get(d.v); if (v && !v.local && !(v.bot && A.host)) { v.alive = true; arDie(v, d.by, false); } return; }
-  if (ev === 'bye') { A.fighters.delete(from); return; }
+  if (ev === 'bye') { const f = A.fighters.get(from); A.fighters.delete(from); if (f && f.human) arOppLeft(); return; }
   if (ev === 'need') { if (!A.spec) { A.specT = A.t; arSendHiSoon(); } return; }
   if (ev === 'em') { const f = A.fighters.get(d.f || from); if (f && (d.i | 0) >= 0 && (d.i | 0) < EMOTES.length) f.emote = { i: d.i | 0, t: 2.6 }; return; }
 }
@@ -279,7 +279,8 @@ function arOnPeers(list) {
   const A = AM; if (!A) return;
   list.sort((a, b) => (a.j - b.j) || (a.id < b.id ? -1 : 1));
   const wasHost = A.host; A.peers = list; A.humans = list.length; A.hostId = list.length ? list[0].id : A.me.id; A.host = A.hostId === A.me.id;
-  for (const f of [...A.fighters.values()]) if (f.human && !f.local && !list.some(p => p.id === f.id)) { A.fighters.delete(f.id); }
+  let gone = false; for (const f of [...A.fighters.values()]) if (f.human && !f.local && !list.some(p => p.id === f.id)) { A.fighters.delete(f.id); gone = true; }
+  if (gone && A.mode === 'duel' && A.oppSeenT) A.goneT = A.t;
   if (A.host && !wasHost) for (const b of arBots()) { b.ai = b.ai || { skill: b.skill || 0.5, t: 0, str: 1, tgt: null, think: 0, aimErr: (1 - (b.skill || 0.5)) * 0.32 + 0.03, idle: 0 }; b.x = b.nx || b.x; b.y = b.ny || b.y; }
   if (A.mode !== 'duel') arFillBots();
   arSendHi();
@@ -310,18 +311,23 @@ function arDuelCheck() {
   if (!opp) return;
   if (me.kills >= AR_DUEL_TO || opp.kills >= AR_DUEL_TO) arDuelEnd(me.kills > opp.kills);
 }
+// the other pilot left: the duel ends now and you win
+function arOppLeft() {
+  const A = AM; if (!A || A.ended || A.spec || A.practice || A.mode !== 'duel' || A.vsAI) return;
+  A.forfeit = true; arDuelEnd(true); if (A.result) A.result.left = true;
+}
 function arDuelEnd(won) {
-  const A = AM; if (A.ended) return; A.ended = true; A.endT = 0; A.result = { won, pending: !A.practice, msg: '' }; passXP(A.practice ? (won ? 60 : 20) : won ? 200 : 60); track('duel', { won: won ? 1 : 0, ai: A.vsAI ? 1 : 0, ranked: A.ranked ? 1 : 0 });
+  const A = AM; if (A.ended) return; A.ended = true; A.endT = 0; A.result = { won, pending: !A.practice, msg: '', left: !!A.forfeit }; passXP(A.practice ? (won ? 60 : 20) : won ? 200 : 60); track('duel', { won: won ? 1 : 0, ai: A.vsAI ? 1 : 0, ranked: A.ranked ? 1 : 0 });
   SND.play(won ? 'fanfare' : 'lose'); SND.playSong(null);
   if (A.room) A.room.send('end', {});
   if (!A.practice) arDuelReport(won);
 }
 function arDuelReport(won, tries = 0) {
   const A = AM, mid = A && A.matchId; if (!mid) return;
-  rpcNew('duel_report', { p_match: mid, p_won: won, p_ai: !!(A && A.fellBack) }, { p_match: mid, p_won: won }).then(r => {
+  rpcNew('duel_report', { p_match: mid, p_won: won, p_ai: !!(A && A.fellBack), p_forfeit: !!(A && A.forfeit) }, { p_match: mid, p_won: won, p_ai: !!(A && A.fellBack) }).then(r => {
     if (!AM || AM.matchId !== mid) { if (r && r.done && r.trophy_change !== undefined) toast(`${won ? 'WIN' : 'LOSS'}: ${r.trophy_change >= 0 ? '+' : ''}${r.trophy_change} TROPHIES`, COL.gold); return; }
     if (r.pending && tries < 12) { AM.result.msg = 'WAITING FOR THE OTHER PILOT TO CONFIRM...'; setTimeout(() => arDuelReport(won, tries + 1), 3000); return; }
-    AM.result.pending = false; AM.result.r = r; if (r.disputed) AM.result.msg = 'RESULTS DID NOT MATCH. NO TROPHIES THIS TIME';
+    AM.result.pending = false; AM.result.r = r; if (r.left) AM.result.left = true; if (r.coins) NET.mail = Math.max(NET.mail || 0, 1); if (r.disputed) AM.result.msg = 'RESULTS DID NOT MATCH. NO TROPHIES THIS TIME';
     if (r.trophies !== undefined) NET.arena = Object.assign(NET.arena || {}, { trophies: r.trophies, rank: r.rank });
   }).catch(e => { if (AM && AM.result) { AM.result.pending = false; AM.result.msg = e.message; } });
 }
@@ -370,7 +376,8 @@ function arUpdate(dt) {
   // match bookkeeping
   if (A.mode === 'duel') {
     if (A.count <= 0) { A.timer -= dt; if (A.timer <= 0) { const opp = [...A.fighters.values()].find(f => f !== me); if (!opp || me.kills !== opp.kills) arDuelEnd(!opp || me.kills > opp.kills); else A.timer = 30; } }
-    if (!A.vsAI && !A.practice && A.t > 12 && (!A.oppSeenT || A.t - A.oppSeenT > 10) && !A.connecting) arDuelFallback();
+    if (!A.vsAI && !A.practice && !A.ended && A.oppSeenT && ((A.goneT !== undefined && A.t - A.goneT > 3 && ![...A.fighters.values()].some(f => f.human && !f.local)) || A.t - A.oppSeenT > 10)) arOppLeft();
+    else if (!A.vsAI && !A.practice && A.t > 12 && !A.oppSeenT && !A.connecting) arDuelFallback();
   } else if (!A.practice && A.server) {
     A.reportT += dt; if (A.reportT > 60) { A.reportT = 0; arReport(false); }
     A.pingT -= dt; if (A.pingT <= 0) { A.pingT = 10; rpc('arena_ping', { p_server: A.server.id }).catch(() => { }); }
@@ -470,15 +477,17 @@ function arEndScreen() {
   const A = AM, r = A.result; ctx.globalAlpha = Math.min(0.75, A.endT); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
   const won = r.won; textO(won ? 'VICTORY' : 'DEFEAT', W / 2, 60, won ? COL.gold : COL.coral, '#000', FB, 1, 4);
   const opp = [...A.fighters.values()].find(f => f !== A.me); text(`${A.me.kills} - ${opp ? opp.kills : 0}${opp ? '  VS ' + opp.cs : ''}`, W / 2, 98, COL.cream, FB, 1);
-  if (A.practice) text('PRACTICE MATCH: NO TROPHIES', W / 2, 116, COL.dim, FS, 1);
-  else if (r.pending) text(r.msg || 'SAVING THE RESULT...', W / 2, 116, COL.dim, FS, 1);
+  const sh = r.left ? 10 : 0; if (r.left) text('YOUR OPPONENT LEFT THE MATCH', W / 2, 109, COL.mint, FS, 1);
+  if (A.practice) text('PRACTICE MATCH: NO TROPHIES', W / 2, 116 + sh, COL.dim, FS, 1);
+  else if (r.pending) text(r.msg || 'SAVING THE RESULT...', W / 2, 116 + sh, COL.dim, FS, 1);
   else if (r.r && r.r.trophy_change !== undefined) {
-    const d = r.r.trophy_change; textO(`${d >= 0 ? '+' : ''}${d} TROPHIES`, W / 2, 114, d >= 0 ? COL.gold : COL.coral, '#000', FB, 1, 2);
-    const rk = rankOf(r.r.trophies); text(`${rk[0]} RANK  ${fmt(r.r.trophies)} TROPHIES`, W / 2, 134, rk[2], FS, 1); if (r.r.coins) text(`+${fmt(r.r.coins)} COINS SENT TO YOUR MAILBOX`, W / 2, 144, COL.dim, FS, 1);
-  } else if (r.msg) text(r.msg, W / 2, 116, COL.dim, FS, 1);
+    const d = r.r.trophy_change, cy = (A.ranked ? 132 : 116) + sh;
+    if (A.ranked) { textO(`${d >= 0 ? '+' : ''}${d} TROPHIES`, W / 2, 114 + sh, d >= 0 ? COL.gold : COL.coral, '#000', FB, 1, 2); const rk = rankOf(r.r.trophies); text(`${rk[0]} RANK  ${fmt(r.r.trophies)} TROPHIES`, W / 2, 150 + sh, rk[2], FS, 1); }
+    if (r.r.coins) { const cw = textW('+' + fmt(r.r.coins), FB, 2) + 12; drawCoinIcon(W / 2 - cw / 2, cy + 4); textO('+' + fmt(r.r.coins), W / 2 + 6, cy, COL.gold, '#000', FB, 1, 2); }
+  } else if (r.msg) text(r.msg, W / 2, 116 + sh, COL.dim, FS, 1);
   if (A.endT > 1) {
-    if (button(W / 2 - 124, 170, 118, 20, 'PLAY AGAIN', { kind: 'primary' })) { const rk = A.ranked, pr = A.practice; arLeave(true); if (pr) arPractice('duel'); else duelSearch(rk); return; }
-    if (button(W / 2 + 6, 170, 118, 20, 'BACK', {})) { arLeave(); return; }
+    if (button(W / 2 - 124, 176, 118, 20, 'PLAY AGAIN', { kind: 'primary' })) { const rk = A.ranked, pr = A.practice; arLeave(true); if (pr) arPractice('duel'); else duelSearch(rk); return; }
+    if (button(W / 2 + 6, 176, 118, 20, 'BACK', {})) { arLeave(); return; }
   }
 }
 // ---------- entry points ----------
@@ -701,3 +710,12 @@ function arSpecHUD() {
   if (button(W - 64, H - 22, 58, 16, 'LEAVE', { font: FS })) { arLeave(); return; }
   if (A.ended) { ctx.globalAlpha = Math.min(0.7, A.endT); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1; textO(`${A.result.winner} WINS!`, W / 2, 100, COL.gold, '#000', FB, 1, 3); text('BACK TO THE ARENA IN A MOMENT', W / 2, 140, COL.dim, FS, 1); }
 }
+
+// closing the tab mid-duel is the same as leaving: send the loss before the page goes away
+function arDuelUnload() {
+  const A = AM; if (!A || A.mode !== 'duel' || A.ended || A.practice || A.spec || !A.matchId || !NET.sess) return;
+  A.ended = true;
+  try { if (A.room) A.room.send('bye', {}); } catch (e) { }
+  try { fetch(NET.url + '/rest/v1/rpc/duel_report', { method: 'POST', keepalive: true, headers: { apikey: NET_KEY, 'Content-Type': 'application/json', Authorization: 'Bearer ' + NET.sess.at }, body: JSON.stringify({ p_match: A.matchId, p_won: false, p_ai: !!A.fellBack, p_forfeit: false }) }); } catch (e) { }
+}
+addEventListener('pagehide', arDuelUnload);

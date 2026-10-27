@@ -172,6 +172,7 @@ before = call('A', 'select my_arena()')['trophies']
 r = call('B', f"select duel_report('{m}', false)"); ok('loser concedes: done', r['done'] and r['trophy_change'] <= 0, r)
 r = call('A', 'select my_arena()'); ok('ranked win +30 trophies', r['trophies'] == before + 30 and r['ranked_won'] == 1, r)
 r = call('A', f"select duel_report('{m}', true)"); ok('settled match: winner still learns +30, no double pay', r['done'] and r['won'] and r['trophy_change'] == 30 and call('A', 'select my_arena()')['trophies'] == before + 30, r)
+ok('the winner sees the coins they got', r['coins'] >= 200, r)
 # vs AI
 r = call('D', "select set_callsign('dee')")
 r = call('D', 'select duel_ai(true)'); mai = r['match']
@@ -180,6 +181,7 @@ r = call('D', 'select duel_ai(true)'); mai2 = r['match']
 r = call('D', f"select duel_report('{mai2}', false)"); ok('losing to the AI costs some', r['trophy_change'] == -8, r)
 r = call('D', 'select duel_ai(false)'); mai3 = r['match']
 r = call('D', f"select duel_report('{mai3}', true)"); ok('unranked changes no trophies', r['trophy_change'] == 0, r)
+ok('unranked wins still pay coins', r['coins'] >= 80, r)
 r = call('B', 'select duel_find(false)'); r = call('B', 'select duel_cancel()'); ok('cancel queue', r.get('cancelled') is True, r)
 # matchmaking for a small player base
 for n, cs in [('E', 'echo'), ('F', 'fox'), ('G', 'golf'), ('H', 'hotel')]: call(n, 'select init_player(null)'); call(n, "select set_callsign(%s)", (cs,))
@@ -206,6 +208,13 @@ r = call('G', 'select duel_find(false)'); r = call('H', 'select duel_find(false)
 c.execute('reset role'); c.execute("update public.duels set created_at = now() - interval '2 minutes' where id = %s", (mo,))
 r = call('G', 'select duel_find(false)'); ok('stale match is dropped and search goes on', r.get('waiting') is True, r)
 call('G', 'select duel_cancel()')
+# one pilot leaves mid-match: the one who stays wins right away, the leaver loses when their report lands
+c.execute('reset role'); c.execute("update public.duels set ranked = true where id = %s", (mf,))
+tg, th = call('G', 'select my_arena()')['trophies'], call('H', 'select my_arena()')['trophies']
+r = call('H', f"select duel_report('{mf}', true, false, true)"); ok('opponent left: instant win, +30 and coins', r['done'] and r['trophy_change'] == 30 and r['coins'] >= 200 and r.get('left') is True, r)
+r = call('H', f"select duel_report('{mf}', true, false, true)"); ok('forfeit win does not pay twice', r['done'] and r['won'] and call('H', 'select my_arena()')['trophies'] == th + 30, r)
+r = call('G', f"select duel_report('{mf}', true)"); ok('the pilot who left loses even if they claim a win', r['done'] and not r['won'] and r['trophy_change'] == max(-15, -tg) and call('G', 'select my_arena()')['ranked_lost'] >= 1, r)
+r = call('G', f"select duel_report('{mf}', true, false, true)"); ok('the leaver cannot claim a forfeit afterwards', r['done'] and not r['won'], r)
 # ===================== fair play, moderation, daily, seasons, market, challenges
 def sql(q, args=()): c.execute('reset role'); c.execute(q, args); return c.fetchall() if c.description else None
 def save_of(n): return sql('select data, version from public.saves where user_id = %s', (U[n],))[0]

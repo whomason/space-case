@@ -94,6 +94,8 @@ function gunFx(F, pl, a, col, cls) {
   if (cls === 'blaster' || cls === 'rifle' || cls === 'shotgun' || cls === 'sniper') { const side = Math.cos(a) < 0 ? 1 : -1, px0 = -Math.sin(a) * side, py0 = Math.cos(a) * side; F.add({ x: pl.x + Math.cos(a) * 4, y: pl.y - 9, vx: px0 * 45 + (R0() - 0.5) * 20, vy: -55 - R0() * 30, g: 340, life: 0.32, c: cls === 'shotgun' ? '#d84a3a' : '#e8c36a', drag: 1 }); }
   if (cls === 'shotgun' || cls === 'sniper' || cls === 'launcher' || cls === 'railgun') for (let i = 0; i < 2; i++) F.add({ x: mx + Math.cos(a) * 3, y: my + Math.sin(a) * 3, vx: Math.cos(a) * 18 + (R0() - 0.5) * 10, vy: Math.sin(a) * 18 - 10, life: 0.45, c: '#8d88a8', s: 1.5 + R0(), t: 'puff', drag: 2 });
   const k = GUN_KICK[cls] || 0.8; pl.kickX = (pl.kickX || 0) - Math.cos(a) * k; pl.kickY = (pl.kickY || 0) - Math.sin(a) * k;
+  HITM.bloom = Math.min(1.5, HITM.bloom + k * 0.4);
+  if (typeof RUN !== 'undefined' && RUN && RUN.w && RUN.w.player === pl && k >= 2) { RUN.cam.x -= Math.cos(a) * k * 1.2; RUN.cam.y -= Math.sin(a) * k * 1.2; }
 }
 // where a shot lands: sparks fly back the way it came
 function impactFx(F, x, y, dx, dy, col, crit) {
@@ -198,7 +200,7 @@ function damageEnemy(w, e, dmg, o = {}) {
   if (w.visualOnly) { e.flash = 0.08; return; }
   if (e.invuln || e.under || e.hidden) { if (!o.quiet && R0() < 0.25) w.fx.text(e.x, e.y - e.r - 10, 'IMMUNE', '#9aa3c0', { f: FS, life: 0.4 }); return; }
   if (e.dummy) { (w.dmgLog = w.dmgLog || []).push([w.t, dmg]); }
-  e.hp -= dmg; e.flash = 0.08; e.lastSrc = o.src || null; if (e.pvp) { e.lastByW = w.player; e.lastAtk = w.player; }
+  e.hp -= dmg; e.flash = 0.08; e.lastSrc = o.src || null; if (!o.quiet && !w.demo && w.player && !w.arena && !e.dummy) hitMark(o.crit); if (o.crit && !w.demo && !o.quiet) wsnd(w, 'crit'); if (e.pvp) { e.lastByW = w.player; e.lastAtk = w.player; }
   if (!o.quiet || R0() < 0.15) {
     const T = e.dmgTxt;
     if (!o.crit && T && T.life > T.max - 0.35 && T.life > 0) { T.val += dmg; T.txt = fmt(Math.max(1, T.val)); T.life = T.max; T.pop = 0.05; T.x = e.x; T.vy = -28; }
@@ -213,7 +215,7 @@ function killEnemy(w, e) {
   if (e.dead || e.pvp || e.ghost) return; e.dead = true;
   const kc = w.killfx; const cols = kc ? kc.cols : ['#fff', e.col || '#9f9', e.col2 || '#ff9'];
   const st = kc ? kc.style : 'PIXEL POP';
-  burstKill(w, e.x, e.y - 3, st, cols, e.boss ? 3 : e.elite ? 2 : 1); if (kc && kc.r >= 4) killFlair(w.fx, e.x, e.y - 3, kc.r, e.boss ? 3 : e.elite ? 2 : 1);
+  killJuice(w, e); burstKill(w, e.x, e.y - 3, st, cols, e.boss ? 3 : e.elite ? 2 : 1); if (kc && kc.r >= 4) killFlair(w.fx, e.x, e.y - 3, kc.r, e.boss ? 3 : e.elite ? 2 : 1);
   if (e.poison > 0) for (const o of w.ents) if (!o.dead && o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 45) { o.poison = 3; o.poisonDps = Math.max(o.poisonDps || 0, e.poisonDps || 1); w.fx.burst(o.x, o.y, 4, { c: '#8cff3a', sp: 40 }); }
   if (e.sticky) explode(w, e.x, e.y, 24, e.sticky.dmg, e.sticky.W.col);
   if (e.boss) { w.bw = null; for (const o of w.ents) if (o.owner === e && !o.dead) { o.dead = true; w.fx.burst(o.x, o.y - 6, 10, { c: [o.col || '#fff', '#fff'], sp: 70 }); } }
@@ -226,7 +228,7 @@ function killEnemy(w, e) {
     if (W.sig === 'hive') { w.tempDrones = Math.min(4, w.tempDrones + 1); w.tempDroneT = 6; }
     if (W.quirk === 'festive' || W.sig === 'confetti') burstKill(w, e.x, e.y - 4, 'CONFETTI', cols, 1);
   }
-  wsnd(w, e.boss ? 'bigboom' : 'kill');
+  wsnd(w, e.boss ? 'bigboom' : 'kill', w.combo || 0);
   w.onKill(e);
 }
 function burstKill(w, x, y, st, cols, big = 1) {
@@ -708,7 +710,7 @@ function updatePlayer(w, pl, inp, dt, L) {
   const ca = Math.cos(pl.aim), sa2 = Math.sin(pl.aim);
   pl.dir = Math.abs(ca) > Math.abs(sa2) * 0.9 ? (ca < 0 ? 2 : 3) : (sa2 < 0 ? 1 : 0);
   if (pl.perks.regen && !w.demo) pl.hp = Math.min(pl.maxHp, pl.hp + pl.maxHp * 0.008 * dt);
-  if (pl.G && pl.G.cd > 0) pl.G.cd -= dt;
+  if (pl.G && pl.G.cd > 0) { pl.G.cd -= dt; if (pl.G.cd <= 0 && pl.G.max > 2) gadgetReady(w, pl); }
   petTick(w, pl, dt);
   if (pl.perks.sparks && pl.moving && R0() < dt * 3) { const tg = nearestEnemy(w, pl.x, pl.y, 30); if (tg) chainZap(w, { x: pl.x, y: pl.y }, (pl.W ? pl.W.dmg : 8) * 0.5, 1, { mid: '#fff25a' }); }
 }
