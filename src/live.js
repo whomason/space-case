@@ -11,7 +11,8 @@ function pulseTick() {
     if (PULSE.online) for (const cs of now) if (!PULSE.online.has(cs)) { toast(`${cs} IS ONLINE`, '#7dffb0'); SND.play('click'); }
     PULSE.online = now; PULSE.watch = r.watch || []; PULSE.admin = !!r.admin; PULSE.flagged = !!r.flagged;
     if ((r.mail | 0) > NET.mail) NET.mail = r.mail | 0;
-    for (const c of r.challenges || []) if (!PULSE.seen.has(c.id)) { PULSE.seen.add(c.id); PULSE.popup = { id: c.id, from: c.from, t0: T_NOW }; SND.play('upgradeHint'); }
+    for (const c of r.challenges || []) if (!PULSE.seen.has(c.id)) { PULSE.seen.add(c.id); PULSE.popup = { id: c.id, from: c.from, kind: c.kind || 'duel', planet: c.planet, t0: T_NOW }; SND.play('upgradeHint'); }
+    for (const a of r.answers || []) if (COOP.inviteId && a.id === COOP.inviteId && !COOP.answered) { COOP.answered = true; if (a.status === 'declined') { toast(`${a.to} SAID NOT RIGHT NOW`, COL.coral); coopReset(); } }
     for (const a of r.answers || []) if (PULSE.sent && a.id === PULSE.sent.id) {
       if (a.status === 'declined') { toast(`${a.to} SAID NOT RIGHT NOW`, COL.coral); if (DQ.on && DQ.code === PULSE.sent.code) duelCancel(); }
       else toast(`${a.to} ACCEPTED! FINDING EACH OTHER...`, '#7dffb0');
@@ -35,23 +36,24 @@ function liveOverlay(grabbed) {
   const { x, y, w, h } = POP, pulse = (Math.sin(T_NOW * 6) + 1) / 2;
   ctx.globalAlpha = 0.25 + pulse * 0.25; rect(x - 3, y - 3, w + 6, h + 6, COL.coral); ctx.globalAlpha = 1;
   panel(x, y, w, h, { bg: '#1c0f2e', bd: COL.coral });
-  textO(`${p.from} CHALLENGES YOU TO A 1V1!`, x + 8, y + 5, COL.ink, '#000', FB);
+  textO(p.kind === 'coop' ? `${p.from}: LAND ON ${planetDef(p.planet || 1).name} TOGETHER?` : `${p.from} CHALLENGES YOU TO A 1V1!`, x + 8, y + 5, COL.ink, '#000', FB);
   bar(x + 8, y + 30, w - 16, 2, left / 60, COL.coral, COL.void0);
   if (button(x + 8, y + 15, 70, 13, 'ACCEPT', { kind: 'primary', font: FS })) {
     const id = p.id; PULSE.popup = null;
-    rpc('challenge_respond', { p_id: id, p_accept: true }).then(r => { if (r.code) { if (RUN) { RUN = null; } duelSearch(false, r.code); } }).catch(e => toast(e.message, COL.coral));
+    if (p.kind === 'coop') coopAccept(id);
+    else rpc('challenge_respond', { p_id: id, p_accept: true }).then(r => { if (r.code) { if (RUN) { RUN = null; } duelSearch(false, r.code); } }).catch(e => toast(e.message, COL.coral));
   }
   if (button(x + 84, y + 15, 60, 13, 'NOT NOW', { font: FS })) { const id = p.id; PULSE.popup = null; rpc('challenge_respond', { p_id: id, p_accept: false }).catch(() => { }); }
   IN.pr = pr;
 }
 
 // ---------- daily rewards: a 7-day streak ----------
-const DAILY_BASE = [[300, 0], [500, 0], [150, 1], [800, 0], [250, 2], [1200, 0], [2000, 3]];   // coins, crate (0 none, else tier step)
+const DAILY_BASE = [[600, [], 0], [400, [0], 0], [1000, [], 10], [600, [1], 0], [1500, [], 15], [1000, [1, 0], 0], [4000, [1, 2, 3], 60]];   // coins, crate tier steps, stardust (same as the server)
 const DAILY = { st: null, t: -1e9, busy: false, shown: false, local: false };
 function localDay(d = new Date()) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function dailyDays() {
   const pl = Math.max(1, S.planet.reached || 1), k = clamp(pl / 2.5, 1, 8), t = Math.min(5, 1 + Math.floor(pl / 4));
-  return DAILY_BASE.map(([c, cr]) => ({ coins: Math.round(c * k / 50) * 50, crates: cr ? [Math.min(6, t + cr - 1)] : [] }));
+  return DAILY_BASE.map(([c, cr, sd]) => ({ coins: Math.round(c * k / 50) * 50, crates: cr.map(s => Math.min(6, t + s)), dust: sd, item: null }));
 }
 // signed in: the server keeps the streak. Not signed in: this device does
 function dailyInfo() {
@@ -69,14 +71,14 @@ function dailyClaim() {
   const info = dailyInfo(); if (!info || !info.can) return;
   if (NET.st === 'on' && !DAILY.local) {
     netDo(() => rpc('daily_claim', { p_tz: new Date().getTimezoneOffset() }).then(r => { NET.mail = Math.max(NET.mail, 1); DAILY.t = -99; dailyRefresh(true); DAILY.flash = 1; return r; }),
-      r => `DAY ${r.day}: +${fmt(r.coins)} COINS${r.crates.length ? ' + A CRATE' : ''}. IT IS IN YOUR MAILBOX`);
+      r => { passXP(300); track('daily', { day: r.day }); return `DAY ${r.day}: +${fmt(r.coins)} COINS${r.crates.length ? ` + ${r.crates.length} CRATE${r.crates.length > 1 ? 'S' : ''}` : ''}${r.dust ? ` + ${r.dust} STARDUST` : ''}${r.item ? ' + AN EXCLUSIVE' : ''}. IT IS IN YOUR MAILBOX`; });
     return;
   }
   const d = S.daily || {}, today = localDay(), y = localDay(new Date(Date.now() - 864e5));
   const streak = d.last === y ? (d.streak || 0) + 1 : 1, day = ((streak - 1) % 7) + 1, rw = dailyDays()[day - 1];
   S.daily = { last: today, streak }; S.coins += rw.coins; S.stats.earned = (S.stats.earned || 0) + rw.coins;
   for (const t of rw.crates) S.choiceQueue.push({ tier: t, title: 'DAILY CRATE' });
-  dirty(); SND.play('fanfare'); DAILY.flash = 1; toast(`DAY ${day}: +${fmt(rw.coins)} COINS${rw.crates.length ? ' + A CRATE' : ''}`, COL.gold);
+  passXP(300); dirty(); SND.play('fanfare'); DAILY.flash = 1; toast(`DAY ${day}: +${fmt(rw.coins)} COINS${rw.crates.length ? ` + ${rw.crates.length} CRATE${rw.crates.length > 1 ? 'S' : ''}` : ''}`, COL.gold);
 }
 function dailyCan() { const i = dailyInfo(); return !!(i && i.can); }
 function drawDailyButton(x, y) {
@@ -90,18 +92,23 @@ function panelDaily(st) {
   if (!info) { text('LOADING...', W / 2, 120, COL.dim, FS, 1); dailyRefresh(true); return; }
   const days = info.days || dailyDays(), cur = info.can ? info.next : ((info.streak - 1) % 7) + 1;
   text(`STREAK: ${info.streak || 0} DAY${info.streak === 1 ? '' : 'S'}`, W / 2, 34, COL.gold, FB, 1);
-  text('COME BACK EVERY DAY. MISS ONE AND THE STREAK STARTS OVER. DAY 7 IS THE BIG ONE', W / 2, 46, COL.dim, FS, 1);
-  const cw = 60, gap = 4, x0 = Math.floor(W / 2 - (7 * cw + 6 * gap) / 2), y0 = 60;
+  text('COME BACK EVERY DAY. MISS ONE AND THE STREAK STARTS OVER. DAY 7 IS HUGE', W / 2, 46, COL.dim, FS, 1);
+  const wk = info.week || Math.floor(Math.max(0, (info.streak || 0) - (info.can ? 0 : 1)) / 7) + 1, toEx = (4 - (wk % 4)) % 4;
+  text(toEx ? `WEEK ${wk}. EVERY 4TH WEEK, DAY 7 ALSO GIVES AN EXCLUSIVE COSMETIC (${toEx} WEEK${toEx > 1 ? 'S' : ''} TO GO)` : `WEEK ${wk}: THIS WEEK'S DAY 7 HAS AN EXCLUSIVE COSMETIC!`, W / 2, 54, toEx ? COL.mute : COL.magenta, FS, 1);
+  const gap = 4, cw = 54, bigW = 92, x0 = Math.floor(W / 2 - (6 * cw + bigW + 6 * gap) / 2), y0 = 72, online = NET.st === 'on' && !DAILY.local;
   days.forEach((d, i) => {
-    const n = i + 1, x = x0 + i * (cw + gap), got = n < cur || (n === cur && !info.can), now = n === cur && info.can, big = n === 7;
-    const ch = big ? 104 : 96, y = y0 + (big ? -4 : 0);
-    if (now) { ctx.globalAlpha = 0.3 + 0.3 * Math.sin(T_NOW * 5); rect(x - 2, y - 2, cw + 4, ch + 4, COL.gold); ctx.globalAlpha = 1; }
-    panel(x, y, cw, ch, { bg: got ? '#132018' : now ? '#2a2310' : COL.void1, bd: now ? COL.gold : got ? '#7dffb0' : big ? COL.magenta : COL.steel });
-    text('DAY ' + n, x + cw / 2, y + 5, now ? COL.gold : got ? '#7dffb0' : COL.ink, FB, 1);
-    drawCoinIcon(x + 8, y + 22); text(fmt(d.coins), x + 18, y + 23, COL.gold, FS);
-    if (d.crates && d.crates.length) { miniCrate(x + cw / 2 - 6, y + 40, d.crates[0]); text(TIERS[d.crates[0]] ? TIERS[d.crates[0]].n : 'CRATE', x + cw / 2, y + 58, COL.lilac, FS, 1); }
-    if (got) { text('CLAIMED', x + cw / 2, y + ch - 12, '#7dffb0', FS, 1); line(x + cw / 2 - 5, y + 74, x + cw / 2 - 2, y + 77, '#7dffb0'); line(x + cw / 2 - 2, y + 77, x + cw / 2 + 5, y + 70, '#7dffb0'); }
-    else if (now) text('TODAY', x + cw / 2, y + ch - 12, COL.gold, FS, 1);
+    const n = i + 1, big = n === 7, w = big ? bigW : cw, x = x0 + i * (cw + gap), got = n < cur || (n === cur && !info.can), now = n === cur && info.can;
+    const ch = big ? 104 : 96, y = y0 + (big ? -6 : 0);
+    if (now || big) { ctx.globalAlpha = now ? 0.3 + 0.3 * Math.sin(T_NOW * 5) : 0.12 + 0.08 * Math.sin(T_NOW * 3); rect(x - 2, y - 2, w + 4, ch + 4, now ? COL.gold : COL.magenta); ctx.globalAlpha = 1; }
+    panel(x, y, w, ch, { bg: got ? '#132018' : now ? '#2a2310' : big ? '#1f0f2e' : COL.void1, bd: now ? COL.gold : got ? '#7dffb0' : big ? COL.magenta : COL.steel });
+    text(big ? 'DAY 7!' : 'DAY ' + n, x + w / 2, y + 5, now ? COL.gold : got ? '#7dffb0' : big ? COL.magenta : COL.ink, FB, 1);
+    let yy = y + 18;
+    drawCoinIcon(x + 6, yy); text(fmtShort(d.coins), x + 16, yy + 1, COL.gold, FS); yy += 11;
+    if (d.crates && d.crates.length) { d.crates.forEach((t, k) => miniCrate(x + 6 + k * 15, yy + 1, t)); text(d.crates.length > 1 ? `${d.crates.length} CRATES` : (TIERS[d.crates[0]] ? TIERS[d.crates[0]].n : 'CRATE'), x + w / 2, yy + 13, COL.lilac, FS, 1); yy += 24; }
+    if (d.dust) { if (!online) ctx.globalAlpha = 0.4; drawStardustIcon(x + 6, yy); text(online ? `${d.dust} DUST` : 'SIGN IN', x + 16, yy + 1, '#c9a6ff', FS); ctx.globalAlpha = 1; yy += 11; }
+    if (d.item) { drawItemIn(d.item, x + 4, yy, w - 8, 22, { maxSc: 2 }); if (inBox(x, yy, w, 22)) TIP.set({ item: d.item }); yy += 24; }
+    if (got) { text('CLAIMED', x + w / 2, y + ch - 12, '#7dffb0', FS, 1); }
+    else if (now) text('TODAY', x + w / 2, y + ch - 12, COL.gold, FS, 1);
   });
   const by = 176;
   if (info.can) { if (button(W / 2 - 80, by, 160, 22, 'CLAIM DAY ' + cur, { kind: 'primary', disabled: NET.act })) dailyClaim(); }
@@ -153,7 +160,7 @@ function socialMarket(st, so) {
   if (inBox(RX + 8, 38, RW - 16, 46)) TIP.set({ item: m.item });
   wrap(d.name, RW - 16, FS).slice(0, 2).forEach((l, i) => text(l, RX + 8, 90 + i * 8, d.r === 6 ? rainbow(T_NOW) : RAR[d.r].c, FS));
   text(`${RAR[d.r].n}  LV ${m.l || 1}${m.g ? '  ' + (TIERS[m.g] ? TIERS[m.g].n + ' GRADE' : '') : ''}`, RX + 8, 108, COL.dim, FS);
-  text(`SELLER: ${m.mine ? 'YOU' : m.seller}`, RX + 8, 118, COL.mute, FS); text(`LISTED ${ago(m.at)}`, RX + 8, 127, COL.mute, FS);
+  if (m.mine) text('SELLER: YOU', RX + 8, 118, COL.mute, FS); else { text('SELLER:', RX + 8, 118, COL.mute, FS); nameLink(m.seller, m.seller, RX + 8 + textW('SELLER: ', FS), 118, COL.cream); } text(`LISTED ${ago(m.at)}`, RX + 8, 127, COL.mute, FS);
   drawCoinIcon(RX + 8, 140); textO(fmt(m.price), RX + 18, 139, COL.gold, '#000', FB);
   if (owned(m.item) && !m.mine) text('YOU ALREADY OWN ONE (IT WOULD LEVEL UP)', RX + 8, 154, COL.lilac, FS);
   const by = H - 38;
@@ -171,7 +178,7 @@ function marketSell(st) {
   const b = st.msell;
   textO('SELL AN ITEM ON THE MARKET', 14, 31, COL.gold, '#000', FB);
   if (button(W - 76, 30, 62, 14, '< BACK', { font: FS })) { st.msell = null; return; }
-  const mine = Object.keys(S.inv).filter(netValid).sort(byRarity), eqd = mine.filter(id => isEquipped(id));
+  const mine = Object.keys(S.inv).filter(id => netValid(id) && !isPremiumId(id)).sort(byRarity), eqd = mine.filter(id => isEquipped(id));
   const sel = b.id ? [b.id] : [];
   tradeGrid(st, 'msgrid', mine, 14, 46, 300, H - 60, sel, { locked: eqd, lv: id => lvl(id), empty: 'NO ITEMS' });
   if (sel[0] !== b.id) b.id = sel.length ? sel[sel.length - 1] : null; if (sel.length > 1) b.id = sel[sel.length - 1];
@@ -277,6 +284,10 @@ function panelSettings(st) {
   if (button(x + 62, y, 58, 16, SND.musicOn ? 'MUSIC ON' : 'MUSIC OFF', { font: FS, kind: SND.musicOn ? 'blue' : 'def' })) { SND.setMusic(!SND.musicOn); S.settings.music = SND.musicOn; if (SND.musicOn) SND.playSong('hub'); dirty(); }
   y += 28;
   text('MOUSE: AIM AND SHOOT', x, y, COL.mute, FS); text('WHEEL OR 1/2/3: SWITCH SLOT', x, y + 8, COL.mute, FS); text('ARROW KEYS ALWAYS MOVE TOO', x, y + 16, COL.mute, FS);
+  y += 32; text('HELP', x, y, COL.gold, FS); y += 10;
+  if (button(x, y, 120, 16, 'REPORT A BUG', { font: FS, kind: 'danger', tip: 'TELL US WHAT BROKE' })) openBugReport();
+  y += 20; if (button(x, y, 58, 14, 'TERMS', { font: FS })) openLegal('terms'); if (button(x + 62, y, 58, 14, 'PRIVACY', { font: FS })) openLegal('privacy');
+  text('VERSION ' + GAME_VER, x, y + 20, COL.mute, FS);
   // controls
   const cx = 170; let cy = 34;
   text('CONTROLS: CLICK ONE, THEN PRESS THE NEW KEY', cx, cy, COL.gold, FS); cy += 11;
@@ -295,8 +306,36 @@ function panelSettings(st) {
 function liveTick(dt) {
   if (S && S.settings && S.settings.binds !== KEY_BINDS) applyBinds(S.settings.binds);
   if (KEYCAP.wait && HUB.panel !== 'settings') KEYCAP.wait = null;
-  pulseTick(); if (SCENE === 'hub') dailyRefresh(false);
+  pulseTick(); if (SCENE === 'hub') dailyRefresh(false); storeTick(dt); metaTick(dt);
   if (NET.recovery && SCENE === 'hub' && HUB.panel !== 'social' && !NET.recoveryOpened) { NET.recoveryOpened = true; openStation('social'); }
   // offer the daily reward once per visit, after the first landing
   if (!DAILY.shown && SCENE === 'hub' && !HUB.panel && !HUB.choice && !NAMEUI.open && !NET.choice && S.nameAsked && S.planet.landings >= 1 && dailyCan() && HUB.launch === null) { DAILY.shown = true; openStation('daily'); }
+}
+
+// ---------- clickable names: any callsign on a leaderboard opens that pilot's profile ----------
+function nameLink(cs, label, x, y, col, font = FS, align = 0) {
+  const w = textW(label, font), x0 = align === 1 ? x - w / 2 : align === 2 ? x - w : x, hov = cs && inBox(x0 - 1, y - 2, w + 2, 9);
+  text(label, x, y, hov ? '#ffffff' : col, font, align);
+  if (hov) { rect(x0, y + 6, w, 1, col); IN.cursor = 'pointer'; TIP.set('SEE ' + cs + "'S PROFILE"); if (IN.pr) { IN.pr = false; IN.used = true; openProfile(cs); } }
+}
+function openProfile(cs) {
+  if (!cs) return;
+  if (NET.st !== 'on') { toast('SIGN IN TO SEE PROFILES', COL.coral); return; }
+  NET.viewProf = cs; NET.prof[cs] = null; netProfile(cs, true); SND.play('click');
+}
+function drawProfilePopup() {
+  const cs = NET.viewProf; ctx.globalAlpha = 0.72; rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1;
+  const p = netProfile(cs), x = 88, y = 36, w = 304, h = 214, acts = [];
+  if (p && !p.me) {
+    if (p.friend === 'none') acts.push(['ADD FRIEND', 'blue', () => netDo(() => rpc('friend_request', { p_callsign: p.callsign }), r => r === 'accepted' ? `YOU AND ${p.callsign} ARE NOW FRIENDS` : `FRIEND REQUEST SENT TO ${p.callsign}`)]);
+    else if (p.friend === 'incoming') acts.push(['ACCEPT FRIEND', 'primary', () => netDo(() => rpc('friend_request', { p_callsign: p.callsign }), `YOU AND ${p.callsign} ARE NOW FRIENDS`)]);
+    else if (p.friend === 'sent') acts.push(['REQUEST SENT', 'def', () => { }]);
+    const wm = watchOf(p.callsign);
+    if (wm) acts.push(['WATCH 1V1', 'blue', () => { NET.viewProf = null; arSpectate(wm); }]);
+    else if (p.friend === 'friends' && p.online) acts.push(['1V1', 'blue', () => { NET.viewProf = null; challengeFriend(p.callsign); }]);
+  }
+  textO('PILOT PROFILE', x, y - 14, COL.gold, '#000', FB);
+  drawProfileCard(p, x, y, w, h, acts, cs);
+  if (button(x + w - 50, y - 15, 50, 13, 'CLOSE', { font: FS, kind: 'cream' }) || (kp('Escape') && !NET.report) || (IN.pr && !inBox(x, y - 16, w, h + 16))) NET.viewProf = null;
+  if (NET.report) reportOverlay();
 }

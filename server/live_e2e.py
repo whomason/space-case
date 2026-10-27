@@ -102,7 +102,7 @@ async def main():
         # A wins: the spectator sees who won
         aid = await A.evaluate("AM.me.id")
         for i in range(5):
-            await B.evaluate(f"(() => {{ AM.me.inv = 0; arHit(AM.me, 9999, '{aid}', 0, 0); }})()"); await B.wait_for_timeout(450); await B.evaluate("arRespawn(AM.me)")
+            await B.evaluate(f"(() => {{ AM.me.inv = 0; arTakeDmg(AM.me, 9999, '{aid}'); }})()"); await B.wait_for_timeout(450); await B.evaluate("arRespawn(AM.me)")
         ok('the spectator sees the winner', await wait_for(C, "AM && AM.ended && AM.result.winner === 'MASON'", 9000), await C.evaluate("AM && [AM.ended, JSON.stringify(AM.result)]"))
         await A.evaluate("arLeave(true)"); await B.evaluate("arLeave(true)"); await C.evaluate("AM && arLeave(true)")
         # ---- an AI 1v1 can be watched too

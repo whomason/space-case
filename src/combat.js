@@ -146,6 +146,7 @@ function beamDamage(w, pl, W, a, dt) {
 // ---------- hits & effects ----------
 function hitEnemy(w, e, dmg, o = {}) {
   if (e.dead) return;
+  if (w.visualOnly) { if (o.x !== undefined) impactFx(w.fx, o.x, o.y, o.dx || 0, o.dy || 0, o.W && o.W.col, false); e.flash = 0.08; return; }
   const W = o.W; const pl = w.player;
   let mult = 1, tag = null;
   if (o.dx !== undefined && !e.boss && !e.dummy) {
@@ -160,7 +161,7 @@ function hitEnemy(w, e, dmg, o = {}) {
   if (e.steam > 0) mult *= 1.3;
   if (pl) {
     if (pl.focusT > 0) mult *= 1.5;
-    if (!w.demo && typeof relicPower === 'function') mult *= relicPower();
+    if (!w.demo && !w.arena && typeof relicPower === 'function') mult *= relicPower();
     const sa = pl.setAb || {};
     if (sa[8] && pl.hp < pl.maxHp * 0.35) mult *= sa[8] > 1 ? 1.7 : 1.5;
     if (sa[10] && w.combo >= 12) mult *= sa[10] > 1 ? 1.35 : 1.2;
@@ -187,14 +188,15 @@ function hitEnemy(w, e, dmg, o = {}) {
     if (v.detonate && R0() < (o.beam ? 0.06 : 1)) explode(w, o.x, o.y, 14 + v.detonate * 5, W.dmg * 0.6, W.col);
     if (v.pull && R0() < (o.beam ? 0.05 : 1)) w.pulls.push({ x: o.x, y: o.y, r: 50, str: 140, t: 0.4 });
     if (v.split && R0() < (o.beam ? 0.08 : 1)) splitShots(w, o.x, o.y, W, v.split + 1, Math.atan2(e.y - w.player.y, e.x - w.player.x));
-    if (v.stick && o.rail) e.sticky = { t: 0.6, dmg: W.dmg * 0.8, W };
+    if (v.stick && o.rail) e.sticky = { t: 0.6, dmg: W.dmg * 0.8, W, w };
   }
 }
 function damageEnemy(w, e, dmg, o = {}) {
   if (e.dead) return;
+  if (w.visualOnly) { e.flash = 0.08; return; }
   if (e.invuln || e.under || e.hidden) { if (!o.quiet && R0() < 0.25) w.fx.text(e.x, e.y - e.r - 10, 'IMMUNE', '#9aa3c0', { f: FS, life: 0.4 }); return; }
   if (e.dummy) { (w.dmgLog = w.dmgLog || []).push([w.t, dmg]); }
-  e.hp -= dmg; e.flash = 0.08; e.lastSrc = o.src || null;
+  e.hp -= dmg; e.flash = 0.08; e.lastSrc = o.src || null; if (e.pvp) { e.lastByW = w.player; e.lastAtk = w.player; }
   if (!o.quiet || R0() < 0.15) {
     const T = e.dmgTxt;
     if (!o.crit && T && T.life > T.max - 0.35 && T.life > 0) { T.val += dmg; T.txt = fmt(Math.max(1, T.val)); T.life = T.max; T.pop = 0.05; T.x = e.x; T.vy = -28; }
@@ -206,7 +208,7 @@ function damageEnemy(w, e, dmg, o = {}) {
   if (e.hp <= 0) killEnemy(w, e);
 }
 function killEnemy(w, e) {
-  if (e.dead) return; e.dead = true;
+  if (e.dead || e.pvp || e.ghost) return; e.dead = true;
   const kc = w.killfx; const cols = kc ? kc.cols : ['#fff', e.col || '#9f9', e.col2 || '#ff9'];
   const st = kc ? kc.style : 'PIXEL POP';
   burstKill(w, e.x, e.y - 3, st, cols, e.boss ? 3 : e.elite ? 2 : 1);
@@ -431,8 +433,9 @@ function updateEnemies(w, dt) {
     if (w.decoy && !e.boss) { tx = w.decoy.x; ty = w.decoy.y; }
     else if (e.tgt && !e.tgt.dead) { tx = e.tgt.x; ty = e.tgt.y; }
     else if (pl.shadowT > 0 && !e.boss) { tx = e.x + Math.sin(e.t * 0.9 + e.r) * 40; ty = e.y + Math.cos(e.t * 0.7) * 40; }
+    let tAlly = false; if (w.allies && !e.tgt && !(w.decoy && !e.boss)) for (const al of w.allies) if (al && al.alive && Math.hypot(al.x - e.x, al.y - e.y) < Math.hypot(tx - e.x, ty - e.y) - 10) { tx = al.x; ty = al.y; tAlly = true; }
     const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy) || 1, a = Math.atan2(dy, dx);
-    const dpl = Math.hypot(pl.x - e.x, pl.y - e.y); const da = e.tgt && !e.tgt.dead && e.tgt.hp !== undefined ? d : dpl; // attacks aim at the player or a real objective, never a wander point
+    const dpl = Math.hypot(pl.x - e.x, pl.y - e.y); const da = tAlly || (e.tgt && !e.tgt.dead && e.tgt.hp !== undefined) ? d : dpl; // attacks aim at the player or a real objective, never a wander point
     let mx = 0, my = 0;
     if (e.passive) { const pa = e.t * (e.pspd || 0.8) + (e.pph || 0); mx = (e.hx + Math.cos(pa) * (e.prx || 30) - e.x) * 0.08; my = (e.hy + Math.sin(pa) * (e.pry || 20) - e.y) * 0.08; }
     else if (w.demo) { mx = dx / d * 0.3; my = dy / d * 0.3; if (d < 26) { mx = -dx / d; my = -dy / d; } }
@@ -527,7 +530,7 @@ function updateEShots(w, dt) {
   w.eshots = w.eshots.filter(s => s.life > 0);
 }
 function hurtPlayer(w, dmg, src) {
-  const pl = w.player; if (w.demo || pl.dead) return false;
+  const pl = w.player; if (w.demo || pl.dead || (w.noHurt && w.arena)) return false;
   if (pl.boostT > 0) { const attack = !src || src.boss || src.elite || src.st === 'dash'; if (attack && !pl.pdDone && w.t - (pl.lastPD || -9) > 1) perfectDodge(w, pl); return true; }
   if (pl.inv > 0 || w.noHurt) return false;
   if (petBlocks(w, pl)) return false;
@@ -602,6 +605,8 @@ function drawTele(w, ox, oy) {
     if (t.meteor) { const hh = (1 - k) * 120; rect(x - 2, y - hh - 2, 4, 4, '#ffcb3d'); rect(x - 1, y - hh - 10, 2, 8, 'rgba(255,120,40,0.6)'); }
   }
 }
+const ARMOR_MASK = new WeakMap();
+function armorMasks(spr) { let m = ARMOR_MASK.get(spr); if (!m) { m = [maskOf(spr, '#9aa3c0'), maskOf(spr, '#dfe4f5')]; ARMOR_MASK.set(spr, m); } return m; }
 function drawEnemy(w, e, ox, oy) {
   const x = Math.floor(e.x - ox), y = Math.floor(e.y - oy);
   if (e.nest) { drawNest(e, x, y); return; }
@@ -625,7 +630,13 @@ function drawEnemy(w, e, ox, oy) {
   if (winding && Math.floor(T_NOW * 30) % 2) ctx.translate(1, 0);
   ctx.drawImage(spr, -Math.floor(sw / 2), -sh + 2, sw, sh);
   if (winding && Math.floor(T_NOW * 12) % 2) { ctx.globalAlpha = 0.55; ctx.drawImage(maskOf(spr, '#fff2a0'), -Math.floor(sw / 2), -sh + 2, sw, sh); ctx.globalAlpha = 1; }
-  if (e.armored && !e.boss) { const fx0 = Math.floor(sw / 2) - 2; rect(fx0, -sh * 0.75, 3, sh * 0.5, '#9aa3c0'); rect(fx0 + 1, -sh * 0.7, 1, sh * 0.35, '#dfe4f5'); }
+  if (e.armored && !e.boss && !(e.stun > 0)) {   // a steel shell over the front half that follows the body's outline
+    const fx0 = Math.floor(sw * 0.05), fw = Math.ceil(sw / 2) - fx0;
+    ctx.save(); ctx.beginPath(); ctx.rect(fx0, -sh + 2, fw, sh); ctx.clip();
+    const am = armorMasks(spr);
+    ctx.globalAlpha = 0.8; ctx.drawImage(am[1], -Math.floor(sw / 2) + 1, -sh + 1, sw, sh); ctx.globalAlpha = 0.6; ctx.drawImage(am[0], -Math.floor(sw / 2), -sh + 2, sw, sh);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
   ctx.restore();
   if (e.freeze > 0) { ctx.globalAlpha = 0.5; rect(x - sw / 2, y - sh + 2, sw, sh - 2, '#9fefff'); ctx.globalAlpha = 1; }
   if (e.boss && e.kit) drawBossExtra(w, e, x, y); else drawFoeExtra(w, e, x, y, sh);

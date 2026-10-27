@@ -162,6 +162,7 @@ function drawHub(dt) {
   else { ctx.globalAlpha = 0.35; drawNav(true); ctx.globalAlpha = 1; }
   if (HUB.panel) drawPanel();
   if (HUB.choice) drawChoiceOverlay();
+  coopLobbyChip();
 }
 function drawHubTop() {
   // level pill + title + xp
@@ -181,6 +182,7 @@ function drawHubTop() {
   drawOnlinePill(Math.max(168, 60 + textW((S.name ? S.name + ' ' : '') + (t ? t.n : 'ASTRONAUT'), FS) + 14), 5);
   if (button(W - 18, 4, 14, 16, '', { tip: 'SETTINGS: FULLSCREEN AND CONTROLS', icon: (x, y, w, h, c) => { const cx = x + 7, cy = y + 8; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; rect(cx + Math.round(Math.cos(a) * 4) - 1, cy + Math.round(Math.sin(a) * 4) - 1, 2, 2, c); } rect(cx - 2, cy - 2, 4, 4, c); rect(cx - 1, cy - 1, 2, 2, '#05020c'); } })) openStation('settings');
   drawDailyButton(W - 92 - cw, 4);
+  drawStoreButton(W - 96 - cw, 4);
 }
 function drawNav(dimmed) {
   const x = 10, w = 162;
@@ -281,6 +283,7 @@ function drawPanel() {
   if (p === 'arena') return panelArena(st);
   if (p === 'daily') return panelDaily(st);
   if (p === 'settings') return panelSettings(st);
+  if (p === 'store') return panelStore(st);
 }
 function ownedFor(slot) {
   const want = slot; const ids = Object.keys(S.inv).filter(id => { const d = getDef(id); return slotOf(d) === want; });
@@ -315,7 +318,7 @@ function equipSlotGrid(st, x, y, w, h) {
       const junk = ids.filter(id => !isEquipped(id) && getDef(id).r <= 1);
       if (junk.length && button(x + w - 128, by + 4, 122, 14, `PICK ${junk.length} COMMON+UNC`, { kind: 'cream', font: FS })) { st.pick = junk.slice(); SND.play('click'); }
     }
-    if (c && c !== 'NONE') { if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); } else { const i = st.pick.indexOf(c); if (i >= 0) st.pick.splice(i, 1); else st.pick.push(c); SND.play('click'); } }
+    if (c && c !== 'NONE') { if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); } else if (isPremiumId(c)) { SND.play('deny'); toast('STORE AND REWARD ITEMS ARE YOURS TO KEEP. THEY CANNOT BE SOLD', COL.coral); } else { const i = st.pick.indexOf(c); if (i >= 0) st.pick.splice(i, 1); else st.pick.push(c); SND.play('click'); } }
     return;
   }
   if (mode === 'fuse') {
@@ -332,7 +335,7 @@ function equipSlotGrid(st, x, y, w, h) {
       const d = getDef(c), i = st.pick.indexOf(c);
       if (i >= 0) { st.pick.splice(i, 1); SND.play('click'); }
       else if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); }
-      else if (!fusable(c)) { SND.play('deny'); toast(d.r >= 6 ? 'COSMIC IS THE TOP. NOTHING TO FUSE INTO' : 'ONE-OF-A-KIND ITEMS CANNOT BE FUSED', COL.coral); }
+      else if (!fusable(c)) { SND.play('deny'); toast(d.r >= 6 ? 'COSMIC IS THE TOP. NOTHING TO FUSE INTO' : isPremiumId(c) ? 'STORE AND REWARD ITEMS CANNOT BE FUSED' : 'ONE-OF-A-KIND ITEMS CANNOT BE FUSED', COL.coral); }
       else if (st.pick.length && d.r !== r) { SND.play('deny'); toast(`PICK ${RAR[r].n} ITEMS ONLY, OR CLEAR FIRST`, COL.coral); }
       else if (st.pick.length >= 5) { SND.play('deny'); toast('5 IS ENOUGH. HIT FUSE!', COL.coral); }
       else { st.pick.push(c); SND.play('click'); }
@@ -343,7 +346,7 @@ function equipSlotGrid(st, x, y, w, h) {
   else if (c) { equipped(c); if (S.eq[slot] !== c) S.stats.equips++; S.eq[slot] = c; SND.play('pickup'); dirty(); }
 }
 // ---------- fusion: 5 of a rarity -> 1 of the next ----------
-function fusable(id) { const d = getDef(id); return d.r < 6 && !/^(u|e)\|/.test(id) && !(d.o && d.o.t === 'art') && !d.nova; }
+function fusable(id) { const d = getDef(id); return d.r < 6 && !/^(u|e)\|/.test(id) && !(d.o && d.o.t === 'art') && !d.nova && !isPremiumId(id); }
 function doFuse(st, slot) {
   const ids = st.pick.slice(); if (ids.length !== 5 || ids.some(id => !S.inv[id] || isEquipped(id) || !fusable(id))) return;
   const d0 = getDef(ids[0]), r = d0.r + 1, cat = d0.cat;
@@ -388,6 +391,7 @@ function panelLocker(st) {
   const col = (arr, x, y0, sp = 26) => arr.forEach((s, i) => { const y = y0 + i * sp; const id = S.eq[s]; const skin = s === 'weapon' ? S.eq.skin_weapon : s === 'tool' ? S.eq.skin_tool : null; if (slotBox(x, y, 42, sp - 1, id, SLOT_LABEL[s], st.slot === s, { skin, fresh: freshIn(s) > 0 })) { st.slot = s; st.scroll = 0; SND.play('click'); } });
   text('GEAR', 120, 28, COL.mute, FS); col(['weapon', 'gadget', 'tool', 'pet'].concat(SLOTS_GEAR.slice(2)), 99, 36, 24);
   text('STYLE', 166, 28, COL.mute, FS); col(SLOTS_COS.concat(['skin_weapon', 'skin_armor', 'skin_tool', 'backdrop']), 145, 36, 24);
+  drawGradeUp(st, 14, H - 44, 80);
   // grid
   rect(192, 30, 1, H - 44, COL.void3);
   equipSlotGrid(st, 198, 42, W - 212, H - 58);
@@ -629,7 +633,8 @@ function drawMap(dt) {
     if (n === (S.planet.cur || 1) && S.planet.landings) { const b = Math.round(Math.sin(T_NOW * 5) * 2); text('YOU', x, y - r - 18 + b, COL.pink, FS, 1); }
     if (hov) { IN.cursor = 'pointer'; if (IN.rl && Math.abs(IN.dragX) < 5) { MAP.sel = n; SND.play('click'); } }
   }
-  if (drawTopBar('STAR MAP', true) || kp('Escape')) { MAP.init = false; goHub(); return; }
+  if (drawTopBar('STAR MAP', true) || (kp('Escape') && !COOP.ui)) { MAP.init = false; goHub(); return; }
+  if (button(170, 3, 112, 14, COOP.st === 'idle' ? 'LAND WITH A FRIEND' : 'CO-OP LOBBY', { font: FS, kind: COOP.partner ? 'primary' : 'blue', tip: 'INVITE A FRIEND TO THIS PLANET. YOU FIGHT THE SAME ALIENS' })) coopOpen(MAP.sel);
   // info panel
   const n = MAP.sel, p = planetDef(n), req = PLANET_REQ(n), ok = n <= S.planet.reached || rt >= req;
   panel(4, 192, W - 8, 74, { bg: 'rgba(14,22,48,0.96)', bd: ok ? COL.gold : COL.steel, notch: true });
@@ -643,8 +648,9 @@ function drawMap(dt) {
   text(`ALIENS: ${p.alien[0]}S  THREAT ${'!'.repeat(Math.min(10, Math.ceil(n / 2)))}`, 78, 244, COL.dim, FS);
   const evk = S.tutorial.planet && S.planet.landings > 0 ? S.planet.ev[n] : null; if (evk) { const E = EVENTS[evk]; text(`EVENT: ${E.n} (${E.tag})  +${E.rw} CRATE${E.rw > 1 ? 'S' : ''}`, 78, 252, E.c, FS); text(E.txt, 78, 259, COL.dim, FS); }
   if (p.mastery) { const stt = S.planet.stars[n] || [0, 0, 0]; p.mastery.forEach((c, k) => text(`${stt[k] ? '*' : '-'} ${MASTERY_TXT(c)}`, 290, 197 + k * 8, stt[k] ? COL.gold : COL.dim, FS)); text('3 STARS: EXCLUSIVE COSMETIC', 290, 221, COL.magenta, FS); }
-  text(n === 1 ? 'NO SHIP RATING NEEDED' : `SHIP RATING ${rt} / ${req}`, 290, 229, ok ? COL.lilac : COL.coral, FS);
-  if (ok) { const lbl = (S.planet.visited[n] ? 'LAND ON ' : 'WARP TO ') + p.name; ctx.globalAlpha = 0.2 + 0.15 * Math.sin(T_NOW * 4); rect(W - 152, 238, 146, 26, COL.gold); ctx.globalAlpha = 1; if (button(W - 150, 240, 142, 22, lbl, { kind: 'primary' }) || kp('Enter') || kp('Space')) { MAP.init = false; if (!S.planet.visited[n]) startWarp(n); else startRun(n); } }
+  text(n === 1 ? 'NO SHIP RATING NEEDED' : `SHIP RATING ${rt} / ${req}`, W - 10, 229, ok ? COL.lilac : COL.coral, FS, 2);
+  if (ok) drawBoosts(p);
+  if (ok) { const lbl = (S.planet.visited[n] ? 'LAND ON ' : 'WARP TO ') + p.name; ctx.globalAlpha = 0.2 + 0.15 * Math.sin(T_NOW * 4); rect(W - 152, 238, 146, 26, COL.gold); ctx.globalAlpha = 1; if (button(W - 150, 240, 142, 22, lbl, { kind: 'primary' }) || kp('Enter') || kp('Space')) { if (buyBoosts(p)) { MAP.init = false; if (!S.planet.visited[n]) startWarp(n); else startRun(n); } } }
   else { button(W - 150, 240, 142, 22, 'NEED RATING ' + req, { disabled: true }); if (button(W - 204, 240, 50, 22, 'HANGAR', { font: FS, kind: 'blue', tip: 'BETTER SHIP PARTS RAISE YOUR RATING' })) { MAP.init = false; goHub(); openStation('hangar'); } }
   if (S.planet.bosses[20] && n >= 20) { if (button(W - 230, 240, 108, 20, 'GO SUPERNOVA', { col: '#4a1d3a', tc: COL.magenta, tip: 'RESET PLANETS AND COINS. KEEP EVERY ITEM. GAIN STARS, BETTER ORE AND THE SINGULARITY TIER' })) MAP.nova = true; }
   if (MAP.nova) drawNovaConfirm();
@@ -739,4 +745,52 @@ function reactionsTab(st) {
     else { text('???', bx + 6, by + 4, COL.mute, FB); text(`${ea} + ???`, bx + 216, by + 5, COL.mute, FS, 2); text('NOT DISCOVERED YET', bx + 6, by + 16, COL.mute, FS); }
   });
   text(`${found}/${REACT_KEYS.length} REACTIONS DISCOVERED`, W / 2, H - 14, COL.gold, FS, 1);
+}
+
+// ---------- coin sink: raise an item's grade (the crate tier it counts as) ----------
+function gradeCap() { return S.nova.count > 0 ? 7 : 6; }
+function gradeUpCost(id) { const d = getDef(id), g = gradeOf(id); return Math.round(3 * TIERS[Math.min(7, g + 1)].cost * CRATE_COIN * CRATE_PRICE * (1 + 0.5 * d.r) / 50) * 50; }
+function canGradeUp(id) { const d = id && S.inv[id] && getDef(id); return !!(d && GRADEABLE[d.cat] && !isPremiumId(id) && gradeOf(id) < gradeCap()); }
+function doGradeUp(id) {
+  const cost = gradeUpCost(id); if (S.coins < cost) { SND.play('deny'); toast(`NEED ${fmt(cost)} COINS`, COL.coral); return; }
+  const g = gradeOf(id); S.coins -= cost; S.inv[id].g = g + 1; S.stats.spentGrade = (S.stats.spentGrade || 0) + cost; dirty(); save();
+  SND.play('levelup'); SND.play('coin'); flash(0.2, tierColor(g + 1)); toast(`${getDef(id).name}: ${gradeName(g + 1)}!`, tierColor(g + 1)); track('sink', { k: 'grade', c: cost });
+}
+function drawGradeUp(st, x, y, w) {
+  const id = S.eq[st.slot]; if (!canGradeUp(id)) return;
+  const cost = gradeUpCost(id), g = gradeOf(id), sure = st.gradeSure === id && T_NOW - st.gradeSureT < 3;
+  if (button(x, y, w, 15, sure ? `SURE? ${fmtShort(cost)}` : 'GRADE UP', { font: FS, kind: sure ? 'primary' : 'blue', disabled: S.coins < cost && !sure,
+    tip: `RAISE YOUR ${SLOT_LABEL[st.slot]} FROM ${gradeName(g)} TO ${gradeName(g + 1)}. MORE POWER, SAME ITEM. COSTS ${fmt(cost)} COINS` })) {
+    if (sure) { st.gradeSure = null; doGradeUp(id); } else { st.gradeSure = id; st.gradeSureT = T_NOW; SND.play('click'); }
+  }
+  text(gradeName(g), x + w / 2, y + 18, tierColor(g), FS, 1);
+}
+
+// ---------- coin sink: boosts you buy for one landing ----------
+const BOOSTS = [
+  { k: 'ore', n: 'ORE BOOST', t: 'ORE SELLS FOR 50% MORE THIS LANDING', m: 30, c: '#7dffb0' },
+  { k: 'ins', n: 'CARGO INSURANCE', t: 'KEEP ALL YOUR ORE EVEN IF YOU GO DOWN', m: 18, c: '#9fe7ff' },
+  { k: 'xp', n: 'DOUBLE PASS XP', t: 'SEASON PASS XP IS DOUBLED THIS LANDING', m: 14, c: '#c9a6ff' },
+];
+function boostCost(b, p) { return Math.round(orePrice(p.ore[1]) * b.m * (1 + S.nova.count * 0.5) / 10) * 10; }
+function drawBoosts(p) {
+  MAP.boost = MAP.boost || {}; let tot = 0;
+  BOOSTS.forEach((b, i) => {
+    if (b.k === 'xp' && !passLive()) return;
+    const x = W - 206 + i * 18, y = 240, on = !!MAP.boost[b.k], cost = boostCost(b, p); if (on) tot += cost;
+    if (button(x, y, 16, 22, '', { kind: on ? 'primary' : 'def', tip: `${b.n}: ${b.t}. ${fmt(cost)} COINS. CLICK TO ${on ? 'REMOVE' : 'ADD'}`, icon: (bx, by) => {
+      const c = on ? '#05020c' : b.c;
+      if (b.k === 'ore') { rect(bx + 5, by + 7, 6, 8, c); rect(bx + 6, by + 6, 4, 1, c); px(bx + 7, by + 9, on ? b.c : '#fff'); }
+      else if (b.k === 'ins') { rect(bx + 4, by + 6, 8, 6, c); rect(bx + 5, by + 12, 6, 2, c); rect(bx + 7, by + 14, 2, 2, c); }
+      else { rect(bx + 7, by + 5, 2, 12, c); rect(bx + 3, by + 9, 10, 2, c); rect(bx + 5, by + 7, 6, 6, c); }
+    } })) { MAP.boost[b.k] = !on; SND.play('click'); }
+  });
+  text('BOOSTS', W - 206, 232, COL.mute, FS); if (tot) text(`-${fmtShort(tot)}`, W - 154, 232, S.coins >= tot ? COL.gold : COL.coral, FS, 2);
+}
+function buyBoosts(p) {
+  const pick = BOOSTS.filter(b => MAP.boost && MAP.boost[b.k] && (b.k !== 'xp' || passLive())); if (!pick.length) { S.nextBoost = null; return true; }
+  const tot = pick.reduce((a, b) => a + boostCost(b, p), 0);
+  if (S.coins < tot) { SND.play('deny'); toast(`BOOSTS COST ${fmt(tot)} COINS. TURN SOME OFF`, COL.coral); return false; }
+  S.coins -= tot; S.nextBoost = {}; for (const b of pick) S.nextBoost[b.k] = 1; MAP.boost = {}; dirty();
+  toast(`BOOSTS ON: ${pick.map(b => b.n).join(', ')}`, COL.gold); track('sink', { k: 'boost', c: tot }); return true;
 }

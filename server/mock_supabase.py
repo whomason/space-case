@@ -18,6 +18,7 @@ def setup_db(name='sc_e2e'):
     do $$ begin
       if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
       if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
+      if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role nologin; end if;
     end $$;
     create schema auth; create table auth.users (id uuid primary key, email text);
     create function auth.uid() returns uuid language sql stable as $f$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $f$;
@@ -44,6 +45,8 @@ def make_handler(M):
         def send(self, code, obj=None, raw=None, ctype='application/json'):
             body = raw if raw is not None else (b'' if obj is None and code == 204 else json.dumps(obj).encode())
             self.send_response(code); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
+        def do_OPTIONS(self):
+            self.send_response(204); self.send_header('Access-Control-Allow-Origin', '*'); self.send_header('Access-Control-Allow-Headers', '*'); self.end_headers()
         def do_GET(self):
             p = urlparse(self.path).path
             if p in ('/', '/index.html', '/space-case.html'): return self.send(200, raw=open(GAME, 'rb').read(), ctype='text/html; charset=utf-8')
@@ -79,6 +82,12 @@ def make_handler(M):
             if u.path == '/auth/v1/recover':
                 em = body.get('email', '').lower(); M.recovered = getattr(M, 'recovered', []); M.recovered.append((em, parse_qs(u.query).get('redirect_to', [''])[0]))
                 return self.send(200, {})
+            # the checkout Edge Function: hands back a fake Stripe url and remembers what was asked for
+            if u.path == '/functions/v1/checkout':
+                uid = M.tokens.get((self.headers.get('Authorization') or '').replace('Bearer ', ''))
+                if not uid: return self.send(401, {'message': 'SIGN IN FIRST'})
+                sid = 'cs_test_' + uuid.uuid4().hex[:12]; M.checkouts = getattr(M, 'checkouts', []); M.checkouts.append((sid, uid, body.get('product')))
+                return self.send(200, {'url': 'about:blank#' + sid, 'id': sid})
             m = re.match(r'^/rest/v1/rpc/(\w+)$', u.path)
             if m:
                 fn = m.group(1); auth = (self.headers.get('Authorization') or '').replace('Bearer ', '')

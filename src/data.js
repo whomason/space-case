@@ -26,7 +26,7 @@ const TIERS = [
   { n: 'SINGULARITY', cost: 128, odds: [0, 8, 24, 33, 21, 10, 4], unlock: 'nova', h: 0, s: 1 },
 ];
 const CRATE_COIN = 100; // coins per tier cost unit (rewards are still counted in this)
-const ENEMY_COIN = 2.5; // aliens drop this many times their old coins
+const ENEMY_COIN = 1.8; // aliens drop this many times their old coins
 const CRATE_PRICE = 2; // crates cost this many times the unit, so coins buy fewer of them
 const UPG_CHANCE = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0]; // crate upgrader: chance to bump tier t to t+1
 const SELL_VAL = [20, 45, 110, 280, 750, 2200, 7000];
@@ -169,7 +169,7 @@ const PLANETS = [
 PLANETS.forEach((p, i) => { p.i = i + 1; });
 const PLANET_REQ = n => n <= 1 ? 0 : Math.round(600 + 100 * Math.pow(n - 1, 1.15)); // early planets need a real upgrade each, late ones need top-tier parts
 const ORE_VALUE = tier => Math.round(5 * Math.pow(1.42, tier - 1));   // base scale (alien coins use it too)
-const ORE_PAY = 3;                                                     // ore sells for this many times the base
+const ORE_PAY = 5;                                                     // ore sells for this many times the base
 const orePrice = tier => ORE_VALUE(tier) * ORE_PAY;
 const LIQ_SOLID = { swamp: 1, ice: 1, lava: 1, brine: 1, cloud: 1, darkwater: 1, tide: 1, oil: 1, slime: 1, sludge: 1, water: 1, glass: 1, puddle: 1, light: 1, trench: 1, magma: 1, void: 1, starlight: 1 };
 

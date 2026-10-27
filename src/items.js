@@ -21,6 +21,7 @@ function parseId(id) {
   const [cat, sub, n] = id.split('|'); return { cat, sub, n: +n };
 }
 function originOf(cat, sub, n) {
+  if (n >= 6000 && n < 7000 && (cat === 'c' || cat === 'k' || cat === 'b')) return { t: 'prem', k: n };
   if (n >= 3000) return { t: 'nova', p: n - 3000 };
   if (n >= 2000) return { t: 'mastery', p: n - 2000 };
   if (cat === 't' && sub === 'tool' && n >= 4000) return { t: 'boss', p: Math.floor((n - 4000) / 10) };
@@ -35,7 +36,7 @@ function wpickR(seed, dist) { let s = 0; for (const d of dist) s += d; let v = (
 function rarityOf(cat, sub, n) {
   const o = originOf(cat, sub, n);
   if (o.t === 'set') return SET_RAR[o.s];
-  if (o.t === 'mastery') return 4; if (o.t === 'nova') return 5;
+  if (o.t === 'mastery') return 4; if (o.t === 'nova') return 5; if (o.t === 'prem') return PREM[n] ? PREM[n][7] : 4;
   const h = hashStr('r' + cat + sub + n);
   return wpickR(h, o.t === 'boss' ? RAR_BOSS_DIST : RAR_DIST);
 }
@@ -117,6 +118,7 @@ function buildDef(id) {
     d.style = r >= 4 ? R.pick(WOW) : BD_STYLES[(n * 5 + Math.floor(n / 12)) % BD_STYLES.length];
     d.name = pname + ' ' + d.style; d.w = 24; d.h = 14;
   }
+  if (o.t === 'prem') premDef(d, n);
   return d;
 }
 function buildEvo(id, base) {
@@ -403,6 +405,7 @@ function whereToFind(id) {
   if (o.t === 'art') return 'FORGE IT IN THE WORKSHOP';
   if (o.t === 'dream') return 'WEAPON OR GALAXY CRATE';
   if (o.t === 'evo') return 'EVOLVE ITS BASE WEAPON';
+  if (o.t === 'prem') return PREM_FROM[d.prem] || 'THE STORE';
   const k = { w: 'WEAPON CRATE', a: 'ARMOR CRATE', s: 'SHIP CRATE', t: 'MINING CRATE', k: 'SKIN CRATE', c: 'COSMETIC CRATE', b: 'BACKDROP OR GALAXY CRATE', g: 'GADGET OR GALAXY CRATE', p: 'PET OR GALAXY CRATE' }[d.cat];
   return (o.t === 'set' ? 'SET FINISHER OR ' : '') + k;
 }

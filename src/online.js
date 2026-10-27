@@ -255,8 +255,8 @@ function shownOnline(c) { return ((c && c.online) || 0) * 3 + 75; }
 function panelSocial(st) {
   if (panelFrame('ONLINE', COL.cyan)) return;
   if (NET.st === 'off' || NET.st === 'connecting' || (NET.st === 'error' && !NET.social)) return socialSignIn(st);
-  const TB = [[0, 'FRIENDS'], [1, 'CREW'], [2, 'TRADES'], [4, 'MARKET'], [3, 'ACCOUNT']].concat(PULSE.admin ? [[5, 'MOD']] : []);
-  const vi = Math.max(0, TB.findIndex(t => t[0] === (st.tab || 0))); st.tab = TB[tabs(92, 9, TB.map(t => t[1]), vi, 50)][0];
+  const TB = [[0, 'FRIENDS'], [1, 'CREW'], [2, 'TRADES'], [4, 'MARKET'], [3, 'ACCOUNT']].concat(PULSE.admin ? [[5, 'MOD'], [6, 'STATS']] : []);
+  const vi = Math.max(0, TB.findIndex(t => t[0] === (st.tab || 0))); st.tab = TB[PULSE.admin ? tabs(80, 9, TB.map(t => t[1]), vi, 44) : tabs(92, 9, TB.map(t => t[1]), vi, 50)][0];
   const so = NET.social;
   if (!NET.callsign && st.tab !== 3) {
     text('PICK A CALLSIGN SO FRIENDS CAN FIND YOU', W / 2, 110, COL.ink, FB, 1);
@@ -269,6 +269,7 @@ function panelSocial(st) {
   else if (st.tab === 2) socialTrades(st, so);
   else if (st.tab === 4) socialMarket(st, so);
   else if (st.tab === 5 && PULSE.admin) socialMod(st);
+  else if (st.tab === 6 && PULSE.admin) socialStats(st);
   else socialAccount(st);
   if (NET.act) text('WORKING...', W - 74, 32, COL.dim, FS);
   if (NET.report) reportOverlay();
@@ -351,7 +352,7 @@ function drawProfileCard(p, x, y, w, h, acts, cs) {
   ctx.globalAlpha = 0.3; for (let gx = x + 4; gx < x + 74; gx += 10) rect(gx, y + 4, 1, 92, COL.steel); ctx.globalAlpha = 1;
   shadow(x + 40, y + 92, 16, 3, 0.5); ctx.drawImage(astroSprite(eq, [0, 3, 1, 2][Math.floor(T_NOW / 1.5) % 4], 0), x + 10, y + 14, 60, 78); if (eq.pet) drawPetAt(eq.pet, x + 66, y + 94, 1, true);
   const tx = x + 80;
-  textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2);
+  textO(p.callsign || '???', tx, y + 6, COL.ink, '#000', FB, 0, 2); if (p.plate) drawSupporterPlate(Math.min(x + w - 92, tx + textW(p.callsign || '???', FB, 2) + 6), y + 9);
   if (p.callsign && p.callsign !== NET.callsign && button(x + w - 44, y + 4, 40, 11, 'REPORT', { font: FS, kind: 'def', tip: 'TELL A MODERATOR ABOUT THIS PLAYER' })) NET.report = { cs: p.callsign, why: null };
   const tt = p.title && TITLES.find(t => t.id === p.title);
   text(tt ? tt.n : 'ASTRONAUT', tx, y + 24, COL.lilac, FS);
@@ -542,7 +543,7 @@ function tradeBuilder(st, so) {
   text(`YOU WANT (${b.want.length}/6)`, RX, 46, '#7dffb0', FS);
   if (!inv) text('LOADING THEIR ITEMS...', RX + half / 2, gy + gh / 2, COL.dim, FS, 1);
   else if (inv.err) wrap(inv.err, half - 10, FS).forEach((l, i) => text(l, RX + half / 2, gy + 30 + i * 8, COL.coral, FS, 1));
-  else { const theirs = Object.keys(inv.inv || {}).filter(netValid).sort(byRarity); tradeGrid(st, 'wscroll', theirs, RX, gy, half, gh, b.want, { locked: inv.eq || [], lv: id => inv.inv[id] || 1, empty: 'THEY HAVE NOTHING TO TRADE' }); }
+  else { const theirs = Object.keys(inv.inv || {}).filter(id => netValid(id) && !isPremiumId(id)).sort(byRarity); tradeGrid(st, 'wscroll', theirs, RX, gy, half, gh, b.want, { locked: inv.eq || [], lv: id => inv.inv[id] || 1, empty: 'THEY HAVE NOTHING TO TRADE' }); }
   // coins + note + send
   const yb = gy + gh + 6; const digits = v => v.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '').slice(0, 12);
   text('+ COINS', LX, yb + 4, COL.mute, FS); const gc = textField('giveCoins', LX + 34, yb, 80, 14, { ph: '0', max: 12, filter: digits, mode: 'numeric', label: 'Coins you give' });

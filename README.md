@@ -40,11 +40,39 @@ An 8-bit space crate-opening game: open crates, gear up your astronaut and ship,
 - "Forgot password?" on the sign-in screen sends a Supabase reset email that links back to the game.
 - In Supabase → Authentication → URL Configuration, the Site URL should be `https://whomason.github.io/space-case/` (and add it under Redirect URLs).
 
+## The store (Stardust, the season pass, the supporter plate)
+
+Money goes through Stripe. Prices live in the database and in `server/functions/checkout/index.ts`, never in the game.
+
+1. Make a Stripe account. **It has to be in an adult's name** (a parent or guardian if you're under 18).
+2. Supabase → Edge Functions → Deploy a new function called `checkout`. Paste `server/functions/checkout/index.ts`.
+3. Deploy another called `stripe-webhook`. Paste `server/functions/stripe-webhook/index.ts`, and turn **Verify JWT off** for this one.
+4. Stripe → Developers → Webhooks → Add endpoint: `https://covyfmkuqynrlzsaieme.supabase.co/functions/v1/stripe-webhook`, with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded` and `charge.refunded`.
+5. Supabase → Edge Functions → Secrets: add `STRIPE_SECRET_KEY` (Stripe → Developers → API keys) and `STRIPE_WEBHOOK_SECRET` (the webhook's signing secret).
+6. Test with Stripe's test mode keys first (card `4242 4242 4242 4242`), then switch to live keys.
+
+Never put either Stripe key in this repo. Until the secrets are set, the store says "payments are not set up yet".
+
+- Stardust packs, the FROSTFALL pass (ends January 1) and the supporter plate are the things money buys. Stardust buys shop cosmetics, coin packs, the pass and the plate.
+- Store, pass and streak cosmetics can never be traded, listed, sold or fused. A save edited to add them has them removed by the server.
+- The moderator STATS tab shows players per day, how many come back, the new-player funnel, money, bug reports and crashes.
+
+## Legal pages
+
+`terms.html` and `privacy.html` sit next to the game. Read them and add a support email before taking real payments. They're a starting point, not legal advice.
+
+## Co-op
+
+Land on a planet with a friend from the star map ("LAND WITH A FRIEND"). The host's game runs the aliens; the guest sees and shoots copies of them, and each player decides their own hits. Kills pay both players; ore and cargo are separate. If one player leaves, the other keeps playing. Co-op uses realtime messages too (about 13 a second per pair).
+
 ## Tests
 
 - `server/test_schema.py` runs the backend against a local Postgres.
 - `server/e2e.py` plays sign-up, friends, crews and a full trade in real browsers against `server/mock_supabase.py`.
 - `server/arena_e2e.py` plays FFA servers, kill rewards, host hand-over, ranked 1v1s and AI duels across browser tabs.
+- `server/test_store.py` checks the store, Stardust, the pass, daily rewards v2, bug reports, crashes and analytics in the database.
+- `server/store_e2e.py` buys Stardust through a fake checkout, claims pass tiers, uses the shop and checks clickable profiles, bug reports and stats.
+- `server/coop_e2e.py` plays a co-op landing across two tabs: invite, shared aliens, shared kills, the boss, and one player leaving.
 - `server/live_e2e.py` plays daily rewards, the market, reports and bans, friend challenges, watching a 1v1, emotes, password reset, key rebinding and the fair-play flag.
 
 ## Live play

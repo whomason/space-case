@@ -147,15 +147,15 @@ function paintDetails(G, p, R, solidP, GW, GH, rmp) {
 }
 
 // ---------- start / end ----------
-function startRun(pi) {
-  const p = planetDef(pi); S.planet.landings++; S.planet.cur = pi;
+function startRun(pi, opt = {}) {
+  const p = planetDef(pi); S.planet.landings++; S.planet.cur = pi; const boost = S.nextBoost || {}; S.nextBoost = null;
   if (!S.planet.visited[pi]) { S.planet.visited[pi] = 1; toast(`${p.name} SALVAGE CRATES UNLOCKED`, COL.mint); }
-  if (pi > S.planet.reached) S.planet.reached = pi;
+  if (pi > S.planet.reached && (!opt.guest || shipRating() >= PLANET_REQ(pi))) S.planet.reached = pi;   // a co-op guest doesn't skip ahead
   for (const b in S.planet.bossCd) if (S.planet.bossCd[b] > 0) S.planet.bossCd[b]--;
-  const evKey = S.tutorial.planet && S.planet.landings > 1 ? (S.planet.ev[pi] || rollEvent(pi)) : null;
+  const evKey = S.tutorial.planet && S.planet.landings > 1 && !opt.guest ? (S.planet.ev[pi] || rollEvent(pi)) : null;
   S.planet.ev[pi] = rollEvent(pi, evKey);
   dirty();
-  const seed = hashStr(p.name + ':' + S.planet.landings + ':' + Date.now());
+  const seed = opt.seed || hashStr(p.name + ':' + S.planet.landings + ':' + Date.now());
   const map = genPlanetMap(pi, seed);
   const L = loadout();
   const w = makeWorld({ pi });
@@ -176,7 +176,7 @@ function startRun(pi) {
     pi, p, map, w, L, t: 0, o2: L.o2, o2max: L.o2, cargo: {}, cargoN: 0, coins: 0, kills: 0, xp: 0, bestCombo: 0, crates: [], choices: 0, wrecks: 0, bossBeaten: false, bossHit: false,
     spawnT: 2.5, cam: { x: pl.x - W / 2, y: pl.y - H / 2 }, msg: null, msgT: 0, paused: false, state: 'land', st: 0, chunks: [], amb: [], reserveUsed: false, oreChain: 0, oreChainT: 0,
     bossAvail: !(S.planet.bossCd[pi] > 0), lightningT: 6, meteorT: 5, spores: [], o2warn: 0, choice: null, evac: false, bannerT: 0, tut: S.tutorial.planet ? null : { i: 0, t: 0, dist: 0, fireT: 0 }, carrier: null, carrierT: 22 + R0() * 12, haulTier: haulTier(pi),
-    scanR: scanD ? scanD.r : 0, sigT: 0, ev: null,
+    scanR: scanD ? scanD.r : 0, sigT: 0, ev: null, boost, seed, coop: opt.guest ? 'guest' : null,
   };
   if (p.trait === 'SPORE CLOUDS') for (let i = 0; i < 9; i++) RUN.spores.push({ x: R0() * map.GW, y: R0() * map.GH, r: 30 + R0() * 30, vx: (R0() - 0.5) * 8, vy: (R0() - 0.5) * 8 });
   w.onKill = e => onRunKill(e); w.onDeath = () => endRun('dead'); w.onProp = (pr, el) => onRunProp(pr, el);
@@ -186,6 +186,7 @@ function startRun(pi) {
   if (evKey) setupEvent(RUN, evKey, RNG(seed + 91));
   SND.playSong('planet');
   setScene('planet');
+  if (!opt.guest && COOP.role === 'host' && COOP.partner && COOP.room) coopHostStarted();
 }
 // ---------- first-landing training ----------
 const TUT = [
@@ -263,12 +264,13 @@ function collideMap(map, ent, w) {
 // ---------- props: the planet fights back, and helps ----------
 function onRunKill(e) {
   const R = RUN, w = R.w, pl = w.player;
+  if (R.coop === 'host') coopKill(e);
   if (!e.boss) {
     if (!e.nest) { w.combo = (w.comboT > 0 ? w.combo + 1 : 1); w.comboT = w.comboMax; }
     const mult = Math.min(10, 1 + Math.floor(w.combo / 3));
     R.bestCombo = Math.max(R.bestCombo, mult);
     const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * mult * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN);
-    R.coins += val; R.kills++; R.xp += e.xp;
+    R.coins += val; R.kills++; R.xp += e.xp; passXP(e.elite ? 80 : e.nest ? 30 : 4);
     for (let i = 0; i < Math.min(6, 1 + (val >> 2)); i++) R.chunks.push({ x: e.x, y: e.y - 4, vx: (R0() - 0.5) * 120, vy: -R0() * 100, t: 0, coin: true, delay: 0.25 + R0() * 0.2 });
     if (pl.perks.sprint) pl.sprintT = 1.2;
     if (e.carrier) { R.carrier = null; S.stats.carriers++; addHaulCrate('salvage:' + R.pi, R.haulTier, e.x, e.y - 6); banner('CRATE CARRIER DOWN! +1 SALVAGE CRATE FOR YOUR HAUL', COL.gold); SND.play('unlock'); SND.play('win'); flash(0.35, COL.gold); shake(4); w.fx.burst(e.x, e.y - 6, 40, { c: [COL.gold, '#fff', COL.pink], sp: 160, life: 0.8, s: 2, t: 'shrink' }); }
@@ -283,7 +285,7 @@ function onRunKill(e) {
     if (q === 'scavenger' && R0() < 0.15) R.chunks.push({ x: e.x, y: e.y - 6, vx: (R0() - 0.5) * 90, vy: -60, t: 0, pi: R.pi, delay: 0.25 });
     const sa = pl.setAb || {}; if (sa[4] && R0() < (sa[4] > 1 ? 0.35 : 0.22)) R.chunks.push({ x: e.x, y: e.y - 6, vx: (R0() - 0.5) * 60, vy: -50, t: 0, heal: true, delay: 0.3 });
   } else {
-    R.bossBeaten = true; w.boss = null;
+    R.bossBeaten = true; w.boss = null; passXP(400); firstTime('boss');
     const first = !S.planet.bosses[R.pi];
     const nC = first ? 3 : 1;
     S.planet.bosses[R.pi] = (S.planet.bosses[R.pi] || 0) + 1; S.planet.bossCd[R.pi] = 2;
@@ -315,7 +317,7 @@ function checkMastery(type, val) {
 function banner(t, c) { RUN.msg = t; RUN.msgT = 3.5; RUN.msgC = c || COL.ink; }
 function endRun(reason) {
   const R = RUN; if (R.state === 'leave' || R.state === 'results') return;
-  if (reason === 'dead' || reason === 'o2') { R.lost = true; for (const k in R.cargo) R.cargo[k] = Math.floor(R.cargo[k] / 2); banner(reason === 'o2' ? 'OUT OF OXYGEN. EMERGENCY EVAC, HALF THE ORE IS LOST' : 'SUIT BREACHED. EMERGENCY EVAC, HALF THE ORE IS LOST', COL.coral); SND.play('lose'); }
+  if (reason === 'dead' || reason === 'o2') { R.lost = true; if (R.boost && R.boost.ins) banner(reason === 'o2' ? 'OUT OF OXYGEN. YOUR INSURANCE KEPT ALL YOUR ORE' : 'SUIT BREACHED. YOUR INSURANCE KEPT ALL YOUR ORE', COL.cyan); else { for (const k in R.cargo) R.cargo[k] = Math.floor(R.cargo[k] / 2); banner(reason === 'o2' ? 'OUT OF OXYGEN. EMERGENCY EVAC, HALF THE ORE IS LOST' : 'SUIT BREACHED. EMERGENCY EVAC, HALF THE ORE IS LOST', COL.coral); } SND.play('lose'); }
   else SND.play('unlock');
   R.state = 'leave'; R.st = 0; R.reason = reason;
   if (!S.tutorial.planet) { S.tutorial.planet = true; R.tut = null; dirty(); } // training only ever runs on your first landing
@@ -323,11 +325,12 @@ function endRun(reason) {
 }
 function finishRun() {
   const R = RUN; const L = R.L;
+  if (R.coop || COOP.live) coopReset();
   const lines = []; let total = 0;
   const keys = Object.keys(R.cargo).map(Number).sort((a, b) => planetDef(b).ore[1] - planetDef(a).ore[1]);
-  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
+  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]) * (R.boost && R.boost.ore ? 1.5 : 1); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
   const kc = Math.round(R.coins); total += kc;
-  earn(total); S.stats.ore += R.cargoN; S.stats.maxHaul = Math.max(S.stats.maxHaul, R.cargoN); S.stats.bestCombo = Math.max(S.stats.bestCombo, R.bestCombo);
+  earn(total); passXP((R.lost ? 50 : 120) + R.cargoN * 2); firstTime('land'); track('land', { p: R.pi, ore: R.cargoN, k: R.kills, lost: R.lost ? 1 : 0, s: Math.round(R.t) }); S.stats.ore += R.cargoN; S.stats.maxHaul = Math.max(S.stats.maxHaul, R.cargoN); S.stats.bestCombo = Math.max(S.stats.bestCombo, R.bestCombo);
   const xp = Math.round(R.xp + R.cargoN * 2 + 10); const lvBefore = S.lvl; addXP(xp);
   checkTitles(); dirty(); save();
   S.haulCrates = (S.haulCrates || []).concat(R.crates.map(c => poolSize(c.kind) > 0 ? c : { kind: 'galaxy', tier: c.tier })); save();
@@ -377,9 +380,9 @@ function updateRun(dt) {
     if (inp.swap) cycleSlot(pl, w);
     if (inp.slot !== undefined) setSlot(pl, w, inp.slot);
     if (!R.spores.length) w.moveMul = R.baseMove; sigUpdate(R, dt);
-    if (inp.gadget && pl.G) { if (pl.G.cd > 0) { if (!pl.gDenyT || w.t - pl.gDenyT > 0.4) { pl.gDenyT = w.t; SND.play('deny'); } } else useGadget(w, pl, inp.ax, inp.ay); }
+    if (inp.gadget && pl.G) { if (pl.G.cd > 0) { if (!pl.gDenyT || w.t - pl.gDenyT > 0.4) { pl.gDenyT = w.t; SND.play('deny'); } } else if (useGadget(w, pl, inp.ax, inp.ay)) coopRecordGadget(pl, inp.ax, inp.ay); }
     updatePlayer(w, pl, inp, dt, R.L); tutTick(dt, inp);
-    if (pl.mode === 'weapon' && pl.W) fireWeapon(w, pl, pl.W, inp, dt); else { w.beam = null; }
+    if (pl.mode === 'weapon' && pl.W) { const n0 = pl.shotN || 0, r0 = w.rails.length, ch0 = pl.charge || 0, f0 = pl.fullAt; fireWeapon(w, pl, pl.W, inp, dt); coopRecordFire(R, pl, n0, r0, ch0, f0, inp); } else { w.beam = null; }
     updateDrones(w, pl, pl.mode === 'weapon' ? pl.W : null, dt);
     if (pl.mode === 'tool') updateExtract(dt, inp);
     else R.extracting = null;
@@ -397,18 +400,19 @@ function updateRun(dt) {
     updateEvent(R, dt);
     updateSignal(R, dt);
     // boss lair
-    if (R.bossAvail && !w.boss && !R.bossBeaten && Math.hypot(pl.x - map.lair.x, pl.y - map.lair.y) < 95) { spawnBoss(w, map.lair.x, map.lair.y); SND.play('bossroar'); SND.playSong('boss'); shake(6); banner(`${R.p.boss[0]}. HIT IT WHEN IT WINDS UP, PUNISH THE GLOWING CORE`, COL.coral); R.bossHit = false; }
+    if (R.bossAvail && R.coop !== 'guest' && !w.boss && !R.bossBeaten && (Math.hypot(pl.x - map.lair.x, pl.y - map.lair.y) < 95 || (w.allies && w.allies.some(a => a && a.alive && Math.hypot(a.x - map.lair.x, a.y - map.lair.y) < 95)))) { spawnBoss(w, map.lair.x, map.lair.y); SND.play('bossroar'); SND.playSong('boss'); shake(6); banner(`${R.p.boss[0]}. HIT IT WHEN IT WINDS UP, PUNISH THE GLOWING CORE`, COL.coral); R.bossHit = false; }
     // spawns
-    R.spawnT -= dt * (R.tut ? (R.tut.i < 1 ? 0 : 0.4) : 1);
+    R.spawnT -= dt * (R.tut ? (R.tut.i < 1 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
     if (R.spawnT <= 0) {
       R.spawnT = Math.max(0.9, 3.4 - R.t * 0.018) * (w.boss ? 1.8 : 1);
       if (w.ents.length < 34) {
         const ros = planetRoster(w.pi); const arch = R0() < 0.55 ? R0.pick(R.p.alien[2]) : R0.pick(ros); const n = arch === 'swarm' ? 3 + R0.int(3) : arch === 'turret' || arch === 'healer' || arch === 'sniper' ? 1 : 1 + R0.int(R.t > 60 ? 3 : 2);
-        for (let tries = 0; tries < 10; tries++) { const a = R0() * TAU, d = 230 + R0() * 50; const x = pl.x + Math.cos(a) * d, y = pl.y + Math.sin(a) * d; if (!w.solid(x, y) && x > 30 && y > 30 && x < map.GW - 30 && y < map.GH - 30) { for (let i = 0; i < n; i++) foeVariant(spawnEnemy(w, arch, x + (R0() - 0.5) * 24, y + (R0() - 0.5) * 24), R.t); break; } }
+        const anc = w.allies && w.allies[0] && w.allies[0].alive && R0() < 0.5 ? w.allies[0] : pl;
+        for (let tries = 0; tries < 10; tries++) { const a = R0() * TAU, d = 230 + R0() * 50; const x = anc.x + Math.cos(a) * d, y = anc.y + Math.sin(a) * d; if (!w.solid(x, y) && x > 30 && y > 30 && x < map.GW - 30 && y < map.GH - 30) { for (let i = 0; i < n; i++) foeVariant(spawnEnemy(w, arch, x + (R0() - 0.5) * 24, y + (R0() - 0.5) * 24), R.t); break; } }
       }
     }
     // crate carriers
-    if (!w.boss && !R.carrier && !R.tut) R.carrierT -= dt;
+    if (!w.boss && !R.carrier && !R.tut && R.coop !== 'guest') R.carrierT -= dt;
     if (R.carrierT <= 0 && !R.carrier) {
       R.carrierT = 38 + R0() * 22;
       for (let tries = 0; tries < 14; tries++) { const a = R0() * TAU, d = 150 + R0() * 60; const x = pl.x + Math.cos(a) * d, y = pl.y + Math.sin(a) * d; if (!w.solid(x, y) && x > 40 && y > 40 && x < map.GW - 40 && y < map.GH - 40) { const e = spawnEnemy(w, 'crawler', x, y); e.carrier = true; e.hp = e.maxHp = e.hp * 6; e.spd *= 1.35; e.dmg *= 0.3; e.coin *= 3; e.life = 30; R.carrier = e; banner('A CRATE CARRIER APPEARED! CHASE IT DOWN', COL.gold); SND.play('upgradeHint'); break; } }
@@ -420,7 +424,11 @@ function updateRun(dt) {
     if (R.spores.length) { let inSp = false; for (const s of R.spores) { s.x += s.vx * dt; s.y += s.vy * dt; if (Math.hypot(pl.x - s.x, pl.y - s.y) < s.r) inSp = true; } w.moveMul = inSp ? 0.6 * (1 - R.L.shield) + 0.4 : 1; }
   }
   if (w.comboT > 0) { w.comboT -= dt; if (w.comboT <= 0) w.combo = 0; }
-  updateShots(w, dt); updateMines(w, dt); updateEnemies(w, dt); updateEShots(w, dt); updateTele(w, dt);
+  updateShots(w, dt); updateMines(w, dt);
+  if (R.coop === 'guest') { updateHazards(w, dt); updateGadgetFx(w, dt); for (const p of w.pulls) p.t -= dt; w.pulls = w.pulls.filter(p => p.t > 0); } else updateEnemies(w, dt);
+  updateEShots(w, dt); updateTele(w, dt);
+  if (R.coop === 'guest' && COOP.out) coopMeasure(R);
+  if (R.coop) coopTick(R, dt);
   if (w.boss && pl.hurtT > 0.29) R.bossHit = true;
   w.fx.update(dt);
   updateChunks(dt);
@@ -526,13 +534,15 @@ function drawRun() {
   if (vis(map.shipX, map.shipY, 80)) objs.push([map.shipY + 8, 3, null]);
   for (const e of w.ents) if (vis(e.x, e.y)) objs.push([e.y, 4, e]);
   if (!pl.dead && R.state !== 'leave') objs.push([pl.y, 5, pl]);
+  if (R.coop && COOP.ally && COOP.ally.alive) objs.push([COOP.ally.y, 7, COOP.ally]);
   objs.sort((a, b) => a[0] - b[0]);
   for (const [, k, o] of objs) {
     if (k === 0) { const s = o.s; const x = Math.floor(o.x - s.w / 2 - cx), y = Math.floor(o.y - s.h - cy + 2); shadow(o.x - cx, o.y - cy, Math.floor(s.w * 0.38), Math.max(2, Math.floor(s.w * 0.12)), 0.3); if (o.flip) { ctx.save(); ctx.translate(x + s.w, y); ctx.scale(-1, 1); ctx.drawImage(s.c, 0, 0); ctx.restore(); } else ctx.drawImage(s.c, x, y); if (o.lair && R.bossAvail && !R.bossBeaten && s.glow) { ctx.globalAlpha = 0.5 + 0.5 * Math.sin(T_NOW * 4); ctx.drawImage(s.glow, x, y); ctx.globalAlpha = 1; } }
     else if (k === 1) { const s = oreSprite(o.pi, o.size, Math.floor(T_NOW * 8) % 8); const sh = o.shake > 0 ? Math.round((R0() - 0.5) * 2) : 0; o.shake -= 1 / 60; const x = Math.floor(o.x - s.width / 2 - cx) + sh, y = Math.floor(o.y - s.height - cy + 3); const gl = 0.16 + 0.1 * Math.sin(T_NOW * 3 + o.x); ctx.globalAlpha = gl; ellipse(o.x - cx, o.y - cy - 2, 12 + o.size * 3, 6 + o.size, oreHex(o.pi)); ctx.globalAlpha = 1; if (!o.fake) shadow(o.x - cx, o.y - cy + 1, 6 + o.size * 2, 2, 0.3); if (o.fake && R.sig && R.sig.reveal) ctx.globalAlpha = 0.3 + 0.15 * Math.sin(T_NOW * 9); ctx.drawImage(s, x, y); ctx.globalAlpha = 1; if (o === R.extractTarget && pl.mode === 'tool') { const ok = R.L.toolTier >= o.tier; ctx.globalAlpha = 0.6 + 0.4 * Math.sin(T_NOW * 8); ctx.drawImage(tinted(s, ok ? '#ffffff' : '#ff3050'), x, y); ctx.globalAlpha = 1; } if (((T_NOW * 1.7 + o.x * 0.01) % 2) < 0.12) { const sx = x + (o.x % (s.width - 2)) + 1, sy = y + 2; rect(sx, sy - 1, 1, 3, '#fff'); rect(sx - 1, sy, 3, 1, '#fff'); } if (o.left < o.units) bar(o.x - cx - 6, y - 4, 12, 2, o.left / o.units, oreHex(o.pi)); }
     else if (k === 2) { const s = wreckSprite(R.pi); const x = Math.floor(o.x - s.width / 2 - cx), y = Math.floor(o.y - s.height - cy + 4); shadow(o.x - cx, o.y - cy, 18, 4, 0.35); ctx.drawImage(s, x, y); if (!o.looted) { if (R0() < 0.08) w.fx.add({ x: o.x + (R0() - 0.5) * 10, y: o.y - 14, vx: 4, vy: -14, life: 1.6, c: '#5a5a66', s: 2, t: 'fade', drag: 0.2 }); if (Math.floor(T_NOW * 3) % 2) px(x + 27, y + 13, '#4ef'); const by = Math.floor(o.y - cy - 34 + Math.sin(T_NOW * 3) * 2); text('!', o.x - cx, by, COL.gold, FB, 1); } }
     else if (k === 3) { const sx = map.shipX - 24 - cx, sy = map.shipY - 24 - cy + (R.state === 'land' ? -Math.max(0, 1 - R.st / 1.2) * 120 : 0) + (R.state === 'leave' ? -Math.pow(R.st, 2.2) * 40 : 0); shadow(map.shipX - cx, map.shipY + 8 - cy, 22, 5, 0.35); drawShip(S.eq, sx, sy, 1, T_NOW, { thrust: R.state === 'leave' ? 1 : 0 }); if (R.state === 'leave' && !pl.dead) {} }
-    else if (k === 4) drawEnemy(w, o, cx, cy);
+    else if (k === 4) { if (o.ghost) { try { drawEnemy(w, o, cx, cy); } catch (e) { } } else drawEnemy(w, o, cx, cy); }
+    else if (k === 7) coopDrawAlly(R, cx, cy);
     else if (k === 6) drawProp(R, o, cx, cy);
     else if (k === 5) {
       const eq = pl.wi === 1 && pl.Ws[1] ? Object.assign({}, S.eq, { weapon: pl.Ws[1].id }) : S.eq; drawPlayer(w, pl, cx, cy, eq);
@@ -541,7 +551,7 @@ function drawRun() {
     }
   }
   sigDrawObjs(R, cx, cy);
-  drawShots(w, cx, cy);
+  drawShots(w, cx, cy); if (R.coop) coopDrawShots(cx, cy);
   drawEventWorld(R, cx, cy);
   // chunks
   for (const c of R.chunks) { const x = c.x - cx, y = c.y - cy; if (c.coin) { rect(x - 1, y - 1, 3, 3, '#fca311'); px(x, y - 1, '#ffe2a8'); } else if (c.crate) { miniCrate(x - 6, y - 5, c.tier); } else if (c.heal) { rect(x - 2, y - 1, 5, 3, '#9fffb4'); rect(x - 1, y - 2, 3, 5, '#9fffb4'); px(x, y, '#fff'); } else { rect(x - 1, y - 1, 3, 3, oreHex(c.pi)); px(x - 1, y - 1, '#fff'); } }
@@ -559,7 +569,7 @@ function drawRun() {
   // prompt
   if (R.prompt) { const t = R.prompt.t, ww = textW(t, FS) + 8; const x = Math.floor(R.prompt.x - cx - ww / 2), y = Math.floor(R.prompt.y - cy + Math.sin(T_NOW * 4) * 1.5); panel(x, y, ww, 11, { bg: COL.void0, bd: COL.gold }); text(t, x + ww / 2, y + 3, COL.gold, FS, 1); }
   drawTutWorld(R, cx, cy);
-  drawRunHUD(R); sigHUD(R);
+  drawRunHUD(R); sigHUD(R); if (R.coop) coopHUD(R);
   drawTut(R);
   if (R.paused) drawPause(R);
   if (R.choice) drawChoiceOverlay();
