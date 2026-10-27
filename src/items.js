@@ -21,7 +21,7 @@ function parseId(id) {
   const [cat, sub, n] = id.split('|'); return { cat, sub, n: +n };
 }
 function originOf(cat, sub, n) {
-  if (n >= 6000 && n < 7000 && (cat === 'c' || cat === 'k' || cat === 'b')) return { t: 'prem', k: n };
+  if (n >= 6000 && n < 7000 && 'ckbwgp'.includes(cat) && PREM[n]) return { t: 'prem', k: n };
   if (n >= 3000) return { t: 'nova', p: n - 3000 };
   if (n >= 2000) return { t: 'mastery', p: n - 2000 };
   if (cat === 't' && sub === 'tool' && n >= 4000) return { t: 'boss', p: Math.floor((n - 4000) / 10) };
@@ -227,7 +227,7 @@ function statLines(d, L = 1) {
 const SPR = new Map();
 function itemPal(d, frame = 0) {
   let h = d.ph, gh = d.gh, h2 = d.h2;
-  if (d.r === 6) { h += frame * 45; gh += frame * 45; h2 += frame * 45; }
+  if (d.r === 6 && !d.noCycle) { h += frame * 45; gh += frame * 45; h2 += frame * 45; }
   return makePal(h, d.ps, d.pl, { h2, gh, A: METALS[d.metal](), dh: h });
 }
 function buildItemGrid(d) {

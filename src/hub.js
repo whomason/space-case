@@ -750,7 +750,7 @@ function reactionsTab(st) {
 // ---------- coin sink: raise an item's grade (the crate tier it counts as) ----------
 function gradeCap() { return S.nova.count > 0 ? 7 : 6; }
 function gradeUpCost(id) { const d = getDef(id), g = gradeOf(id); return Math.round(3 * TIERS[Math.min(7, g + 1)].cost * CRATE_COIN * CRATE_PRICE * (1 + 0.5 * d.r) / 50) * 50; }
-function canGradeUp(id) { const d = id && S.inv[id] && getDef(id); return !!(d && GRADEABLE[d.cat] && !isPremiumId(id) && gradeOf(id) < gradeCap()); }
+function canGradeUp(id) { const d = id && S.inv[id] && getDef(id); return !!(d && GRADEABLE[d.cat] && gradeOf(id) < gradeCap()); }
 function doGradeUp(id) {
   const cost = gradeUpCost(id); if (S.coins < cost) { SND.play('deny'); toast(`NEED ${fmt(cost)} COINS`, COL.coral); return; }
   const g = gradeOf(id); S.coins -= cost; S.inv[id].g = g + 1; S.stats.spentGrade = (S.stats.spentGrade || 0) + cost; dirty(); save();

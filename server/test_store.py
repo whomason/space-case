@@ -64,6 +64,9 @@ before = call('A', 'select premium_get()')['sd']
 r = call('A', "select premium_spend('coins', 'c1')"); ok('coin pack costs 100 stardust', isinstance(r, dict) and r['sd'] == before - 100, r)
 r = call('A', 'select claim_mail()'); got = r['data']; ok('coins + the cosmetic arrive by mail', first[0] in got['inv'] and got['coins'] > 1000, (got.get('coins'), list(got['inv'])))
 c_after = got['coins']
+call('svc', "select grant_purchase('cs_arm', %s, 'sd_2400', 1999)", (U['A'],)); sd0 = call('A', 'select premium_get()')['sd']
+r = call('A', "select premium_spend('weapon', 'w|sniper|6302')"); ok('the armory sells THE LAST WORD for 2400', isinstance(r, dict) and 'w|sniper|6302' in r['owned'] and r['sd'] == sd0 - 2400, r if not isinstance(r, dict) else r['sd'])
+r = call('A', "select premium_spend('weapon', 'w|blaster|6012')"); ok('pass weapons are not for sale', str(r).startswith('ERR'), r)
 r = call('A', "select premium_spend('coins', 'c9')"); ok('unknown coin pack refused', str(r).startswith('ERR'), r)
 r = call('B', "select premium_spend('pass', 'frostfall')"); ok('no stardust, no pass', str(r).startswith('ERR') and 'NOT ENOUGH' in r, r)
 r = call('svc', "select grant_purchase('cs_2', %s, 'pass_frostfall', 499)", (U['B'],)); ok('buying the pass for $4.99 works', r == 'granted', r)
@@ -78,8 +81,15 @@ r = call('A', "select pass_claim(1, 'f', 1000)"); ok('only once', str(r).startsw
 r = call('A', "select pass_claim(1, 'p', 1000)"); ok('premium track needs the pass', str(r).startswith('ERR') and 'PASS' in r, r)
 r = call('B', "select pass_claim(1, 'p', 1000)"); ok('pass owner claims premium tier 1 (a hat)', isinstance(r, dict) and 'c|headgear|6000' in r['owned'], r)
 r = call('B', "select pass_claim(2, 'p', 2000)"); ok('premium tier 2: 50 stardust', isinstance(r, dict) and r['sd'] >= 50, r)
+r = call('B', "select pass_claim(5, 'p', 5000)"); ok('premium tier 5: the Jingle Bell Blaster', isinstance(r, dict) and 'w|blaster|6012' in r['owned'], r)
+sql_("update public.premium set passes = passes where true")
+r = call('B', "select pass_claim(1, 'b', 31000)"); ok('bonus stars need 32,000 xp', str(r).startswith('ERR'), r)
+r = call('B', "select pass_claim(1, 'b', 32000)"); ok('bonus star 1: +25 stardust', isinstance(r, dict) and 1 in r['claims']['frostfall']['b'], r)
+r = call('B', "select pass_claim(41, 'b', 99000)"); ok('only 40 bonus stars', str(r).startswith('ERR'), r)
 r = call('B', "select pass_claim(30, 'p', 9999999)"); ok('impossible xp refused', str(r).startswith('ERR') and 'ADD UP' in r, r)
 r = call('B', 'select claim_mail()'); ok('pass hat arrives by mail', 'c|headgear|6000' in r['data']['inv'], list(r['data']['inv']))
+ok('pass weapons arrive at a good grade', r['data']['inv'].get('w|blaster|6012', {}).get('g') == 4, r['data']['inv'].get('w|blaster|6012'))
+r = call('B', "select market_list('w|blaster|6012', 500)"); ok('pass weapons cannot be sold on the market', str(r).startswith('ERR') and 'CANNOT BE TRADED' in r, r)
 # ---- premium items stay with you
 r = call('B', "select market_list('c|headgear|6000', 500)"); ok('pass items cannot go on the market', str(r).startswith('ERR') and 'CANNOT BE TRADED' in r, r)
 sql_("insert into public.friendships (a, b, status, requested_by) values (least(%s::uuid, %s::uuid), greatest(%s::uuid, %s::uuid), 'accepted', %s)", (U['A'], U['B'], U['A'], U['B'], U['A']))
@@ -105,7 +115,7 @@ ok('the same crash is grouped', sql_("select n, cardinality(devices) from public
 r = call(None, "select bug_report('dev12345678', 'the boss got stuck in a wall', %s)", (J({'scene': 'planet'}),)); ok('bug report sent', 'THANKS' in r, r)
 r = call(None, "select bug_report('dev12345678', '', '{}')"); ok('empty bug report refused', str(r).startswith('ERR'), r)
 r = call('A', 'select admin_stats()'); ok('stats are for moderators only', str(r).startswith('ERR'), r)
-r = call('M', 'select admin_stats()'); ok('moderator stats: days, retention, money, bugs, crashes', isinstance(r, dict) and len(r['days']) == 14 and r['money']['cents'] == 999 + 499 + 499 + 499 - 499 and len(r['bugs']) == 1 and len(r['crashes']) == 1, r if not isinstance(r, dict) else r['money'])
+r = call('M', 'select admin_stats()'); ok('moderator stats: days, retention, money, bugs, crashes', isinstance(r, dict) and len(r['days']) == 14 and r['money']['cents'] == 999 + 499 + 499 + 499 + 1999 - 499 and len(r['bugs']) == 1 and len(r['crashes']) == 1, r if not isinstance(r, dict) else r['money'])
 bid = r['bugs'][0]['id']; r = call('M', 'select admin_bug(%s, %s)', (bid, 'fixed')); ok('mark a bug fixed', r == 'OK' and len(call('M', 'select admin_stats()')['bugs']) == 0, r)
 r = call('A', "select select_from_events()") if False else None
 as_user('A')

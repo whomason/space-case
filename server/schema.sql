@@ -1456,16 +1456,25 @@ end $$;
 
 -- ---------- catalog (the game keeps the same lists to draw them)
 create or replace function sc_private.is_premium_id(k text) returns boolean language sql immutable set search_path = '' as $$
-  select coalesce(k ~ '^[ckb]\|[a-z_]+\|6[0-9]{3}$', false)
+  select coalesce(k ~ '^[ckbwgp]\|[a-z_]+\|6[0-9]{3}$', false)
 $$;
 create or replace function sc_private.season_pass() returns jsonb language sql immutable set search_path = '' as $$
   select jsonb_build_object('id', 'frostfall', 'name', 'FROSTFALL', 'starts', '2026-10-26T00:00:00Z', 'ends', '2027-01-01T05:00:00Z', 'tiers', 30, 'xp', 1000, 'sd', 500,
-    'free', '[{"c":600},{"cr":0},{"c":900},{"sd":10},{"cr":1},{"c":1200},{"cr":0},{"sd":10},{"c":1500},{"it":"c|trail|6020"},
-              {"c":1800},{"cr":1},{"sd":15},{"c":2000},{"cr":2},{"c":2200},{"sd":15},{"cr":1},{"c":2600},{"it":"c|eyewear|6021"},
-              {"c":3000},{"cr":2},{"sd":20},{"c":3500},{"cr":2},{"c":4000},{"sd":25},{"cr":3},{"c":5000},{"it":"c|headgear|6022"}]'::jsonb,
-    'prem', '[{"it":"c|headgear|6000"},{"sd":50},{"c":3000},{"cr":2},{"it":"k|armor|6001"},{"sd":50},{"c":4000},{"it":"c|back|6002"},{"cr":2},{"it":"c|trail|6003"},
-              {"sd":75},{"c":6000},{"it":"c|eyewear|6004"},{"cr":3},{"it":"k|weapon|6005"},{"sd":75},{"c":8000},{"it":"c|headgear|6006"},{"cr":3},{"it":"k|ship|6007"},
-              {"sd":100},{"c":10000},{"it":"c|back|6008"},{"cr":3},{"it":"b|backdrop|6009"},{"sd":100},{"c":15000},{"it":"c|killfx|6010"},{"cr":4},{"it":"c|headgear|6011"}]'::jsonb)
+    'bonus_xp', 2000, 'bonus_sd', 25, 'bonus_max', 40,
+    'free', '[{"c":600},{"cr":0},{"sd":10},{"c":900},{"it":"c|trail|6020"},{"cr":1},{"c":1200},{"sd":15},{"cr":1},{"it":"c|eyewear|6021"},
+              {"c":1600},{"cr":1},{"sd":15},{"c":2000},{"it":"c|headgear|6022"},{"cr":2},{"c":2400},{"sd":20},{"cr":2},{"it":"k|weapon|6023"},
+              {"c":3000},{"cr":2},{"sd":25},{"c":3500},{"cr":3},{"c":4000},{"sd":25},{"cr":3},{"c":5000},{"it":"c|back|6024"}]'::jsonb,
+    'prem', '[{"it":"c|headgear|6000"},{"sd":50},{"cr":2},{"it":"k|armor|6001"},{"it":"w|blaster|6012"},{"sd":50},{"cr":3},{"it":"c|back|6002"},{"c":6000},{"it":"g|freeze|6013"},
+              {"sd":75},{"it":"c|trail|6003"},{"cr":3},{"it":"c|eyewear|6004"},{"it":"w|rifle|6014"},{"sd":75},{"it":"c|headgear|6006"},{"cr":4},{"it":"k|weapon|6005"},{"it":"p|fox|6015"},
+              {"sd":100},{"it":"k|ship|6007"},{"cr":4},{"it":"c|back|6008"},{"it":"w|throwing|6016"},{"sd":100},{"it":"b|backdrop|6009"},{"it":"c|killfx|6010"},{"it":"c|headgear|6011"},{"it":"w|launcher|6017"}]'::jsonb)
+$$;
+-- the armory: top weapons for Stardust, always for sale
+create or replace function sc_private.armory() returns jsonb language sql immutable set search_path = '' as $$
+  select '[["w|rifle|6300",1400],["w|shotgun|6301",1400],["w|drone|6304",1600],["w|blade|6306",1400],["w|sniper|6302",2400],["w|railgun|6303",2400],["w|beam|6305",2400],["w|launcher|6307",2400]]'::jsonb
+$$;
+-- store gear arrives at a good grade; cosmetics just at level 1
+create or replace function sc_private.prem_item(k text) returns jsonb language sql immutable set search_path = '' as $$
+  select case when k ~ '^[wgp]\|' then jsonb_build_object('l', 1, 'g', 4) else jsonb_build_object('l', 1) end
 $$;
 -- the shop sells these for Stardust; 6 of them are featured each day (UTC)
 create or replace function sc_private.shop_items() returns jsonb language sql immutable set search_path = '' as $$
@@ -1518,7 +1527,7 @@ begin
   p := sc_private.prem(uid);
   return jsonb_build_object('sd', p.stardust, 'supporter', p.supporter, 'owned', to_jsonb(p.owned), 'passes', to_jsonb(p.passes), 'claims', p.claims,
     'season', sp, 'shop', sc_private.shop_today(), 'shop_ends', ((now() at time zone 'utc')::date + 1)::timestamp at time zone 'utc',
-    'packs', sc_private.coin_packs(), 'k', sc_private.coin_k(uid), 'products', sc_private.products(), 'now', now());
+    'packs', sc_private.coin_packs(), 'armory', sc_private.armory(), 'k', sc_private.coin_k(uid), 'products', sc_private.products(), 'now', now());
 end $$;
 
 -- ---------- spending Stardust
@@ -1533,7 +1542,14 @@ begin
     if p_id = any(p.owned) then raise exception 'YOU ALREADY OWN IT'; end if;
     if p.stardust < price then raise exception 'NOT ENOUGH STARDUST'; end if;
     update public.premium set stardust = stardust - price, owned = array_append(owned, p_id), updated_at = now() where user_id = uid;
-    insert into public.deliveries (user_id, items, reason) values (uid, jsonb_build_object(p_id, jsonb_build_object('l', 1)), 'store: bought with stardust');
+    insert into public.deliveries (user_id, items, reason) values (uid, jsonb_build_object(p_id, sc_private.prem_item(p_id)), 'store: bought with stardust');
+  elsif p_kind = 'weapon' then
+    select (x ->> 1)::int into price from jsonb_array_elements(sc_private.armory()) x where x ->> 0 = p_id;
+    if price is null then raise exception 'THE ARMORY DOES NOT SELL THAT'; end if;
+    if p_id = any(p.owned) then raise exception 'YOU ALREADY OWN IT'; end if;
+    if p.stardust < price then raise exception 'NOT ENOUGH STARDUST'; end if;
+    update public.premium set stardust = stardust - price, owned = array_append(owned, p_id), updated_at = now() where user_id = uid;
+    insert into public.deliveries (user_id, items, reason) values (uid, jsonb_build_object(p_id, sc_private.prem_item(p_id)), 'armory: bought with stardust');
   elsif p_kind = 'coins' then
     select x into e from jsonb_array_elements(sc_private.coin_packs()) x where x ->> 0 = p_id;
     if e is null then raise exception 'NO SUCH COIN PACK'; end if;
@@ -1560,20 +1576,26 @@ end $$;
 create or replace function public.pass_claim(p_tier int, p_track text, p_xp int) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare uid uuid := sc_private.me(); p public.premium; sp jsonb := sc_private.season_pass(); sid text := sp ->> 'id'; rw jsonb; c jsonb;
-        hrs numeric; tr text := case when p_track = 'p' then 'p' else 'f' end; k numeric := sc_private.coin_k(uid); t int; got jsonb;
+        hrs numeric; tr text := case when p_track in ('p', 'b') then p_track else 'f' end; k numeric := sc_private.coin_k(uid); t int; need int;
 begin
-  if p_tier < 1 or p_tier > (sp ->> 'tiers')::int then raise exception 'NO SUCH TIER'; end if;
+  if tr = 'b' then
+    if p_tier < 1 or p_tier > (sp ->> 'bonus_max')::int then raise exception 'NO SUCH BONUS STAR'; end if;
+    need := (sp ->> 'tiers')::int * (sp ->> 'xp')::int + p_tier * (sp ->> 'bonus_xp')::int;
+  else
+    if p_tier < 1 or p_tier > (sp ->> 'tiers')::int then raise exception 'NO SUCH TIER'; end if;
+    need := p_tier * (sp ->> 'xp')::int;
+  end if;
   if now() > (sp ->> 'ends')::timestamptz + interval '7 days' then raise exception 'THIS SEASON IS OVER'; end if;
   hrs := greatest(0, extract(epoch from now() - (sp ->> 'starts')::timestamptz) / 3600);
   if coalesce(p_xp, 0) > hrs * 1200 + 3000 then raise exception 'THAT MUCH PASS XP DOES NOT ADD UP'; end if;
-  if coalesce(p_xp, 0) < p_tier * (sp ->> 'xp')::int then raise exception 'EARN MORE PASS XP FIRST'; end if;
+  if coalesce(p_xp, 0) < need then raise exception 'EARN MORE PASS XP FIRST'; end if;
   p := sc_private.prem(uid);
   if tr = 'p' and not (sid = any(p.passes)) then raise exception 'GET THE PASS TO CLAIM THIS'; end if;
   c := coalesce(p.claims -> sid, '{}'::jsonb);
   if coalesce(c -> tr, '[]'::jsonb) @> to_jsonb(p_tier) then raise exception 'ALREADY CLAIMED'; end if;
   c := jsonb_set(c, array[tr], coalesce(c -> tr, '[]'::jsonb) || to_jsonb(p_tier));
   c := jsonb_set(c, '{xp}', to_jsonb(greatest(coalesce(sc_private.num(c -> 'xp'), 0), p_xp)));
-  rw := sp -> (case when tr = 'p' then 'prem' else 'free' end) -> (p_tier - 1);
+  rw := case when tr = 'b' then jsonb_build_object('sd', (sp ->> 'bonus_sd')::int) else sp -> (case when tr = 'p' then 'prem' else 'free' end) -> (p_tier - 1) end;
   update public.premium set claims = jsonb_set(claims, array[sid], c), updated_at = now() where user_id = uid;
   t := least(5, 1 + coalesce((select planet from public.profiles where id = uid), 1) / 4);
   if rw ? 'sd' then update public.premium set stardust = stardust + (rw ->> 'sd')::int where user_id = uid; end if;
@@ -1581,7 +1603,7 @@ begin
   if rw ? 'cr' then insert into public.deliveries (user_id, crates, reason) values (uid, jsonb_build_array(least(6, t + (rw ->> 'cr')::int)), 'season pass tier ' || p_tier); end if;
   if rw ? 'it' then
     update public.premium set owned = array_append(owned, rw ->> 'it') where user_id = uid and not ((rw ->> 'it') = any(owned));
-    insert into public.deliveries (user_id, items, reason) values (uid, jsonb_build_object(rw ->> 'it', jsonb_build_object('l', 1)), 'season pass tier ' || p_tier);
+    insert into public.deliveries (user_id, items, reason) values (uid, jsonb_build_object(rw ->> 'it', sc_private.prem_item(rw ->> 'it')), 'season pass tier ' || p_tier);
   end if;
   return public.premium_get();
 end $$;

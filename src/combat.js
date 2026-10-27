@@ -68,6 +68,7 @@ function fireWeapon(w, pl, W, inp, dt) {
     case 'sniper': fire(a, { kind: 'slug', r: 3 }); wsnd(w, 'sniper'); if (!w.demo) shake(2.5); break;
     case 'launcher': {
       if (W.sig === 'spud') { const s = fire(a, { kind: 'spud', r: 4, spd: 165 }); s.v = Object.assign({}, s.v, { detonate: 1 }); s.bounce = 3; wsnd(w, 'throw'); break; }
+      if (W.sig === 'presents') { const s = fire(a, { kind: 'present', r: 4, spd: 190 }); s.v = Object.assign({}, s.v, { detonate: Math.max(1, s.v.detonate || 0) }); s.bounce = 2; s.presents = true; wsnd(w, 'throw'); break; }
       const s = fire(a, { kind: 'rocket', r: 4 }); s.v = Object.assign({}, s.v, { detonate: Math.max(s.v.detonate || 0, 1) }); s.rocket = true; wsnd(w, 'launch'); break;
     }
     case 'throwing': if (W.sig === 'fan') { for (let i = 0; i < 5; i++) fire(a + (i - 2) * 0.22, { kind: 'star', r: 3 }); } else fire(a, { kind: 'disc', r: 4 }); wsnd(w, 'throw'); break;
@@ -309,7 +310,7 @@ function updateShots(w, dt) {
     }
     if (w.solid(nx, ny)) {
       if (s.bounce > 0) { if (w.solid(nx, s.y)) s.vx = -s.vx; if (w.solid(s.x, ny)) s.vy = -s.vy; s.ang = Math.atan2(s.vy, s.vx); s.bounce--; if (s.sig === 'pinball') pinball(s); }
-      else { if (s.v.detonate) explode(w, s.x, s.y, 14 + s.v.detonate * 6, s.dmg * 0.8, s.col); else impactFx(w.fx, s.x, s.y, s.vx / (s.spd || 1), s.vy / (s.spd || 1), s.col, false); if (s.sig === 'dragon') fireAt(w, s.x, s.y, s.dmg); s.dead = true; continue; }
+      else { if (s.presents) presentBurst(w, s); if (s.v.detonate) explode(w, s.x, s.y, 14 + s.v.detonate * 6, s.dmg * 0.8, s.col); else impactFx(w.fx, s.x, s.y, s.vx / (s.spd || 1), s.vy / (s.spd || 1), s.col, false); if (s.sig === 'dragon') fireAt(w, s.x, s.y, s.dmg); s.dead = true; continue; }
     } else { s.x = nx; s.y = ny; }
     if ((w.bw || (w.boss && (w.boss.shards || w.boss.reflect > 0))) && bossBlocksShot(w, s)) { s.dead = true; continue; }
     s.life -= dt;
@@ -330,6 +331,7 @@ function updateShots(w, dt) {
         if (s.sig === 'lastword' && e.dead) { const nt = nearestEnemy(w, s.x, s.y, 320, s.hits); if (nt) { s.dmg *= 1.25; s.ang = Math.atan2(nt.y - 4 - s.y, nt.x - s.x); s.vx = Math.cos(s.ang) * s.spd; s.vy = Math.sin(s.ang) * s.spd; s.life = Math.max(s.life, 1.2); w.fx.text(s.x, s.y - 12, 'NEXT!', COL.gold, { f: FS, life: 0.4 }); continue; } }
         if (s.v.stick && !s.child) { s.stuck = e; s.sox = s.x - e.x; s.soy = s.y - e.y; s.fuse = 0.6; w.fx.burst(s.x, s.y, 3, { c: [s.col.core], sp: 30 }); break; }
         if (s.v.detonate) explode(w, s.x, s.y, (s.aoe || 14) + s.v.detonate * 6, s.dmg * 0.8, s.col);
+        if (s.presents && !(s.bounce > 0)) { presentBurst(w, s); s.presents = false; }
         if (s.v.chain) chainZap(w, e, s.dmg * 0.55, s.v.chain + 1, s.col);
         if (s.v.pull) w.pulls.push({ x: s.x, y: s.y, r: 46 + s.v.pull * 10, str: 120 + s.v.pull * 40, t: 0.5, col: s.col.mid });
         if (s.v.split && !s.child) { splitShots(w, s.x, s.y, Wl, s.v.split + 1, s.ang); }
@@ -350,6 +352,7 @@ function updateShots(w, dt) {
       if (s.v.split && !s.child) splitShots(w, s.x, s.y, s.W || wStatsLike(s), s.v.split + 1, s.ang);
       if (s.sig === 'blackhole') blackHole(w, s);
       else if (s.rocket || (s.v.detonate && !s.child)) explode(w, s.x, s.y, (s.aoe || 14) + (s.v.detonate || 0) * 5, s.dmg * 0.7, s.col);
+      if (s.presents) presentBurst(w, s);
       if (s.sig === 'dragon') fireAt(w, s.x, s.y, s.dmg);
       s.dead = true;
     }
@@ -564,6 +567,8 @@ function drawShots(w, ox, oy) {
     switch (s.kind) {
       case 'pellet': case 'shard': if (s.giant) { circ(x, y, 3, c.mid); px(x, y, c.core); break; } line(x, y, x - s.vx * 0.012, y - s.vy * 0.012, c.edge); rect(x - 1, y - 1, 2, 2, c.mid); px(x, y, c.core); break;
       case 'spud': { const f = Math.floor(s.t * 10) % 2; ellipse(x, y, 3, f ? 2 : 3, '#8a6a3a'); px(x - 1, y - 1, '#c8a060'); px(x + 1, y, '#5a4020'); break; }
+      case 'present': { const b = Math.floor(s.t * 8) % 2; rect(x - 3, y - 3, 7, 7, '#05020c'); rect(x - 2, y - 2, 5, 5, b ? '#e8303a' : '#2fbf5a'); rect(x, y - 2, 1, 5, '#ffd84a'); rect(x - 2, y, 5, 1, '#ffd84a'); px(x - 1, y - 3, '#ffd84a'); px(x + 1, y - 3, '#ffd84a'); break; }
+      case 'cane': { line(x, y, x - s.vx * 0.02, y - s.vy * 0.02, '#ffffff'); px(x, y, '#e8303a'); px(Math.round(x - s.vx * 0.01), Math.round(y - s.vy * 0.01), '#e8303a'); break; }
       case 'star': { const f = Math.floor(s.t * 24) % 2; if (f) { line(x - 3, y, x + 3, y, c.mid); line(x, y - 3, x, y + 3, c.mid); } else { line(x - 2, y - 2, x + 2, y + 2, c.mid); line(x - 2, y + 2, x + 2, y - 2, c.mid); } px(x, y, '#fff'); break; }
       case 'rocket': rect(x - 2, y - 2, 4, 4, c.edge); rect(x - 1, y - 1, 2, 2, c.core); break;
       case 'disc': { const f = Math.floor(s.t * 20) % 2; if (f) { rect(x - 3, y, 7, 1, c.mid); rect(x, y - 3, 1, 7, c.mid); } else { line(x - 2, y - 2, x + 2, y + 2, c.mid); line(x - 2, y + 2, x + 2, y - 2, c.mid); } px(x, y, c.core); break; }
@@ -866,4 +871,15 @@ function prismSplit(w, s, p) {
   w.fx.burst(s.x, s.y, 8, { c: ['#c77dff', '#fff', '#7fe9ff'], sp: 90, life: 0.3 });
   for (let i = 0; i < n; i++) { const a = s.ang + (i - (n - 1) / 2) * 0.32; const c = Object.assign({}, s, { hits: new Set([p]), ang: a, prismed: true, dmg: s.dmg * 0.8, life: Math.max(s.life, 0.6) }); c.vx = Math.cos(a) * s.spd; c.vy = Math.sin(a) * s.spd; w.shots.push(c); }
   s.dead = true;
+}
+
+// the Sleighbreaker's present bursts into eight candy canes that freeze what they hit
+const CANE_COL = { core: '#ffffff', mid: '#ff4060', edge: '#ffd0d8', dark: '#801020' };
+function presentBurst(w, s) {
+  if (s.burst) return; s.burst = true;
+  const W = s.W || wStatsLike(s);
+  for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + (s.ang || 0); const c = makeShot(w, w.player, W, a, { kind: 'cane', spd: 230, rng: 95, r: 2, dmg: s.dmg * 0.45, child: true, noVerbs: true }); c.x = s.x; c.y = s.y; c.el = ['cryo', 1.6]; c.col = CANE_COL; c.pierce = 1; if (s.hits) c.hits = new Set(s.hits); }
+  w.fx.burst(s.x, s.y, 18, { c: ['#e8303a', '#2fbf5a', '#ffd84a', '#ffffff'], sp: 120, life: 0.6, s: 2, t: 'shrink' });
+  for (let i = 0; i < 6; i++) w.fx.add({ x: s.x, y: s.y, vx: (R0() - 0.5) * 60, vy: -20 - R0() * 40, life: 1.2, c: '#ffffff', s: 1, g: 20, drag: 1 });
+  wsnd(w, 'freeze');
 }
