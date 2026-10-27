@@ -161,6 +161,8 @@ function startRun(pi, opt = {}) {
   const w = makeWorld({ pi });
   // aliens are tough on their own planet; they get easy once you're geared for the next one (weapons gain 15% per planet reached)
   w.hpMul = 1.6 * Math.pow(1.22, pi - 1) * (1 + S.nova.count * 0.6); w.dmgMul = 1.5 * Math.pow(1.14, pi - 1) * (1 + S.nova.count * 0.4);
+  // later planets hit harder still and swarm you: up to +60% health, +35% damage and ~40% more aliens by planet 20
+  const hiP = w.hiP = clamp((pi - 3) / 17, 0, 1.5); w.hpMul *= 1 + 0.6 * hiP; w.dmgMul *= 1 + 0.35 * hiP;
   w.crit = L.crit; w.comboMax = L.combo;
   w.moveMul = p.trait === 'LOW GRAVITY' ? 1.22 : p.trait === 'HEAVY GRAVITY' ? 0.8 : 1; w.slippery = p.trait === 'LOW GRAVITY';
   if (S.eq.killfx) { const kd = getDef(S.eq.killfx); const kp = itemPal(kd); w.killfx = { r: kd.r, style: kd.style, cols: [hex(kp.P[3]), hex(kp.G[3]), hex(kp.S[3]), '#fff'] }; }
@@ -269,7 +271,7 @@ function onRunKill(e) {
     if (!e.nest) { w.combo = (w.comboT > 0 ? w.combo + 1 : 1); w.comboT = w.comboMax; }
     const mult = Math.min(10, 1 + Math.floor(w.combo / 3)); if (mult >= 3) ptip('combo');
     R.bestCombo = Math.max(R.bestCombo, mult);
-    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * comboPay(mult) * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN);
+    const val = Math.ceil(e.coin * ORE_VALUE(R.p.ore[1]) / 5 * comboPay(mult) * (1 + S.nova.count * 0.5) * (R.L.coinMul || 1) * ENEMY_COIN / (1 + 1.0 * (R.w.hiP || 0)));   // more aliens on far planets, each one pays a bit less
     R.coins += val; R.kills++; R.xp += e.xp; passXP(e.elite ? 80 : e.nest ? 30 : 4);
     for (let i = 0; i < Math.min(6, 1 + (val >> 2)); i++) R.chunks.push({ x: e.x, y: e.y - 4, vx: (R0() - 0.5) * 120, vy: -R0() * 100, t: 0, coin: true, delay: 0.25 + R0() * 0.2 });
     if (pl.perks.sprint) pl.sprintT = 1.2;
@@ -404,9 +406,9 @@ function updateRun(dt) {
     // spawns
     R.spawnT -= dt * (R.tut ? (R.tut.i < 1 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
     if (R.spawnT <= 0) {
-      R.spawnT = Math.max(0.75, 2.9 - R.t * 0.018) * (w.boss ? 1.8 : 1);
-      if (w.ents.length < 40) {
-        const ros = planetRoster(w.pi); const arch = R0() < 0.55 ? R0.pick(R.p.alien[2]) : R0.pick(ros); const n = arch === 'swarm' ? 3 + R0.int(3) : arch === 'turret' || arch === 'healer' || arch === 'sniper' ? 1 : 1 + R0.int(R.t > 60 ? 3 : 2);
+      R.spawnT = Math.max(0.65, (R.pi <= 2 ? 2.9 : 2.5) - R.t * 0.018) * (w.boss ? 1.8 : 1) / (1 + 0.35 * (w.hiP || 0));
+      if (w.ents.length < 42 + Math.round(14 * (w.hiP || 0))) {
+        const ros = planetRoster(w.pi); const arch = R0() < 0.55 ? R0.pick(R.p.alien[2]) : R0.pick(ros); const n = (arch === 'swarm' ? 3 + R0.int(3) : arch === 'turret' || arch === 'healer' || arch === 'sniper' ? 1 : 1 + R0.int(R.t > 60 ? 3 : 2)) + (R0() < (w.hiP || 0) * 0.6 ? 1 : 0);
         const anc = w.allies && w.allies[0] && w.allies[0].alive && R0() < 0.5 ? w.allies[0] : pl;
         for (let tries = 0; tries < 10; tries++) { const a = R0() * TAU, d = 230 + R0() * 50; const x = anc.x + Math.cos(a) * d, y = anc.y + Math.sin(a) * d; if (!w.solid(x, y) && x > 30 && y > 30 && x < map.GW - 30 && y < map.GH - 30) { for (let i = 0; i < n; i++) foeVariant(spawnEnemy(w, arch, x + (R0() - 0.5) * 24, y + (R0() - 0.5) * 24), R.t); break; } }
       }
