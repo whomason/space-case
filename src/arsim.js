@@ -163,7 +163,7 @@ function arSimStep(dt) {
 function arPulls(w, dt) {
   for (const p of w.pulls) {
     p.t -= dt;
-    for (const e of w.ents) { const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy); if (d < p.r && d > 3) { e.x += dx / d * p.str * dt; e.y += dy / d * p.str * dt; } }
+    for (const e of (w.ents || NO_ENTS)) { const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy); if (d < p.r && d > 3) { e.x += dx / d * p.str * dt; e.y += dy / d * p.str * dt; } }
     if (R0() < 0.5) { const a = R0() * TAU; w.fx.add({ x: p.x + Math.cos(a) * p.r, y: p.y + Math.sin(a) * p.r, vx: -Math.cos(a) * p.r * 2.5, vy: -Math.sin(a) * p.r * 2.5, life: 0.35, c: p.col || '#b45cff', s: 1, drag: 0 }); }
   }
   w.pulls = w.pulls.filter(p => p.t > 0);

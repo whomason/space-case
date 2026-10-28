@@ -1913,7 +1913,8 @@ begin
     'health', jsonb_build_object(
       'bugs_open', (select count(*) from public.bugs where status in ('new', 'seen')),
       'crashes', (select coalesce(sum(n), 0) from public.crash_log where last_at >= since),
-      'top_crash', (select message from public.crash_log where last_at >= since order by n desc limit 1)));
+      'top_crash', (select message from public.crash_log where last_at >= since order by n desc limit 1),
+      'list', (select coalesce(jsonb_agg(c order by c.n desc), '[]'::jsonb) from (select message, scene, ver, n, cardinality(devices) as players, last_at, left(stack, 700) as stack from public.crash_log where last_at >= since order by n desc limit 6) c)));
   return r;
 end $$;
 

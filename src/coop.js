@@ -141,7 +141,7 @@ function coopTick(R, dt) {
   const pl = w.player, out = COOP.out;
   if (R.coop === 'host') {
     // aliens near the guest, the boss always
-    const ents = []; for (const e of w.ents) { if (e.dead) continue; if (!e.cid) e.cid = ++w.cidSeq; if (e.boss || !a || Math.hypot(e.x - a.x, e.y - a.y) < 420) ents.push(e); }
+    const ents = []; for (const e of (w.ents || NO_ENTS)) { if (e.dead) continue; if (!e.cid) e.cid = ++w.cidSeq; if (e.boss || !a || Math.hypot(e.x - a.x, e.y - a.y) < 420) ents.push(e); }
     ents.sort((p, q) => (q.boss ? 1 : 0) - (p.boss ? 1 : 0) || Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
     const e = ents.slice(0, 45).map(x => [x.cid, x.boss ? 'boss' : x.arch, Math.round(x.x), Math.round(x.y), Math.round(x.hp), Math.round(x.maxHp), x.face < 0 ? -1 : 1,
       (x.boss ? 1 : 0) | (x.elite ? 2 : 0) | (x.armored ? 4 : 0) | (x.freeze > 0 ? 8 : 0) | (x.stun > 0 ? 16 : 0) | (x.under ? 32 : 0) | (x.hidden ? 64 : 0) | ((x.st === 'wind' || x.windup) ? 128 : 0) | (x.carrier ? 256 : 0) | (x.nest ? 512 : 0) | (x.passive ? 1024 : 0) | (x.big ? 2048 : 0),
@@ -193,7 +193,7 @@ function coopGuestApply(d) {
     g.windup = !!(fl & 128); g.carrier = !!(fl & 256); g.nest = !!(fl & 512); g.passive = !!(fl & 1024); g.big = !!(fl & 2048);
     if (g.boss) w.boss = g;
   }
-  for (const g of w.ents) if (g.ghost && !seen.has(g.cid)) { g.miss = (g.miss || 0) + 1; if (g.miss > 3) g.dead = true; }
+  for (const g of (w.ents || NO_ENTS)) if (g.ghost && !seen.has(g.cid)) { g.miss = (g.miss || 0) + 1; if (g.miss > 3) g.dead = true; }
   w.ents = w.ents.filter(e => !e.dead);
   if (w.boss && (w.boss.dead || !w.ents.includes(w.boss))) w.boss = null;
   // events: alien shots, warnings, kills
@@ -213,7 +213,7 @@ function coopGuestApply(d) {
 // the ghosts glide to where the host says they are; touching one still hurts
 function coopGuestTick(R, dt) {
   const w = R.w, pl = w.player;
-  for (const g of w.ents) {
+  for (const g of (w.ents || NO_ENTS)) {
     if (!g.ghost) continue;
     g.t += dt; g.flash -= dt; if (g.pend > 0) g.pend = Math.max(0, g.pend - g.maxHp * dt * 0.5);
     const k = Math.min(1, dt * 9); g.x += (g.nx - g.x) * k; g.y += (g.ny - g.y) * k;

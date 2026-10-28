@@ -392,7 +392,7 @@ function arDraw(dt) {
   for (const b of M.blocks) objs.push([b[1] + b[3], 0, b]);
   for (const f of A.fighters.values()) if (f.alive && f.x > -500) objs.push([f.y, 1, f]);
   objs.sort((a, b) => a[0] - b[0]);
-  const wf = { fx: A.fx };
+  const wf = A.wf || (A.wf = { fx: A.fx, ents: [], shots: [], eshots: [], tele: [], zaps: [], arena: true, demo: true });
   for (const [, k, o] of objs) {
     if (k === 0) { const x = o[0] - cx, y = o[1] - cy; rect(x, y - 10, o[2], o[3], A.F.side); rect(x, y - 10, o[2], o[3] - 4, A.F.top); rect(x, y - 10, o[2], 1, A.F.edge); rect(x, y + o[3] - 4, o[2], 4, '#05060d'); continue; }
     const f = o; drawPlayer(wf, f, cx, cy, f.eq || {}, {}); arDrawStatus(f, cx, cy);

@@ -662,7 +662,7 @@ function gadgetJuice(w, pl, k) {
   if (k === 'freeze') {
     for (let r = 0; r < 3; r++) w.fx.add({ x: pl.x, y: pl.y - 4, life: 0.35 + r * 0.12, c: r ? '#bff6ff' : '#ffffff', s: (pl.G ? pl.G.rad : 90) * (0.6 + r * 0.25), t: 'ring' });
     for (let i = 0; i < 22; i++) { const a = R0() * TAU, sp = 90 + R0() * 120; w.fx.add({ x: pl.x, y: pl.y - 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, life: 0.5, c: R0() < 0.5 ? '#ffffff' : '#bff6ff', t: R0() < 0.4 ? 'pat' : 'spark', pat: TRAIL_PAT.flake, s: 1, drag: 2.5 }); }
-    let n = 0; for (const e of w.ents) if (!e.dead && e.freeze > 0 && n < 10 && Math.hypot(e.x - pl.x, e.y - pl.y) < (pl.G ? pl.G.rad : 90)) { iceBurst(w, e.x, e.y - 6); n++; }
+    let n = 0; for (const e of (w.ents || NO_ENTS)) if (!e.dead && e.freeze > 0 && n < 10 && Math.hypot(e.x - pl.x, e.y - pl.y) < (pl.G ? pl.G.rad : 90)) { iceBurst(w, e.x, e.y - 6); n++; }
   }
   if (k === 'emp') { FX.flash = 0.2; FX.flashCol = '#fff25a'; }
   if (k === 'blink') { const g = w.gx && w.gx[w.gx.length - 1]; if (g && g.k === 'blink') g.ghost = true; }

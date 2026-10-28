@@ -61,7 +61,7 @@ function drawRange(dt) {
   text('GROUP', 300, 64, COL.mute, FS, 1); text('MOVING', 110, 226, COL.mute, FS, 1); text('PODS', 182, 64, COL.mute, FS, 1);
   drawTele(w, 0, 0);
   const objs = [];
-  for (const e of w.ents) objs.push([e.y, 0, e]); for (const p of w.props) if (!p.dead) objs.push([p.y, 1, p]); objs.push([pl.y, 2, pl]);
+  for (const e of (w.ents || NO_ENTS)) objs.push([e.y, 0, e]); for (const p of w.props) if (!p.dead) objs.push([p.y, 1, p]); objs.push([pl.y, 2, pl]);
   objs.sort((a, b) => a[0] - b[0]);
   for (const [, k, o] of objs) { if (k === 0) drawEnemy(w, o, 0, 0); else if (k === 1) drawProp({ w, L: G.L, pi: w.pi, signal: 0, scanR: 0 }, o, 0, 0); else drawPlayer(w, pl, 0, 0, G.eq); }
   drawShots(w, 0, 0); w.fx.draw(0, 0);

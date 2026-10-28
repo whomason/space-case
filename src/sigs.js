@@ -132,7 +132,7 @@ function sigUpdate(R, dt) {
     else if (o.st === 'warn' && o.cd <= 0) { o.st = 'blast'; o.cd = 1.6; if (Math.hypot(o.x - pl.x, o.y - pl.y) < 200) { SND.play('boom'); shake(3); } }
     else if (o.st === 'blast') { if (Math.random() < 0.6) w.fx.add({ x: o.x + (R0() - 0.5) * o.r, y: o.y - 4, vx: (R0() - 0.5) * 40, vy: -80 - R0() * 80, life: 0.6, c: R0() < 0.5 ? '#ff9a3d' : '#fff2a0', s: 2, t: 'shrink' });
       if (Math.hypot(pl.x - o.x, pl.y - o.y) < o.r) { G.burnT = (G.burnT || 0) - dt; if (G.burnT <= 0) { G.burnT = 0.3; hurtPlayer(w, (key ? 5 : 10) * w.dmgMul, null); } }
-      for (const e of w.ents) if (!e.dead && !e.boss && Math.hypot(e.x - o.x, e.y - o.y) < o.r) { e.burn = Math.max(e.burn || 0, 1); e.burnDps = Math.max(e.burnDps || 0, 6 * w.hpMul); }
+      for (const e of (w.ents || NO_ENTS)) if (!e.dead && !e.boss && Math.hypot(e.x - o.x, e.y - o.y) < o.r) { e.burn = Math.max(e.burn || 0, 1); e.burnDps = Math.max(e.burnDps || 0, 6 * w.hpMul); }
       if (o.cd <= 0) { o.st = 'idle'; o.cd = 5 + R0() * 3; } }
   }
   if (k === 'tide') {
@@ -148,7 +148,7 @@ function sigUpdate(R, dt) {
     if (!G.gust && G.nextT <= 0) { G.gust = { a: R0() < 0.5 ? 0 : Math.PI, t: 0, warn: 2 }; G.gust.a += (R0() - 0.5) * 0.8; }
     if (G.gust) { const g = G.gust; g.t += dt;
       if (g.t > g.warn) { const f = 110 * dt * 6; if (!key) { pl.x += Math.cos(g.a) * 70 * dt; pl.y += Math.sin(g.a) * 70 * dt; w.collide(pl); }
-        for (const e of w.ents) if (!e.dead && !e.boss) { e.kx += Math.cos(g.a) * f * 0.5; e.ky += Math.sin(g.a) * f * 0.5; }
+        for (const e of (w.ents || NO_ENTS)) if (!e.dead && !e.boss) { e.kx += Math.cos(g.a) * f * 0.5; e.ky += Math.sin(g.a) * f * 0.5; }
         for (const s of w.shots) { s.vx += Math.cos(g.a) * 160 * dt; s.vy += Math.sin(g.a) * 160 * dt; s.ang = Math.atan2(s.vy, s.vx); }
         for (const c of R.chunks) { c.x += Math.cos(g.a) * 60 * dt; c.y += Math.sin(g.a) * 60 * dt; } }
       if (g.t > g.warn + 3.5) { G.gust = null; G.nextT = 9 + R0() * 6; } }
@@ -159,7 +159,7 @@ function sigUpdate(R, dt) {
   }
   if (k === 'dark' || k === 'abyss') {
     for (const o of G.objs) if (o.flare > 0) o.flare -= dt;
-    for (const s of w.shots) for (const o of G.objs) if (o.k === 'bloom' && o.flare <= 0 && Math.hypot(s.x - o.x, s.y - (o.y - 6)) < 10) { o.flare = 8; s.life = 0; SND.play('unlock'); w.fx.burst(o.x, o.y - 6, 26, { c: ['#7dffb0', '#fff', '#4ee8ff'], sp: 120 }); for (const e of w.ents) if (!e.dead && !e.boss && Math.hypot(e.x - o.x, e.y - o.y) < 90) e.stun = Math.max(e.stun || 0, 1.5); }
+    for (const s of w.shots) for (const o of G.objs) if (o.k === 'bloom' && o.flare <= 0 && Math.hypot(s.x - o.x, s.y - (o.y - 6)) < 10) { o.flare = 8; s.life = 0; SND.play('unlock'); w.fx.burst(o.x, o.y - 6, 26, { c: ['#7dffb0', '#fff', '#4ee8ff'], sp: 120 }); for (const e of (w.ents || NO_ENTS)) if (!e.dead && !e.boss && Math.hypot(e.x - o.x, e.y - o.y) < 90) e.stun = Math.max(e.stun || 0, 1.5); }
     if (k === 'abyss') { G.pulseT = (G.pulseT ?? 2) - dt; if (G.pulseT <= 0) { G.pulseT = 8; const o = G.objs[Math.floor(R0() * G.objs.length)]; if (o) (G.pulses = G.pulses || []).push({ x: o.x, y: o.y, t: 0 }); }
       if (key) { G.sonarT = (G.sonarT ?? 1) - dt; if (G.sonarT <= 0) { G.sonarT = 4; (G.pulses = G.pulses || []).push({ x: pl.x, y: pl.y, t: 0, mine: true }); SND.play('tick', 900); } }
       for (const p of G.pulses || []) p.t += dt; G.pulses = (G.pulses || []).filter(p => p.t < 2.4); }
@@ -193,9 +193,9 @@ function sigUpdate(R, dt) {
   if (k === 'time') {
     const inRing = (x, y) => G.objs.some(o => o.k === 'clock' && Math.hypot(x - o.x, (y - o.y) / 0.75) < o.r);
     if (inRing(pl.x, pl.y) && !key) w.moveMul = Math.min(w.moveMul, 0.6);
-    for (const e of w.ents) if (!e.dead && inRing(e.x, e.y)) { if (e.px !== undefined) { e.x = e.px + (e.x - e.px) * 0.35; e.y = e.py + (e.y - e.py) * 0.35; } }
+    for (const e of (w.ents || NO_ENTS)) if (!e.dead && inRing(e.x, e.y)) { if (e.px !== undefined) { e.x = e.px + (e.x - e.px) * 0.35; e.y = e.py + (e.y - e.py) * 0.35; } }
     for (const s of w.eshots) if (inRing(s.x, s.y)) { s.x -= s.vx * dt * 0.65; s.y -= s.vy * dt * 0.65; }
-    for (const e of w.ents) { e.px = e.x; e.py = e.y; }
+    for (const e of (w.ents || NO_ENTS)) { e.px = e.x; e.py = e.y; }
   }
 }
 // a cache's worth of loot: ore, coins and sometimes a crate

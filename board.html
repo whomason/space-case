@@ -271,7 +271,10 @@ function render() {
       <p class="note">Purchases: ${Object.entries(ST.by || {}).map(([k, v]) => `${esc(k)} ×${v}`).join(', ') || 'none yet'} · ${money(ST.cents || 0)}</p></div>
     <div class="card c6"><h2>Bugs and crashes</h2><p class="sub">${esc(per)}</p>
       ${hbars([{ l: 'Open bug reports', v: HL.bugs_open || 0, c: (HL.bugs_open ? css('--bad') : '') }, { l: 'Crash events', v: HL.crashes || 0, c: (HL.crashes ? css('--bad') : '') }], { pct: false })}
-      <p class="note">${HL.top_crash ? 'Most common crash: <code>' + esc(HL.top_crash) + '</code>' : 'No crashes logged.'} Read and close bug reports in the game: Social → STATS tab.</p></div>
+      <p class="note">${HL.top_crash ? '' : 'No crashes logged. '}Read and close bug reports in the game: Social → STATS tab.</p></div>
+    ${(HL.list || []).length ? `<div class="card c12"><h2>Crashes</h2><p class="sub">Each different error, most common first. Copy one and send it to Claude to get it fixed.</p>
+      ${HL.list.map(c => `<details style="border-top:1px solid var(--grid);padding:8px 0"><summary style="cursor:pointer;color:var(--ink)"><b>${fmt(c.n)}×</b> <code>${esc(c.message)}</code> <span class="muted">· ${fmt(c.players)} player${c.players === 1 ? '' : 's'} · screen: ${esc(SCENES[c.scene] || c.scene || '?')} · version ${esc(c.ver || '?')} · last ${esc(new Date(c.last_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</span></summary>
+        <pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--ink-2);background:var(--bg);border-radius:8px;padding:10px;margin:8px 0 0">${esc(c.message + '\n' + (c.stack || 'no stack'))}</pre></details>`).join('')}</div>` : ''}
   </div>`;
   document.querySelectorAll('[data-days]').forEach(b => b.onclick = () => { S.days = +b.dataset.days; try { localStorage.setItem('scboard.days', S.days); } catch (e) { } load(); });
   $('#rf').onclick = () => load();

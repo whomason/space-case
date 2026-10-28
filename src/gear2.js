@@ -125,13 +125,13 @@ function useGadget(w, pl, ax, ay) {
     case 'decoy': { const p = reach(70); w.decoy = { x: p.x, y: p.y, t: G.dur }; w.gx.push({ k, x: p.x, y: p.y, t: 0, dur: G.dur, rad: G.rad, dmg: G.dmg }); break; }
     case 'orbital': { const p = reach(220); w.gx.push({ k, x: p.x, y: p.y, t: 0, dur: G.dur, rad: G.rad, dmg: G.dmg }); break; }
     case 'freeze': {
-      for (const e of w.ents) { if (e.dead || Math.hypot(e.x - pl.x, e.y - pl.y) > G.rad) continue; if (e.boss) { e.slow = Math.max(e.slow || 0, G.dur); e.chill = 1; } else e.freeze = Math.max(e.freeze || 0, G.dur); damageEnemy(w, e, G.dmg, { quiet: true, col: '#bff6ff' }); }
+      for (const e of (w.ents || NO_ENTS)) { if (e.dead || Math.hypot(e.x - pl.x, e.y - pl.y) > G.rad) continue; if (e.boss) { e.slow = Math.max(e.slow || 0, G.dur); e.chill = 1; } else e.freeze = Math.max(e.freeze || 0, G.dur); damageEnemy(w, e, G.dmg, { quiet: true, col: '#bff6ff' }); }
       w.gx.push({ k, x: pl.x, y: pl.y, t: 0, dur: 0.5, rad: G.rad }); wsnd(w, 'freeze'); break;
     }
     case 'blink': {
       let tx = pl.x, ty = pl.y; const steps = Math.ceil(Math.min(G.rad, dd) / 4);
       for (let i = 1; i <= steps; i++) { const nx = pl.x + dx / dd * i * 4, ny = pl.y + dy / dd * i * 4; if (w.solid(nx, ny) || (w.bounds && (nx < w.bounds[0] || nx > w.bounds[2] || ny < w.bounds[1] || ny > w.bounds[3]))) break; tx = nx; ty = ny; }
-      const hit = new Set(); for (const e of w.ents) { if (e.dead) continue; const t = clamp(((e.x - pl.x) * (tx - pl.x) + (e.y - pl.y) * (ty - pl.y)) / Math.max(1, (tx - pl.x) ** 2 + (ty - pl.y) ** 2), 0, 1); const cx = pl.x + (tx - pl.x) * t, cy = pl.y + (ty - pl.y) * t; if (Math.hypot(e.x - cx, e.y - cy) < e.r + 10) hit.add(e); }
+      const hit = new Set(); for (const e of (w.ents || NO_ENTS)) { if (e.dead) continue; const t = clamp(((e.x - pl.x) * (tx - pl.x) + (e.y - pl.y) * (ty - pl.y)) / Math.max(1, (tx - pl.x) ** 2 + (ty - pl.y) ** 2), 0, 1); const cx = pl.x + (tx - pl.x) * t, cy = pl.y + (ty - pl.y) * t; if (Math.hypot(e.x - cx, e.y - cy) < e.r + 10) hit.add(e); }
       w.gx.push({ k, x0: pl.x, y0: pl.y, x: tx, y: ty, t: 0, dur: 0.3 });
       for (let i = 0; i < 10; i++) w.fx.add({ x: pl.x, y: pl.y - 8, vx: (R0() - 0.5) * 80, vy: (R0() - 0.5) * 80, life: 0.35, c: '#bff3ff', s: 2, t: 'shrink' });
       pl.x = tx; pl.y = ty; pl.inv = Math.max(pl.inv, 0.4);
@@ -142,7 +142,7 @@ function useGadget(w, pl, ax, ay) {
     case 'medkit': w.gx.push({ k, x: pl.x, y: pl.y, t: 0, dur: G.dur, heal: G.heal, follow: true }); wsnd(w, 'levelup'); break;
     case 'emp': {
       const first = nearestEnemy(w, ax, ay, 90) || nearestEnemy(w, pl.x, pl.y, G.rad);
-      if (first) { w.zaps.push({ x0: pl.x, y0: pl.y - 8, x1: first.x, y1: first.y - 3, t: 0, col: '#fff25a' }); damageEnemy(w, first, G.dmg, { col: '#fff25a' }); if (!first.boss) first.stun = Math.max(first.stun || 0, G.dur); chainZap(w, first, G.dmg * 0.8, 4 + G.r, { mid: '#fff25a' }); for (const e of w.ents) if (!e.dead && !e.boss && Math.hypot(e.x - first.x, e.y - first.y) < 80) e.stun = Math.max(e.stun || 0, G.dur * 0.7); }
+      if (first) { w.zaps.push({ x0: pl.x, y0: pl.y - 8, x1: first.x, y1: first.y - 3, t: 0, col: '#fff25a' }); damageEnemy(w, first, G.dmg, { col: '#fff25a' }); if (!first.boss) first.stun = Math.max(first.stun || 0, G.dur); chainZap(w, first, G.dmg * 0.8, 4 + G.r, { mid: '#fff25a' }); for (const e of (w.ents || NO_ENTS)) if (!e.dead && !e.boss && Math.hypot(e.x - first.x, e.y - first.y) < 80) e.stun = Math.max(e.stun || 0, G.dur * 0.7); }
       else { G.cd = 0.5; w.fx.text(pl.x, pl.y - 30, 'NO TARGET', COL.dim, { f: FS, life: 0.5 }); }
       break;
     }
@@ -158,8 +158,8 @@ function updateGadgetFx(w, dt) {
     g.t += dt; if (g.follow && pl) { g.x = pl.x; g.y = pl.y; }
     switch (g.k) {
       case 'blackhole': {
-        for (const e of w.ents) { if (e.dead || e.nest || e.dummy) continue; const dx = g.x - e.x, dy = g.y - e.y, d = Math.hypot(dx, dy); if (d < g.rad && d > 2) { const s = (e.boss ? 25 : 150) * (1 - d / g.rad * 0.5); e.x += dx / d * s * dt; e.y += dy / d * s * dt; } if (d < g.rad * 0.45) { g.acc = (g.acc || 0) + dt; } }
-        g.tick = (g.tick || 0) + dt; if (g.tick > 0.25) { g.tick = 0; for (const e of w.ents) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad * 0.45) damageEnemy(w, e, g.dmg * 0.25, { quiet: true, col: '#d9a6ff' }); }
+        for (const e of (w.ents || NO_ENTS)) { if (e.dead || e.nest || e.dummy) continue; const dx = g.x - e.x, dy = g.y - e.y, d = Math.hypot(dx, dy); if (d < g.rad && d > 2) { const s = (e.boss ? 25 : 150) * (1 - d / g.rad * 0.5); e.x += dx / d * s * dt; e.y += dy / d * s * dt; } if (d < g.rad * 0.45) { g.acc = (g.acc || 0) + dt; } }
+        g.tick = (g.tick || 0) + dt; if (g.tick > 0.25) { g.tick = 0; for (const e of (w.ents || NO_ENTS)) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad * 0.45) damageEnemy(w, e, g.dmg * 0.25, { quiet: true, col: '#d9a6ff' }); }
         if (R0() < 0.9) { const a = R0() * TAU, r = g.rad * (0.6 + R0() * 0.4); w.fx.add({ x: g.x + Math.cos(a) * r, y: g.y + Math.sin(a) * r * 0.7, vx: -Math.cos(a) * r * 2.4 - Math.sin(a) * 50, vy: -Math.sin(a) * r * 1.7 + Math.cos(a) * 35, life: 0.4, c: R0() < 0.5 ? '#b066ff' : '#2a0a40', s: 1 }); }
         if (g.t >= g.dur && !g.done) { g.done = true; explode(w, g.x, g.y, g.rad * 0.7, g.dmg * 3, { core: '#fff', mid: '#d9a6ff', edge: '#7a2cff', dark: '#14002a' }); }
         break;
@@ -167,23 +167,23 @@ function updateGadgetFx(w, dt) {
       case 'cluster': if (g.t >= g.dur && !g.done) { g.done = true; explode(w, g.x, g.y, g.rad, g.dmg); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; const bx = g.x + Math.cos(a) * 30, by = g.y + Math.sin(a) * 22; w.tele.push({ x: bx, y: by, r: 0, t: 0, max: 0.25 + i * 0.05, dmg: 0, col: '#ff9a3d', onDone: () => explode(w, bx, by, g.rad * 0.85, g.dmg * 0.8) }); } } break;
       case 'dome': {
         for (const s of w.eshots) if (Math.hypot(s.x - g.x, s.y - g.y) < g.rad) { s.life = 0; w.fx.add({ x: s.x, y: s.y, life: 0.2, c: '#9fe7ff', s: 3, t: 'ring' }); }
-        for (const e of w.ents) { if (e.dead || e.boss || e.nest) continue; const dx = e.x - g.x, dy = e.y - g.y, d = Math.hypot(dx, dy); if (d < g.rad && d > 1) { e.kx += dx / d * 300 * dt; e.ky += dy / d * 300 * dt; } }
+        for (const e of (w.ents || NO_ENTS)) { if (e.dead || e.boss || e.nest) continue; const dx = e.x - g.x, dy = e.y - g.y, d = Math.hypot(dx, dy); if (d < g.rad && d > 1) { e.kx += dx / d * 300 * dt; e.ky += dy / d * 300 * dt; } }
         break;
       }
       case 'timewarp':
-        for (const e of w.ents) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad) { e.warp = 0.3; }
+        for (const e of (w.ents || NO_ENTS)) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad) { e.warp = 0.3; }
         for (const s of w.eshots) if (!s.warped && Math.hypot(s.x - g.x, s.y - g.y) < g.rad) { s.warped = true; s.vx *= 0.3; s.vy *= 0.3; s.life *= 2; }
         break;
       case 'decoy': if (w.decoy) { w.decoy.x = g.x; w.decoy.y = g.y; } if (g.t >= g.dur && !g.done) { g.done = true; w.decoy = null; explode(w, g.x, g.y, g.rad, g.dmg, { core: '#fff', mid: '#b79ced', edge: '#7161ef', dark: '#14213d' }); } break;
-      case 'orbital': if (g.t >= g.dur && !g.done) { g.done = true; for (const e of w.ents) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad + e.r) damageEnemy(w, e, g.dmg, { col: '#fff6c0' }); explode(w, g.x, g.y, g.rad * 0.6, 0, { core: '#fff', mid: '#fff6c0', edge: '#fca311', dark: '#802000' }); g.flashT = 0.35; if (!w.demo) { shake(7); FX.flash = 0.25; FX.flashCol = '#fff6c0'; if (!w.arena) FX.hitstop = Math.max(FX.hitstop, 0.06); } for (let i = 0; i < 16; i++) { const a = R0() * TAU, sp = 60 + R0() * 120; w.fx.add({ x: g.x, y: g.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6 - 40, g: 200, life: 0.6, c: R0() < 0.5 ? '#fff6c0' : '#8a6a3a', s: 2, drag: 1 }); } } break;
+      case 'orbital': if (g.t >= g.dur && !g.done) { g.done = true; for (const e of (w.ents || NO_ENTS)) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad + e.r) damageEnemy(w, e, g.dmg, { col: '#fff6c0' }); explode(w, g.x, g.y, g.rad * 0.6, 0, { core: '#fff', mid: '#fff6c0', edge: '#fca311', dark: '#802000' }); g.flashT = 0.35; if (!w.demo) { shake(7); FX.flash = 0.25; FX.flashCol = '#fff6c0'; if (!w.arena) FX.hitstop = Math.max(FX.hitstop, 0.06); } for (let i = 0; i < 16; i++) { const a = R0() * TAU, sp = 60 + R0() * 120; w.fx.add({ x: g.x, y: g.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6 - 40, g: 200, life: 0.6, c: R0() < 0.5 ? '#fff6c0' : '#8a6a3a', s: 2, drag: 1 }); } } break;
       case 'turret': {
         g.cd -= dt; const tg = nearestEnemy(w, g.x, g.y, g.rad);
         if (tg) { g.a = Math.atan2(tg.y - 4 - g.y, tg.x - g.x); if (g.cd <= 0) { g.cd = 0.3; const s = makeShot(w, w.player, { dmg: g.dmg, col: { core: '#fff', mid: '#9fe7ff', edge: '#4ac6ff', dark: '#14213d' }, v: {}, el: null, spd: 260, rng: g.rad, pierce: 0 }, g.a, { child: true, noVerbs: true, kind: 'bolt', spd: 260, rng: g.rad, r: 2, dmg: g.dmg }); s.x = g.x + Math.cos(g.a) * 6; s.y = g.y - 6 + Math.sin(g.a) * 6; wsnd(w, 'pew'); } }
         break;
       }
       case 'medkit': if (pl && !pl.dead) { pl.hp = Math.min(pl.maxHp, pl.hp + pl.maxHp * g.heal / g.dur * dt); if (R0() < 0.4) w.fx.add({ x: pl.x + (R0() - 0.5) * 14, y: pl.y - 8 - R0() * 12, vx: 0, vy: -20, life: 0.6, c: '#7dffb0', t: 'pat', pat: '.#.|###|.#.' }); } break;
-      case 'slam': if (g.t >= g.dur && !g.done) { g.done = true; explode(w, g.x, g.y, g.rad * 0.5, g.dmg, { core: '#fff', mid: '#c9c0ff', edge: '#7161ef', dark: '#14213d' }); for (const e of w.ents) if (!e.dead && !e.boss && Math.hypot(e.x - g.x, e.y - g.y) < g.rad * 0.6) e.stun = Math.max(e.stun || 0, 0.8); if (!w.demo) { shake(8); if (!w.arena) FX.hitstop = Math.max(FX.hitstop, 0.06); } for (let r = 0; r < 3; r++) w.fx.add({ x: g.x, y: g.y, life: 0.3 + r * 0.1, c: r ? '#c9c0ff' : '#ffffff', s: g.rad * (0.4 + r * 0.3), t: 'ring' }); for (let i = 0; i < 18; i++) { const a = i / 18 * TAU; w.fx.add({ x: g.x + Math.cos(a) * 10, y: g.y + Math.sin(a) * 6, vx: Math.cos(a) * 140, vy: Math.sin(a) * 90, life: 0.45, c: '#9a8f86', s: 3, t: 'puff', drag: 3 }); } } break;
-      case 'goo': for (const e of w.ents) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad + e.r) e.slow = Math.max(e.slow || 0, 0.5); break;
+      case 'slam': if (g.t >= g.dur && !g.done) { g.done = true; explode(w, g.x, g.y, g.rad * 0.5, g.dmg, { core: '#fff', mid: '#c9c0ff', edge: '#7161ef', dark: '#14213d' }); for (const e of (w.ents || NO_ENTS)) if (!e.dead && !e.boss && Math.hypot(e.x - g.x, e.y - g.y) < g.rad * 0.6) e.stun = Math.max(e.stun || 0, 0.8); if (!w.demo) { shake(8); if (!w.arena) FX.hitstop = Math.max(FX.hitstop, 0.06); } for (let r = 0; r < 3; r++) w.fx.add({ x: g.x, y: g.y, life: 0.3 + r * 0.1, c: r ? '#c9c0ff' : '#ffffff', s: g.rad * (0.4 + r * 0.3), t: 'ring' }); for (let i = 0; i < 18; i++) { const a = i / 18 * TAU; w.fx.add({ x: g.x + Math.cos(a) * 10, y: g.y + Math.sin(a) * 6, vx: Math.cos(a) * 140, vy: Math.sin(a) * 90, life: 0.45, c: '#9a8f86', s: 3, t: 'puff', drag: 3 }); } } break;
+      case 'goo': for (const e of (w.ents || NO_ENTS)) if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) < g.rad + e.r) e.slow = Math.max(e.slow || 0, 0.5); break;
     }
   }
   w.gx = w.gx.filter(g => g.t < g.dur + (g.k === 'orbital' ? 0.4 : 0.05));

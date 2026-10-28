@@ -44,7 +44,7 @@ function foeAI(w, e, dt, c) {
       const ally = w.ents.find(o => !o.dead && o !== e && !o.boss && o.hp < o.maxHp && Math.hypot(o.x - e.x, o.y - e.y) < 160);
       const tx = ally ? ally.x : e.x - dx, ty = ally ? ally.y : e.y - dy; const ad = Math.hypot(tx - e.x, ty - e.y) || 1;
       if (d < 100) { mx = -dx / d; my = -dy / d; } else if (ally && ad > 40) { mx = (tx - e.x) / ad; my = (ty - e.y) / ad; }
-      e.cd -= dt; if (e.cd <= 0) { e.cd = 3; let n = 0; for (const o of w.ents) if (!o.dead && !o.boss && o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 80 && o.hp < o.maxHp) { o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.25); n++; w.fx.text(o.x, o.y - o.r - 8, '+', '#7dffb0', { f: FB, life: 0.5 }); } if (n) { w.fx.add({ x: e.x, y: e.y - 6, life: 0.5, c: '#7dffb0', s: 80, t: 'ring' }); } }
+      e.cd -= dt; if (e.cd <= 0) { e.cd = 3; let n = 0; for (const o of (w.ents || NO_ENTS)) if (!o.dead && !o.boss && o !== e && Math.hypot(o.x - e.x, o.y - e.y) < 80 && o.hp < o.maxHp) { o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.25); n++; w.fx.text(o.x, o.y - o.r - 8, '+', '#7dffb0', { f: FB, life: 0.5 }); } if (n) { w.fx.add({ x: e.x, y: e.y - 6, life: 0.5, c: '#7dffb0', s: 80, t: 'ring' }); } }
       break;
     }
     case 'blinker':

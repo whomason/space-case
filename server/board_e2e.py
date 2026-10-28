@@ -33,6 +33,7 @@ def seed():
             if R.random() < .2: q(f"insert into public.events (device, kind, data, at) values (%s, 'duel', %s, {at})", (dev, json.dumps({'won': R.randint(0, 1), 'ai': R.randint(0, 1)})))
     q("insert into public.events (device, kind, data, at) values ('dev000001', 'beat', '{\"s\":\"live1\",\"m\":4,\"sc\":\"planet\"}', now())")
     q("insert into public.events (device, kind, data) select 'dev000002', 'store_click', '{\"product\":\"sd_500\"}' from generate_series(1, 6)")
+    q("insert into public.crash_log (sig, message, stack, scene, ver, n, devices) values ('x1', 'undefined is not an object (evaluating ''e of w.ents'')', 'gadgetJuice@https://spacecrates.net/:1:2\nuseGadget@https://spacecrates.net/:1:3', 'arena', '2026.10.27', 9, array['a','b'])")
 async def main():
     seed()
     async with async_playwright() as p:
@@ -64,6 +65,7 @@ async def main():
         await pg2.set_viewport_size({'width': 1280, 'height': 900})
         await pg2.click('[data-days="7"]'); await pg2.wait_for_selector('text=last 7 days', timeout=8000); ok('switching to 7 days reloads', True)
         await pg2.reload(); await pg2.wait_for_selector('text=Players per day', timeout=8000); ok('stays signed in after a reload', True)
+        ok('crash list shows the error with its screen', 'e of w.ents' in (await pg2.inner_text('#app')) and 'Arena / 1v1' in (await pg2.inner_text('#app')))
         ok('no page errors', not errs, errs)
         await b.close()
     print('\nFAILURES:', fails)

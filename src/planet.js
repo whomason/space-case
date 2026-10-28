@@ -536,7 +536,7 @@ function drawRun() {
   for (const wr of map.wrecks) if (vis(wr.x, wr.y)) objs.push([wr.y, 2, wr]);
   for (const pr of w.props) if (!pr.dead && vis(pr.x, pr.y)) objs.push([pr.y, 6, pr]);
   if (vis(map.shipX, map.shipY, 80)) objs.push([map.shipY + 8, 3, null]);
-  for (const e of w.ents) if (vis(e.x, e.y)) objs.push([e.y, 4, e]);
+  for (const e of (w.ents || NO_ENTS)) if (vis(e.x, e.y)) objs.push([e.y, 4, e]);
   if (!pl.dead && R.state !== 'leave') objs.push([pl.y, 5, pl]);
   if (R.coop && COOP.ally && COOP.ally.alive) objs.push([COOP.ally.y, 7, COOP.ally]);
   objs.sort((a, b) => a[0] - b[0]);
@@ -671,7 +671,7 @@ function drawRunHUD(R) {
   const scanR = L.scan;
   for (const o of R.map.ores) if (o.left > 0 && (L.perks.scan || Math.hypot(o.x - pl.x, o.y - pl.y) < scanR)) P(o.x, o.y, oreHex(o.pi));
   for (const wr of R.map.wrecks) if (!wr.looted && (Math.hypot(wr.x - pl.x, wr.y - pl.y) < scanR * 1.6)) P(wr.x, wr.y, COL.gold, 2);
-  for (const e of w.ents) if (Math.hypot(e.x - pl.x, e.y - pl.y) < 200) P(e.x, e.y, '#ff4f6d');
+  for (const e of (w.ents || NO_ENTS)) if (Math.hypot(e.x - pl.x, e.y - pl.y) < 200) P(e.x, e.y, '#ff4f6d');
   if (R.bossAvail && !R.bossBeaten) { const bx = mx + R.map.lair.x * sc, by = my + R.map.lair.y * sc; if (Math.floor(T_NOW * 3) % 2) { rect(bx - 2, by - 2, 5, 5, '#ff2040'); px(bx - 1, by - 1, '#fff'); px(bx + 1, by - 1, '#fff'); } }
   if (R.carrier && Math.floor(T_NOW * 4) % 2) { const bx = mx + R.carrier.x * sc, by = my + R.carrier.y * sc; rect(bx - 2, by - 2, 5, 5, COL.gold); px(bx, by, '#fff'); }
   drawMinimapProps(R, mx, my, sc);
@@ -909,8 +909,8 @@ function updateEvent(R, dt) {
     const dr = ev.drill; ev.t -= dt; ev.waveT = (ev.waveT || 0) - dt;
     if (ev.waveT <= 0) { ev.waveT = 5; eventWave(R, dr.x, dr.y, 3 + Math.floor((40 - ev.t) / 10), dr); }
     if (R0() < 0.5) w.fx.add({ x: dr.x + (R0() - 0.5) * 16, y: dr.y - 4, vx: (R0() - 0.5) * 50, vy: -R0() * 60, g: 200, life: 0.5, c: oreHex(R.pi), s: 1 });
-    if (dr.hp <= 0) { dr.dead = true; failEvent(R, 'THE DRILL WAS DESTROYED'); for (const e of w.ents) if (e.tgt === dr) e.tgt = null; }
-    else if (ev.t <= 0) { for (const e of w.ents) if (e.tgt === dr) e.tgt = null; completeEvent(R, dr.x, dr.y); }
+    if (dr.hp <= 0) { dr.dead = true; failEvent(R, 'THE DRILL WAS DESTROYED'); for (const e of (w.ents || NO_ENTS)) if (e.tgt === dr) e.tgt = null; }
+    else if (ev.t <= 0) { for (const e of (w.ents || NO_ENTS)) if (e.tgt === dr) e.tgt = null; completeEvent(R, dr.x, dr.y); }
   }
   if (ev.k === 'race' && ev.st === 'run') {
     ev.t -= dt;
@@ -1053,6 +1053,6 @@ function drawMinimapProps(R, mx, my, sc) {
       case 'cache': if (!p.found && R.scanR >= 2 && Math.hypot(p.x - pl.x, p.y - pl.y) < R.L.scan * 1.6) { if (bl) P(p.x, p.y, COL.gold, 2); } else if (p.found) P(p.x, p.y, COL.gold, 2); break;
     }
   }
-  for (const e of w.ents) if ((e.nest || e.elite) && !e.dead) P(e.x, e.y, e.elite ? (bl ? COL.pink : '#fff') : '#ff2040', 3);
+  for (const e of (w.ents || NO_ENTS)) if ((e.nest || e.elite) && !e.dead) P(e.x, e.y, e.elite ? (bl ? COL.pink : '#fff') : '#ff2040', 3);
   if (R.ev && R.ev.k === 'race' && R.ev.st === 'run') P(R.ev.b.x, R.ev.b.y, bl ? COL.mint : '#fff', 3);
 }
