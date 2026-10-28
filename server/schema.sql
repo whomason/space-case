@@ -1853,7 +1853,7 @@ begin
         (select round(coalesce(sum(b.mins), 0)) from pg_temp._bs b where b.last_at >= g.day at time zone tz and b.last_at < (g.day + interval '1 day') at time zone tz) as minutes,
         (select count(*) from public.events e where e.kind = 'land' and e.at >= g.day at time zone tz and e.at < (g.day + interval '1 day') at time zone tz) as landings,
         (select count(distinct e.device) from public.events e where e.kind = 'first' and e.data ->> 'what' = 'signup' and e.at >= g.day at time zone tz and e.at < (g.day + interval '1 day') at time zone tz) as signups
-      from generate_series((now() at time zone tz)::date - (d - 1), (now() at time zone tz)::date, interval '1 day') g(day)) x),
+      from generate_series(((now() at time zone tz)::date - (d - 1))::timestamp, (now() at time zone tz)::date::timestamp, interval '1 day') g(day)) x),   -- local days (timestamp, not timestamptz)
     'lengths', (select jsonb_build_object(
       'u2', greatest(0, (select count(*) from public.events where kind = 'session' and at >= since) - (select count(*) from pg_temp._bs)) + (select count(*) from pg_temp._bs where mins < 2),
       'm2_5', count(*) filter (where mins >= 2 and mins < 5), 'm5_15', count(*) filter (where mins >= 5 and mins < 15),
@@ -1868,7 +1868,7 @@ begin
         case when now() > (g.day + interval '2 days') at time zone tz then round(100.0 * count(v.device) filter (where exists (select 1 from public.events e where e.device = v.device and e.at >= (g.day + interval '1 day') at time zone tz and e.at < (g.day + interval '2 days') at time zone tz)) / greatest(count(v.device), 1)) end as d1,
         case when now() > (g.day + interval '4 days') at time zone tz then round(100.0 * count(v.device) filter (where exists (select 1 from public.events e where e.device = v.device and e.at >= (g.day + interval '3 days') at time zone tz and e.at < (g.day + interval '4 days') at time zone tz)) / greatest(count(v.device), 1)) end as d3,
         case when now() > (g.day + interval '8 days') at time zone tz then round(100.0 * count(v.device) filter (where exists (select 1 from public.events e where e.device = v.device and e.at >= (g.day + interval '7 days') at time zone tz and e.at < (g.day + interval '8 days') at time zone tz)) / greatest(count(v.device), 1)) end as d7
-      from generate_series((now() at time zone tz)::date - 20, (now() at time zone tz)::date, interval '1 day') g(day)
+      from generate_series(((now() at time zone tz)::date - 20)::timestamp, (now() at time zone tz)::date::timestamp, interval '1 day') g(day)
       left join public.devices v on v.first_at >= g.day at time zone tz and v.first_at < (g.day + interval '1 day') at time zone tz
       group by g.day) c),
     'funnel', (select jsonb_build_object(

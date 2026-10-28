@@ -192,7 +192,7 @@ const heatInk = v => v != null && v >= 25 ? '#0b1024' : css('--ink');
 // ---------- the board ----------
 const SCENES = { planet: 'On a planet', hub: 'Space station', open: 'Opening crates', crates: 'Crate bay', map: 'Star map', arena: 'Arena / 1v1', range: 'Test range', results: 'Haul results', warp: 'Warping', title: 'Title screen' };
 const CRATES = { weapon: 'Weapon', armor: 'Armor', ship: 'Ship parts', mining: 'Mining tools', skin: 'Skins', cosmetic: 'Cosmetics', backdrop: 'Backdrops', gadget: 'Gadgets', pet: 'Pets', galaxy: 'Galaxy', haul: 'Free from hauls' };
-const crateName = k => CRATES[k] || (k.startsWith('class:') ? k.slice(6).replace(/^./, c => c.toUpperCase()) + ' crate' : k.startsWith('finisher:') ? 'Finisher crate' : k);
+const crateName = k => CRATES[k] || (k.startsWith('class:') ? k.slice(6).replace(/^./, c => c.toUpperCase()) + ' crate' : k.startsWith('finisher:') ? 'Finisher crate' : k.startsWith('boss:') ? 'Boss reward crates' : k);
 const PLANETS = ['DUSTMOOR', 'VERDANCE', 'GLACIS', 'PYRRHOS', 'SALTMERE', 'NIMBUS', 'OSSUARY', 'UMBRA', 'CORALIS', 'GRAVOS', 'FUNGARA', 'FERROX', 'AURORAE', 'MIRAGE', 'VOLTARA', 'CRYSTALLOS', 'ABYSSIA', 'CINDERFALL', 'CHRONOS', 'XENITH'];
 const pName = p => (PLANETS[p - 1] || 'PLANET ' + p);
 const tileH = (k, v, h, cls = '') => `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || '&nbsp;'}</div></div>`;
