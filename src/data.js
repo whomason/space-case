@@ -176,11 +176,13 @@ PLANETS.forEach((p, i) => { p.i = i + 1; });
 // uncommon by 3, rare by 6, epic by 8-10, legendary by 11-13, mythic by 14-16, then levelled mythic/cosmic parts.
 // (The old curve wanted legendary by 8 and mythic by 11, which took roughly 30 landings on one planet to reach.)
 // Raised ~30% (Oct 2026): planets were unlocking every one or two landings. You also have to beat the previous planet's boss.
-const PLANET_REQ_T = [0, 0, 850, 1000, 1150, 1300, 1450, 1600, 1800, 1950, 2100, 2350, 2550, 2700, 3000, 3200, 3400, 3550, 3750, 3950, 4150];
+const PLANET_REQ_T = [0, 0, 700, 1000, 1150, 1300, 1450, 1600, 1800, 1950, 2100, 2350, 2550, 2700, 3000, 3200, 3400, 3550, 3750, 3950, 4150];
 const PLANET_REQ = n => n <= 1 ? 0 : n < PLANET_REQ_T.length ? PLANET_REQ_T[n] : 4150 + 200 * (n - 20);
 const ORE_VALUE = tier => Math.round(5 * Math.pow(1.42, tier - 1));   // base scale (alien coins use it too)
 const ORE_PAY = 4;                                                     // ore sells for this many times the base
 const orePrice = tier => ORE_VALUE(tier) * ORE_PAY;
+// starter bonus: Dustmoor ore pays extra until you reach Verdance, so a new player's first crates come quickly. Aliens stay as tough.
+const starterOre = pi => pi === 1 && S.planet.reached < 2 ? 1.5 : 1;
 const LIQ_SOLID = { swamp: 1, ice: 1, lava: 1, brine: 1, cloud: 1, darkwater: 1, tide: 1, oil: 1, slime: 1, sludge: 1, water: 1, glass: 1, puddle: 1, light: 1, trench: 1, magma: 1, void: 1, starlight: 1 };
 
 const TRAIT_TXT = { 'HEAT': 'O2 DRAINS FASTER. SHIELDS REDUCE IT', 'LOW GRAVITY': 'YOU MOVE FASTER BUT SLIDE', 'DARKNESS': 'YOU ONLY SEE AS FAR AS YOUR HELMET LIGHT', 'HEAVY GRAVITY': 'YOU MOVE SLOWER', 'SPORE CLOUDS': 'SPORE CLOUDS SLOW YOU DOWN', 'LIGHTNING': 'LIGHTNING STRIKES NEAR YOU', 'METEORS': 'METEORS RAIN DOWN' };

@@ -331,7 +331,7 @@ function finishRun() {
   if (R.coop || COOP.live) coopReset();
   const lines = []; let total = 0;
   const keys = Object.keys(R.cargo).map(Number).sort((a, b) => planetDef(b).ore[1] - planetDef(a).ore[1]);
-  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]) * (R.boost && R.boost.ore ? 1.5 : 1); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
+  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]) * (R.boost && R.boost.ore ? 1.5 : 1) * starterOre(k); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
   const kc = Math.round(R.coins); total += kc;
   earn(total); passXP((R.lost ? 50 : 120) + R.cargoN * 2); firstTime('land'); track('land', { p: R.pi, ore: R.cargoN, k: R.kills, lost: R.lost ? 1 : 0, s: Math.round(R.t) }); S.stats.ore += R.cargoN; S.stats.maxHaul = Math.max(S.stats.maxHaul, R.cargoN); S.stats.bestCombo = Math.max(S.stats.bestCombo, R.bestCombo);
   const xp = Math.round(R.xp + R.cargoN * 2 + 10); const lvBefore = S.lvl; addXP(xp);
@@ -692,7 +692,7 @@ function drawRunHUD(R) {
   panel(W - 112, H - 30, 108, 26, { bg: 'rgba(5,6,15,0.82)', bd: R.cargoN >= L.cargo ? COL.gold : COL.steel });
   text('CARGO', W - 106, H - 26, COL.dim, FS); text(`${R.cargoN}/${L.cargo}`, W - 10, H - 26, R.cargoN >= L.cargo ? COL.gold : COL.ink, FS, 2);
   bar(W - 106, H - 18, 96, 4, R.cargoN / L.cargo, COL.gold, COL.void2);
-  let val = 0; for (const k in R.cargo) val += R.cargo[k] * orePrice(planetDef(+k).ore[1]); val = Math.round(val * L.oreMul + R.coins);
+  let val = 0; for (const k in R.cargo) val += R.cargo[k] * orePrice(planetDef(+k).ore[1]) * starterOre(+k); val = Math.round(val * L.oreMul + R.coins);
   drawCoinIcon(W - 106, H - 12); text(fmt(val), W - 96, H - 11, COL.gold, FS);
   const nCr = R.crates.length + R.choices; if (nCr) { miniCrate(W - 52, H - 14, R.haulTier); text('X' + nCr, W - 37, H - 11, COL.gold, FS); }
   drawEventHUD(R);

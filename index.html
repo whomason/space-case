@@ -755,11 +755,13 @@ PLANETS.forEach((p, i) => { p.i = i + 1; });
 // uncommon by 3, rare by 6, epic by 8-10, legendary by 11-13, mythic by 14-16, then levelled mythic/cosmic parts.
 // (The old curve wanted legendary by 8 and mythic by 11, which took roughly 30 landings on one planet to reach.)
 // Raised ~30% (Oct 2026): planets were unlocking every one or two landings. You also have to beat the previous planet's boss.
-const PLANET_REQ_T = [0, 0, 850, 1000, 1150, 1300, 1450, 1600, 1800, 1950, 2100, 2350, 2550, 2700, 3000, 3200, 3400, 3550, 3750, 3950, 4150];
+const PLANET_REQ_T = [0, 0, 700, 1000, 1150, 1300, 1450, 1600, 1800, 1950, 2100, 2350, 2550, 2700, 3000, 3200, 3400, 3550, 3750, 3950, 4150];
 const PLANET_REQ = n => n <= 1 ? 0 : n < PLANET_REQ_T.length ? PLANET_REQ_T[n] : 4150 + 200 * (n - 20);
 const ORE_VALUE = tier => Math.round(5 * Math.pow(1.42, tier - 1));   // base scale (alien coins use it too)
 const ORE_PAY = 4;                                                     // ore sells for this many times the base
 const orePrice = tier => ORE_VALUE(tier) * ORE_PAY;
+// starter bonus: Dustmoor ore pays extra until you reach Verdance, so a new player's first crates come quickly. Aliens stay as tough.
+const starterOre = pi => pi === 1 && S.planet.reached < 2 ? 1.5 : 1;
 const LIQ_SOLID = { swamp: 1, ice: 1, lava: 1, brine: 1, cloud: 1, darkwater: 1, tide: 1, oil: 1, slime: 1, sludge: 1, water: 1, glass: 1, puddle: 1, light: 1, trench: 1, magma: 1, void: 1, starlight: 1 };
 
 const TRAIT_TXT = { 'HEAT': 'O2 DRAINS FASTER. SHIELDS REDUCE IT', 'LOW GRAVITY': 'YOU MOVE FASTER BUT SLIDE', 'DARKNESS': 'YOU ONLY SEE AS FAR AS YOUR HELMET LIGHT', 'HEAVY GRAVITY': 'YOU MOVE SLOWER', 'SPORE CLOUDS': 'SPORE CLOUDS SLOW YOU DOWN', 'LIGHTNING': 'LIGHTNING STRIKES NEAR YOU', 'METEORS': 'METEORS RAIN DOWN' };
@@ -5751,7 +5753,7 @@ function finishRun() {
   if (R.coop || COOP.live) coopReset();
   const lines = []; let total = 0;
   const keys = Object.keys(R.cargo).map(Number).sort((a, b) => planetDef(b).ore[1] - planetDef(a).ore[1]);
-  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]) * (R.boost && R.boost.ore ? 1.5 : 1); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
+  for (const k of keys) { const n = R.cargo[k]; if (!n) continue; const v = orePrice(planetDef(k).ore[1]) * (R.boost && R.boost.ore ? 1.5 : 1) * starterOre(k); const t = Math.round(n * v * L.oreMul); lines.push({ pi: k, n, v, t }); total += t; }
   const kc = Math.round(R.coins); total += kc;
   earn(total); passXP((R.lost ? 50 : 120) + R.cargoN * 2); firstTime('land'); track('land', { p: R.pi, ore: R.cargoN, k: R.kills, lost: R.lost ? 1 : 0, s: Math.round(R.t) }); S.stats.ore += R.cargoN; S.stats.maxHaul = Math.max(S.stats.maxHaul, R.cargoN); S.stats.bestCombo = Math.max(S.stats.bestCombo, R.bestCombo);
   const xp = Math.round(R.xp + R.cargoN * 2 + 10); const lvBefore = S.lvl; addXP(xp);
@@ -6112,7 +6114,7 @@ function drawRunHUD(R) {
   panel(W - 112, H - 30, 108, 26, { bg: 'rgba(5,6,15,0.82)', bd: R.cargoN >= L.cargo ? COL.gold : COL.steel });
   text('CARGO', W - 106, H - 26, COL.dim, FS); text(`${R.cargoN}/${L.cargo}`, W - 10, H - 26, R.cargoN >= L.cargo ? COL.gold : COL.ink, FS, 2);
   bar(W - 106, H - 18, 96, 4, R.cargoN / L.cargo, COL.gold, COL.void2);
-  let val = 0; for (const k in R.cargo) val += R.cargo[k] * orePrice(planetDef(+k).ore[1]); val = Math.round(val * L.oreMul + R.coins);
+  let val = 0; for (const k in R.cargo) val += R.cargo[k] * orePrice(planetDef(+k).ore[1]) * starterOre(+k); val = Math.round(val * L.oreMul + R.coins);
   drawCoinIcon(W - 106, H - 12); text(fmt(val), W - 96, H - 11, COL.gold, FS);
   const nCr = R.crates.length + R.choices; if (nCr) { miniCrate(W - 52, H - 14, R.haulTier); text('X' + nCr, W - 37, H - 11, COL.gold, FS); }
   drawEventHUD(R);
@@ -8261,7 +8263,7 @@ function drawMap(dt) {
   textO(`${n}. ${p.name}`, 78, 197, COL.ink, '#000', FB); if (n <= 20) text('SIGNATURE: ' + sigOf(n).n, 78, 207, COL.magenta, FS); else text(p.look, 78, 207, COL.dim, FS);
   if (n <= 20) drawRelicStrip(n);
   text(p.trait ? `HAZARD: ${p.trait}. ${TRAIT_TXT[p.trait]}` : 'NO HAZARDS', 78, 215, p.trait ? COL.orange : COL.mute, FS);
-  oreIcon(n, 78, 221); text(`${p.ore[0]}  TIER ${p.ore[1]} ORE  ${orePrice(p.ore[1])} COINS EACH`, 94, 226, COL.ink, FS);
+  oreIcon(n, 78, 221); text(`${p.ore[0]}  TIER ${p.ore[1]} ORE  ${Math.round(orePrice(p.ore[1]) * starterOre(n))} COINS EACH${starterOre(n) > 1 ? '  (STARTER BONUS)' : ''}`, 94, 226, starterOre(n) > 1 ? COL.gold : COL.ink, FS);
   text(`BOSS: ${p.boss[0]}${S.planet.bosses[n] ? (S.planet.bossCd[n] > 0 ? ` (BACK IN ${S.planet.bossCd[n]} LANDINGS)` : ' (READY AGAIN)') : ' (DROPS 3 CRATES)'}`, 78, 236, S.planet.bosses[n] ? COL.mint : COL.coral, FS);
   text(`ALIENS: ${p.alien[0]}S  THREAT ${'!'.repeat(Math.min(10, Math.ceil(n / 2)))}`, 78, 244, COL.dim, FS);
   const evk = S.tutorial.planet && S.planet.landings > 0 ? S.planet.ev[n] : null; if (evk) { const E = EVENTS[evk]; text(`EVENT: ${E.n} (${E.tag})  +${E.rw} CRATE${E.rw > 1 ? 'S' : ''}`, 78, 252, E.c, FS); text(E.txt, 78, 259, COL.dim, FS); }
