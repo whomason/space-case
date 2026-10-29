@@ -78,6 +78,7 @@ function drawTitle(dt) {
   const go = IN.pr || kp('Enter') || kp('Space');   // one click starts the game, even during the intro
   const skip = t < TT_INTRO && (go || kp('Escape'));
   if (skip) { TT.t = TT_INTRO; IN.pr = false; for (let i = 0; i < LOGO_N; i++) TT['landed' + i] = true; }
+  if (TT.leave < 0 && go && (skip || t >= TT_INTRO)) { firstTime('start'); SND.unlock(); SND.setMute(S.settings.mute); SND.setMusic(S.settings.music); SND.play('warp'); TT.leave = 0; }
   // ---- 1. hyperspace
   if (t < 1.15) {
     rect(0, 0, W, H, '#020109'); const sp = Math.min(1, t / 0.9);
@@ -147,7 +148,6 @@ function drawTitle(dt) {
     if (TT.leave > 0.5) { TT.leave = -1; TT.ready = false; flash(0.8); goHub(); }
     return;
   }
-  if (TT.leave < 0 && (skip ? go : t >= TT_INTRO && go)) { firstTime('start'); SND.unlock(); SND.setMute(S.settings.mute); SND.setMusic(S.settings.music); SND.play('warp'); TT.leave = 0; }
 }
 function ttLogo(t) {
   const xs = ttLogoPos(), letters = TT.word1.concat(TT.word2), base = 22;

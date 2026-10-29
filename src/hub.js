@@ -157,8 +157,7 @@ function drawHub(dt) {
   if (flashing) { ctx.globalAlpha = 0.1 * Math.min(1, HUB.flashT) * (0.5 + 0.5 * Math.sin(T_NOW * 12)); rect(0, 0, W, H, fc); ctx.globalAlpha = 1; }
   if (LT !== null) { if (LT > 1.2) { ctx.globalAlpha = Math.min(1, (LT - 1.2) / 0.25); rect(0, 0, W, H, '#fafaff'); ctx.globalAlpha = 1; } textO(LT < 0.4 ? 'BOARDING' : LT < 0.75 ? 'ENGINES HOT' : 'LAUNCH!', W / 2 - 40, 34, COL.gold, '#000', FB, 1, 2); return; }
   if (!HUB.panel) drawHubTop();
-  if (!S.name && !S.nameAsked && !NAMEUI.open && !HUB.panel && !HUB.choice) { S.name = randomName(); S.nameAsked = true; dirty(); HUB.autoName = T_NOW; }
-  if (HUB.autoName && !COACH.on && T_NOW - HUB.autoName > 0.5) { toast(`YOU ARE ${S.name}. RENAME ANY TIME IN YOUR PROFILE`, COL.gold); HUB.autoName = 0; }
+  if (!S.name && !S.nameAsked && !NAMEUI.open && !HUB.panel && !HUB.choice && T_NOW > 0.4) openNameUI(true);
   if (!HUB.panel && !HUB.choice) { drawNav(); drawNextUp(); }
   else { ctx.globalAlpha = 0.35; drawNav(true); ctx.globalAlpha = 1; }
   if (HUB.panel) drawPanel();

@@ -61,9 +61,13 @@ async def main():
         await cX.close()
         # ---- B: brand new player picks a callsign on the prompt, then signs up
         B, eB = await boot(cB, None, 'B'); await B.wait_for_timeout(700)
-        ok('B gets a random callsign instead of a form in the way', not await B.evaluate('NAMEUI.open') and len(await B.evaluate('S.name')) >= 3, await B.evaluate('[NAMEUI.open, S.name]'))
-        await B.evaluate("openNameUI(false); nameEl().value = ''"); await B.wait_for_timeout(200)
-        await B.keyboard.type('kai 7'); await B.keyboard.press('Enter'); await B.wait_for_timeout(300)
+        ok('B gets callsign prompt', await B.evaluate('NAMEUI.open'))
+        await B.mouse.click(300, 470); await B.wait_for_timeout(150)          # a stray click on the dark overlay must not steal the cursor
+        await B.keyboard.press('Enter'); await B.wait_for_timeout(150)
+        ok('an empty name gets a clear hint', await B.evaluate("NAMEUI.err") == 'TYPE A NAME, OR HIT RANDOM', await B.evaluate("NAMEUI.err"))
+        await B.keyboard.type('kai-'); await B.keyboard.press('Enter'); await B.wait_for_timeout(150)
+        ok('names the server would refuse are caught here', 'START AND END' in await B.evaluate("NAMEUI.err"), await B.evaluate("NAMEUI.err"))
+        await B.keyboard.press('Backspace'); await B.keyboard.type(' 7'); await B.keyboard.press('Enter'); await B.wait_for_timeout(300)
         ok('B local callsign', await B.evaluate("S.name") == 'KAI 7')
         await B.evaluate("netSignIn('kai@example.com', 'secret2', true)")
         ok('B online with callsign', await wait_for(B, "NET.st === 'on' && NET.callsign === 'KAI 7'"), await B.evaluate('[NET.st, NET.callsign, NET.err]'))

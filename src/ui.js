@@ -99,7 +99,8 @@ const NAME_B = ['OTTER', 'FOX', 'WOLF', 'PILOT', 'RAVEN', 'TIGER', 'MOTH', 'VIPE
 const nameEl = () => document.getElementById('nameIn');
 function cleanName(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9 \-]/g, '').replace(/\s+/g, ' ').replace(/^ /, '').slice(0, 12); }
 function nameProblem(s) {
-  const t = s.trim(); if (t.length < 3) return 'USE AT LEAST 3 LETTERS OR NUMBERS';
+  const t = s.trim(); if (!t) return 'TYPE A NAME, OR HIT RANDOM'; if (t.length < 3) return 'USE AT LEAST 3 LETTERS OR NUMBERS';
+  if (!/^[A-Z0-9][A-Z0-9 -]*[A-Z0-9]$/.test(t)) return 'START AND END WITH A LETTER OR NUMBER';   // same rule as the server
   const flat = t.replace(/[^A-Z0-9]/g, '').replace(/0/g, 'O').replace(/1/g, 'I').replace(/3/g, 'E').replace(/4/g, 'A').replace(/5/g, 'S').replace(/7/g, 'T');
   if (NAME_BAD.some(b => flat.includes(b))) return 'PICK A FRIENDLIER CALLSIGN';
   return '';
@@ -146,12 +147,12 @@ function drawNameUI(dt) {
   if (v) textO(v, W / 2, fy + 5, COL.ink, '#000', FB, 1, 2); else text(focused ? 'TYPE A NAME' : 'CLICK HERE TO TYPE', W / 2, fy + 9, COL.mute, FS, 1);
   if (focused && Math.floor(NAMEUI.t * 2.5) % 2 === 0) rect(W / 2 + (v ? textW(v, FB, 2) / 2 + 2 : 26), fy + 4, 2, 16, COL.cyan);
   if (inBox(fx, fy, fw, fh)) IN.cursor = 'text';
-  if (IN.pr && inBox(bx, by, bw, bh - 26) && document.activeElement !== el) { try { el.focus({ preventScroll: true }); } catch (e) { } }
+  if (document.activeElement !== el && NAMEUI.t > 0.05) { try { el.focus({ preventScroll: true }); } catch (e) { } }
   text(`${v.length}/12  LETTERS, NUMBERS, SPACES AND -`, W / 2, fy + fh + 4, COL.mute, FS, 1);
   if (NAMEUI.err) text(NAMEUI.err, W / 2, fy + fh + 13, COL.coral, FS, 1);
   if (v && NAMEUI.err && !nameProblem(v)) NAMEUI.err = '';
   const yb = by + bh - 24;
-  if (button(bx + 12, yb, 60, 16, NAMEUI.first ? 'LATER' : 'CANCEL', { font: FS }) || kp('Escape')) { if (NAMEUI.first) { S.nameAsked = true; dirty(); toast('YOU CAN SET A CALLSIGN IN TROPHIES ANY TIME', COL.dim); } closeNameUI(); SND.play('click'); return; }
+  if (button(bx + 12, yb, 60, 16, NAMEUI.first ? 'LATER' : 'CANCEL', { font: FS }) || kp('Escape')) { if (NAMEUI.first) { S.nameAsked = true; dirty(); toast('YOU CAN SET A CALLSIGN IN YOUR PROFILE ANY TIME', COL.dim); } closeNameUI(); SND.play('click'); return; }
   if (button(bx + 78, yb, 72, 16, 'RANDOM', { font: FS, kind: 'blue', tip: 'ROLL A RANDOM CALLSIGN' })) { el.value = randomName(); NAMEUI.err = ''; SND.play('tick'); }
   if (NAMEUI.busy) text('SAVING...', W / 2, yb - 9, COL.dim, FS, 1);
   if (button(bx + bw - 92, yb, 80, 16, 'SAVE', { kind: 'primary', disabled: NAMEUI.busy }) || ((kp('Enter') || kp('NumpadEnter')) && !NAMEUI.busy)) saveName();
