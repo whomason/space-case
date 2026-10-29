@@ -212,7 +212,7 @@ function drawNav(dimmed) {
     drawIcon(n.icon, x + 6 + off, y + 5, sel ? COL.pink : COL.blueL);
     text(n.n, x + 22 + off, y + 4, sel ? COL.ink : COL.cream, FB, 0, 2);
     const b = navBadge(n.id);
-    if (b) { const bw = textW(b.t, FS) + 6; if (b.quiet) text(b.t, x + w - 5, y + 8, b.c, FS, 2); else { if (b.pulse) { ctx.globalAlpha = 0.3 + 0.25 * Math.sin(T_NOW * 6); rect(x + w - bw - 5, y + 3, bw + 4, 14, b.c); ctx.globalAlpha = 1; } panel(x + w - bw - 3, y + 5, bw, 10, { bg: b.c, bd: b.pulse ? '#fff' : b.c, flat: true }); text(b.t, x + w - bw / 2 - 3, y + 7, COL.navy, FS, 1); } }
+    if (b) { const bw = textW(b.t, FS) + 6, nx = Math.max(x + w - bw - 3, x + 22 + off + textW(n.n, FB, 2) + 5); if (b.quiet) text(b.t, x + w - 5, y + 8, b.c, FS, 2); else { if (b.pulse) { ctx.globalAlpha = 0.3 + 0.25 * Math.sin(T_NOW * 6); rect(nx - 2, y + 3, bw + 4, 14, b.c); ctx.globalAlpha = 1; } panel(nx, y + 5, bw, 10, { bg: b.c, bd: b.pulse ? '#fff' : b.c, flat: true }); text(b.t, nx + bw / 2, y + 7, COL.navy, FS, 1); } }
     if (hov) { IN.cursor = 'pointer'; if (clickIn(x, y, w, rh)) openStation(n.id); }
   }
   if (!dimmed) { const s = VN[HUB.sel].sub; wrap(s, w, FS).forEach((l, k) => text(l, x + 2, ry0 + (VN.length - 1) * (rh + 2) + 2 + k * 7, COL.dim, FS)); }
@@ -297,7 +297,7 @@ const SLOT_LABEL = { weapon: 'WEAPON', weapon2: '2ND WPN', tool: 'TOOL', helmet:
 function equipSlotGrid(st, x, y, w, h) {
   const slot = st.slot; const ids = ownedFor(slot); const optional = !SLOTS_GEAR.includes(slot) && !SLOTS_SHIP.includes(slot);
   const list = optional ? [null].concat(ids) : ids;
-  text(`${SLOT_LABEL[slot]}: ${ids.length} OWNED`, x, y - 10, COL.ink, FS);
+  { const lb = `${SLOT_LABEL[slot]}: ${ids.length} OWNED`, sh = `${ids.length} OWNED`; const t = textW(lb, FS) <= w - 124 ? lb : textW(sh, FS) <= w - 124 ? sh : ''; if (t) text(t, x, y - 10, COL.ink, FS); }
   if (S.stats.equips === 0 && slot === 'weapon' && !st.sell && !st.fuse) { const k = Math.floor(T_NOW * 3) % 2; textO('CLICK YOUR NEW WEAPON TO EQUIP IT', x + w / 2, y + 60, k ? COL.gold : '#fff6c2', '#000', FB, 1); const ay = y + 28 + Math.round(Math.sin(T_NOW * 6) * 2); ctx.fillStyle = COL.pink; ctx.beginPath(); ctx.moveTo(x + 18, ay + 8); ctx.lineTo(x + 24, ay + 16); ctx.lineTo(x + 30, ay + 8); ctx.fill(); }
   const big = slot === 'weapon' || slot === 'skin_weapon';
   // sell mode
@@ -317,8 +317,8 @@ function equipSlotGrid(st, x, y, w, h) {
       if (button(x + w - 144, by + 4, 88, 14, `SELL ${st.pick.length}`, { kind: 'primary', font: FS })) { let t = 0; const n = st.pick.length; for (const id of st.pick) t += sellItem(id); st.pick = []; SND.play('coin'); if (n > 1) SND.play('win'); toast(`SOLD ${n} ITEM${n > 1 ? 'S' : ''} FOR ${fmt(t)} COINS`, COL.gold); }
       if (button(x + w - 52, by + 4, 46, 14, 'CLEAR', { font: FS })) st.pick = [];
     } else {
-      text('CLICK ITEMS TO PICK THEM. EQUIPPED GEAR IS SAFE', x + 6, by + 8, COL.dim, FS);
       const junk = ids.filter(id => !isEquipped(id) && getDef(id).r <= 1);
+      text(junk.length ? 'CLICK ITEMS TO PICK THEM' : 'CLICK ITEMS TO PICK THEM. EQUIPPED GEAR IS SAFE', x + 6, by + 8, COL.dim, FS);
       if (junk.length && button(x + w - 128, by + 4, 122, 14, `PICK ${junk.length} COMMON+UNC`, { kind: 'cream', font: FS })) { st.pick = junk.slice(); SND.play('click'); }
     }
     if (c && c !== 'NONE') { if (isEquipped(c)) { SND.play('deny'); toast('THAT ONE IS EQUIPPED. SWAP IT OUT FIRST', COL.coral); } else if (isPremiumId(c)) { SND.play('deny'); toast('STORE AND REWARD ITEMS ARE YOURS TO KEEP. THEY CANNOT BE SOLD', COL.coral); } else { const i = st.pick.indexOf(c); if (i >= 0) st.pick.splice(i, 1); else st.pick.push(c); SND.play('click'); } }
@@ -327,7 +327,7 @@ function equipSlotGrid(st, x, y, w, h) {
   if (mode === 'fuse') {
     const by = y + h - 22; panel(x, by, w, 22, { bg: '#16102a', bd: COL.cyan });
     const r = st.pick.length ? getDef(st.pick[0]).r : -1;
-    if (!st.pick.length) text('PICK 5 OF THE SAME RARITY (10 MYTHICS FOR A COSMIC). THEY BECOME 1 ITEM ONE RARITY UP', x + 6, by + 8, COL.dim, FS);
+    if (!st.pick.length) text('PICK 5 OF ONE RARITY. THEY FUSE INTO 1 ITEM A RARITY UP', x + 6, by + 8, COL.dim, FS);
     else {
       text(`${st.pick.length}/${fuseNeed(r)} ${RAR[r].n}`, x + 6, by + 4, rcol(r) === 'RAINBOW' ? rainbow(T_NOW) : rcol(r), FS);
       text(`BECOMES 1 ${RAR[Math.min(6, r + 1)].n}`, x + 6, by + 12, COL.mute, FS);
@@ -592,7 +592,8 @@ function panelProfile(st) {
     TITLES.forEach((t, i) => {
       const bx = x + (i % 2) * (cw + 4), by = ty + 8 + Math.floor(i / 2) * 20; const e = S.titles.earned[t.id], eqd = S.titles.eq === t.id; const hov = inBox(bx, by, cw, 18);
       panel(bx, by, cw, 18, { bg: eqd ? '#3a3010' : hov && e ? COL.void2 : COL.void1, bd: eqd ? COL.gold : e ? COL.line : COL.void3, flat: true });
-      text(e ? t.n : '???', bx + 4, by + 3, e ? (eqd ? COL.gold : COL.ink) : COL.mute, FS); let rq = t.req; while (textW(rq, FS) > cw - 6) rq = rq.slice(0, -1); text(rq, bx + 4, by + 10, COL.mute, FS);
+      if (e) { text(t.n, bx + 4, by + 3, eqd ? COL.gold : COL.ink, FS); let rq = t.req; while (textW(rq, FS) > cw - 6) rq = rq.slice(0, -1); text(rq, bx + 4, by + 10, COL.mute, FS); }
+      else wrap(t.req, cw - 8, FS).slice(0, 2).forEach((l, k) => text(l, bx + 4, by + 3 + k * 7, COL.mute, FS));
       if (hov) TIP.set(e ? (eqd ? 'CLICK TO TAKE IT OFF' : 'CLICK TO WEAR THIS TITLE') : t.req);
       if (hov && e && clickIn(bx, by, cw, 18)) { S.titles.eq = eqd ? null : t.id; SND.play('click'); dirty(); }
     });
@@ -756,7 +757,7 @@ function dreamsTab(st) {
     const tracked = S.track && S.track.k === 'dream' && S.track.dk === k;
     panel(bx + 2, by, cw - 4, chh, { bg: hov ? COL.void3 : COL.void0, bd: tracked ? COL.pink : own ? rcol(d.r) : COL.steel, flat: true });
     drawItemIn(id, bx + 4, by + 3, cw - 8, 24, { sil: !own, maxSc: 2 });
-    const nl = wrap(D.n, cw - 10, FS).slice(0, 2); nl.forEach((l, i) => text(l, bx + cw / 2, by + 30 + i * 7, own ? COL.ink : COL.cream, FS, 1));
+    const nl = wrap(D.n, cw - 10, FS).slice(0, 2); nl.forEach((l, i) => text(l, bx + cw / 2, by + (nl.length > 1 ? 28 : 30) + i * 7, own ? COL.ink : COL.cream, FS, 1));
     text(RAR[D.r].n, bx + cw / 2, by + 46, D.r === 6 ? 'RAINBOW' : RAR[D.r].c, FS, 1);
     text(own ? 'FOUND!' : tracked ? 'TRACKING' : CLS[D.cls].n, bx + cw / 2, by + 55, own ? COL.mint : tracked ? COL.pink : COL.mute, FS, 1);
     if (hov) { IN.cursor = 'pointer'; TIP.set(own ? { item: id } : `${D.n}: ${D.txt}. FIND IT IN WEAPON OR GALAXY CRATES`); if (clickIn(bx + 2, by, cw - 4, chh) && !own) setTrack({ k: 'dream', dk: k, n: D.n }); }
@@ -764,7 +765,7 @@ function dreamsTab(st) {
   text(`${DREAMS.filter((D, k) => owned('u|' + k)).length}/${DREAMS.length} FOUND. DREAM WEAPONS ROLL MORE OFTEN THAN NORMAL ITEMS OF THEIR RARITY`, W / 2, H - 14, COL.mute, FS, 1);
 }
 function reactionsTab(st) {
-  text('HIT AN ALIEN WITH ONE ELEMENT WHILE IT SUFFERS FROM ANOTHER. TWO WEAPON SLOTS MAKE THIS EASY', W / 2, 30, COL.dim, FS, 1);
+  text('HIT AN ALIEN WITH ONE ELEMENT WHILE IT SUFFERS FROM ANOTHER. MIX YOUR WEAPON, GADGET AND PET', W / 2, 30, COL.dim, FS, 1);
   const found = REACT_KEYS.filter(k => S.reactions[k]).length;
   REACT_KEYS.forEach((k, i) => {
     const R = REACTIONS[k], has = S.reactions[k]; const bx = 14 + (i % 2) * 228, by = 40 + Math.floor(i / 2) * 32;

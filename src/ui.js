@@ -85,7 +85,9 @@ function slotBox(x, y, w, h, id, label, sel, o = {}) {
   const hov = inBox(x, y, w, h);
   panel(x, y, w, h, { bg: sel ? COL.void3 : COL.void0, bd: sel ? COL.cyan : hov ? COL.ink : id ? (RAR[getDef(id).r].c === 'RAINBOW' ? rainbow(T_NOW) : RAR[getDef(id).r].c) : COL.void3, flat: true });
   if (id) drawItemIn(id, x + 1, y + 1, w - 2, h - 9, { maxSc: 1, skin: o.skin });
-  text(label, x + w / 2, y + h - 7, sel ? COL.cyan : COL.mute, FS, 1);
+  const lb = textW(label, FS) > w - 2 ? label.split(' ').slice(-1)[0] : label;
+  if (id) { ctx.globalAlpha = 0.72; rect(x + 1, y + h - 8, w - 2, 7, '#05060f'); ctx.globalAlpha = 1; }
+  text(lb, x + w / 2, y + h - 7, sel ? COL.cyan : COL.mute, FS, 1);
   if (o.fresh) { const bl = Math.floor(T_NOW * 3) % 2; panel(x + w - 17, y - 3, 19, 8, { bg: COL.pink, bd: bl ? '#fff' : COL.pink, flat: true }); text('NEW', x + w - 15, y - 1, COL.navy, FS); }
   if (hov) { IN.cursor = 'pointer'; if (id) TIP.set({ item: id }); else TIP.set(label + ': EMPTY' + (o.fresh ? '. NEW GEAR INSIDE' : '')); }
   return clickIn(x, y, w, h);

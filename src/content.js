@@ -106,16 +106,16 @@ const ELITE_NAMES = ['GOREJAW', 'THE WARDEN', 'BONEPLATE', 'OLD SCRATCH', 'IRONH
 
 // ---------- daily contracts: a purpose for every session ----------
 const CONTRACT_TPL = [
-  { k: 'staggers', t: n => `STAGGER ${n} ALIENS MID WIND-UP`, n: [4, 8], why: 'HIT ALIENS WHILE A ! FLASHES OVER THEM' },
+  { k: 'staggers', t: n => `STAGGER ${n} WINDING-UP ALIENS`, n: [4, 8], why: 'HIT ALIENS WHILE A ! FLASHES OVER THEM' },
   { k: 'perfects', t: n => `PULL OFF ${n} PERFECT DODGES`, n: [4, 8], why: 'BOOST THROUGH AN ATTACK RIGHT AS IT LANDS' },
   { k: 'reactions', t: n => `TRIGGER ${n} ELEMENT REACTIONS`, n: [3, 6], why: 'MIX TWO ELEMENTS ON ONE ALIEN' },
   { k: 'weakhits', t: n => `LAND ${n} WEAK POINT HITS`, n: [20, 40], why: 'SHOOT ALIENS IN THE BACK' },
   { k: 'events', t: n => `COMPLETE ${n} PLANET EVENT${n > 1 ? 'S' : ''}`, n: [1, 2], why: 'CHECK THE STAR MAP FOR EVENTS' },
   { k: 'caches', t: n => `DIG UP ${n} BURIED CACHE${n > 1 ? 'S' : ''}`, n: [1, 2], why: 'FOLLOW THE SIGNAL METER' },
-  { k: 'podkills', t: n => `TAKE OUT ${n} ALIENS WITH EXPLOSIVE PODS`, n: [6, 12], why: 'SHOOT THE GLOWING PODS' },
+  { k: 'podkills', t: n => `${n} KILLS WITH EXPLOSIVE PODS`, n: [6, 12], why: 'SHOOT THE GLOWING PODS' },
   { k: 'kills2', t: n => `USE YOUR GADGET ${n} TIMES`, n: [6, 12], why: 'PRESS F OR 2 ON A PLANET' },
   { k: 'parries', t: n => `PARRY ${n} SHOTS WITH A BLADE`, n: [4, 8], why: 'SWING A BLADE INTO ENEMY SHOTS' },
-  { k: 'cls', t: (n, c) => `DEFEAT ${n} ALIENS WITH A ${CLS[c].n}`, n: [30, 50], why: 'DUST OFF AN OLD WEAPON' },
+  { k: 'cls', t: (n, c) => `${n} KILLS WITH A ${CLS[c].n}`, n: [30, 50], why: 'DUST OFF AN OLD WEAPON' },
   { k: 'carriers', t: n => `TAKE DOWN ${n} CRATE CARRIERS`, n: [2, 3], why: 'THEY SHOW UP EVERY MINUTE OR SO' },
   { k: 'elites', t: () => 'BEAT AN ELITE', n: [1, 1], why: 'FIND AN ELITE HUNT ON THE STAR MAP' },
 ];

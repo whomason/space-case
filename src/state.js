@@ -248,13 +248,17 @@ const TOASTS = [];
 function toast(txt, col = COL.ink) { TOASTS.push({ txt, col, t: 0 }); if (TOASTS.length > 4) TOASTS.shift(); }
 function drawToasts(dt) {
   if ((typeof HUB !== 'undefined' && HUB.choice && SCENE === 'hub') || (typeof RUN !== 'undefined' && RUN && RUN.choice && SCENE === 'planet')) return;
-  let y = H - 50;
-  for (let i = TOASTS.length - 1; i >= 0; i--) {
-    const t = TOASTS[i]; t.t += dt;
+  // where they go: low on a planet (the top is HUD), in open space on the station and the haul screen, else under the top bar
+  const onPlanet = SCENE === 'planet' && typeof RUN !== 'undefined' && RUN && RUN.state !== 'results';
+  const mid = SCENE === 'results' || (SCENE === 'planet' && !onPlanet) || (SCENE === 'hub' && !HUB.panel);   // screens with open space in the middle
+  const down = !onPlanet; let y = mid ? 150 : onPlanet ? H - 50 : 27; const cx = SCENE === 'hub' && !HUB.panel ? 326 : W / 2;   // on the station, right of the menu
+  const shown = TOASTS.slice(0, 2);   // oldest two first; later ones queue up behind them
+  for (let i = down ? 0 : shown.length - 1; down ? i < shown.length : i >= 0; i += down ? 1 : -1) {
+    const t = shown[i]; t.t += dt;
     const a = t.t < 0.2 ? t.t / 0.2 : t.t > 3.2 ? Math.max(0, (3.6 - t.t) / 0.4) : 1;
-    const w = textW(t.txt) + 14, x = W / 2 - w / 2 + (1 - Math.min(1, t.t / 0.2)) * 20;
-    ctx.globalAlpha = a; panel(x, y, w, 13, { bg: COL.void0, bd: t.col }); text(t.txt, W / 2, y + 3, t.col, FB, 1); ctx.globalAlpha = 1;
-    y -= 16;
+    const w = textW(t.txt) + 14, cxx = clamp(cx, w / 2 + 4, W - w / 2 - 4), x = cxx - w / 2 + (1 - Math.min(1, t.t / 0.2)) * 20;
+    ctx.globalAlpha = a; panel(x, y, w, 13, { bg: COL.void0, bd: t.col }); text(t.txt, x + w / 2, y + 3, t.col, FB, 1); ctx.globalAlpha = 1;
+    y += down ? 16 : -16;
   }
   for (let i = TOASTS.length - 1; i >= 0; i--) if (TOASTS[i].t > 3.6) TOASTS.splice(i, 1);
 }

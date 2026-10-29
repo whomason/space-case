@@ -665,7 +665,7 @@ function drawRunHUD(R) {
   const o2k = R.o2 / R.o2max, low = o2k < 0.25 && Math.floor(T_NOW * 4) % 2;
   text('O2', 9, 21, low ? COL.coral : COL.cyan, FS); bar(22, 20, 80, 7, o2k, low ? '#ff4f6d' : '#4ee8ff', '#06202a', '#bff6ff'); text(Math.ceil(R.o2) + 'S', 62, 21, '#fff', FS, 1);
   // current goal
-  if (S.goal && !R.tut) { const G = goalInfo(); const done = S.goal.done; let t = done ? 'GOAL DONE! CLAIM IT AT THE STATION' : `GOAL: ${G.t}${G.need > 1 ? ` ${fmt(Math.min(G.cur, G.need))}/${fmt(G.need)}` : ''}`; while (textW(t, FS) > 200 && t.length > 8) t = t.slice(0, -1);
+  if (S.goal && !R.tut && !R.w.boss) { const G = goalInfo(); const done = S.goal.done; let t = done ? 'GOAL DONE! CLAIM IT AT THE STATION' : `GOAL: ${G.t}${G.need > 1 ? ` ${fmt(Math.min(G.cur, G.need))}/${fmt(G.need)}` : ''}`; while (textW(t, FS) > 200 && t.length > 8) t = t.slice(0, -1);
     const gw = textW(t, FS) + 8; ctx.globalAlpha = 0.9; panel(4, 37, gw, 11, { bg: 'rgba(5,6,15,0.82)', bd: done ? COL.gold : COL.steel }); ctx.globalAlpha = 1; text(t, 8, 40, done ? (Math.floor(T_NOW * 3) % 2 ? COL.gold : '#fff') : COL.pink, FS); }
   // combo
   if (w.combo > 0 && w.comboT > 0) { const m = Math.min(10, 1 + Math.floor(w.combo / 3)); const sc = m >= 5 ? 2 : 1; const t = `X${m} COMBO`; textO(t, W / 2, 6, m >= 8 ? 'RAINBOW' : m >= 5 ? COL.gold : COL.ink, '#000', FB, 1, sc); bar(W / 2 - 30, 8 + 7 * sc, 60, 2, w.comboT / w.comboMax, COL.gold); text(`${w.combo} KILLS`, W / 2, 13 + 7 * sc, COL.dim, FS, 1); }
@@ -704,7 +704,7 @@ function drawRunHUD(R) {
   const nCr = R.crates.length + R.choices; if (nCr) { miniCrate(W - 52, H - 14, R.haulTier); text('X' + nCr, W - 37, H - 11, COL.gold, FS); }
   drawEventHUD(R);
   // banner
-  if (R.msgT > 0 && R.msg && !R.tut) { const a = Math.min(1, R.msgT); ctx.globalAlpha = a; const lines = wrap(R.msg, 320); lines.forEach((l, i) => textO(l, W / 2, (R.tut ? 82 : 92) + i * 10, R.msgC, '#000', FB, 1)); ctx.globalAlpha = 1; }
+  if (R.msgT > 0 && R.msg && !R.tut) { const a = Math.min(1, R.msgT); ctx.globalAlpha = a; const lines = wrap(R.msg, 196); lines.forEach((l, i) => textO(l, W / 2 - 14, 60 + i * 10, R.msgC, '#000', FB, 1)); ctx.globalAlpha = 1; }
   if (R.state === 'land' && R.st < 1.4) { ctx.globalAlpha = Math.max(0, 1 - R.st / 1.4); rect(0, 0, W, H, '#fff'); ctx.globalAlpha = 1; }
   if (R.state === 'leave') { ctx.globalAlpha = Math.min(1, R.st / 2.2); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1; }
   if (IN.touch) {

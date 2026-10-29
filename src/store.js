@@ -294,7 +294,7 @@ function panelStore(st) {
   if (button(W - 66, 8, 58, 16, 'CLOSE', { font: FS, kind: 'cream', tip: 'OR PRESS ESC' }) || (kp('Escape') && !STORE.confirm)) { HUB.panel = null; SND.play('click'); return; }
   if (kp('Escape')) STORE.confirm = null;
   // tabs
-  st.tab = st.tab || 0; const tw = 74, tx0 = 12;
+  st.tab = st.tab || 0; const tw = 71, tx0 = 12;
   STORE_TABS.forEach(([n, ic, c], i) => {
     const x = tx0 + i * (tw + 4), y = 30, sel = st.tab === i, hov = inBox(x, y, tw, 15);
     gbox(x, y, tw, 15, sel ? '#3a2a6e' : hov ? '#241a4a' : '#160f30', sel ? '#221548' : '#0e0a20', sel ? c : '#3a2f66');
