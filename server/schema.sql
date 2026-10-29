@@ -1900,10 +1900,11 @@ begin
       'touch', (select count(distinct device) filter (where data ->> 'touch' = '1') from public.events where kind = 'session' and at >= since),
       'desktop', (select count(distinct device) filter (where coalesce(data ->> 'touch', '0') <> '1') from public.events where kind = 'session' and at >= since),
       'refs', (select coalesce(jsonb_agg(q order by q.n desc), '[]'::jsonb) from (select coalesce(nullif(data ->> 'ref', ''), 'direct') as ref, count(distinct device) as n from public.events where kind = 'session' and at >= since group by 1 order by 2 desc limit 8) q)),
-    'top', (select coalesce(jsonb_agg(q order by q.mins desc), '[]'::jsonb) from (
-      select coalesce((select p.callsign from public.devices v join public.profiles p on p.id = v.user_id where v.device = b.device), 'GUEST ' || upper(right(b.device, 4))) as who,
+    'top', (select coalesce(jsonb_agg(q order by q.mins desc), '[]'::jsonb) from (   -- one row per account, even across computers
+      select coalesce(max(p.callsign), 'GUEST ' || upper(right(min(b.device), 4))) as who,
         round(sum(b.mins)) as mins, count(*) as sessions, max(b.last_at) as last_at
-      from pg_temp._bs b group by b.device order by sum(b.mins) desc limit 12) q),
+      from pg_temp._bs b left join public.devices v on v.device = b.device left join public.profiles p on p.id = v.user_id
+      group by coalesce(v.user_id::text, b.device) order by sum(b.mins) desc limit 12) q),
     'store', jsonb_build_object(
       'clicks', (select coalesce(jsonb_object_agg(k, n), '{}'::jsonb) from (select coalesce(data ->> 'product', '?') as k, count(*) as n from public.events where kind = 'store_click' and at >= since group by 1) q),
       'cents', (select coalesce(sum(cents) filter (where not refunded), 0) from public.purchases where created_at >= since),

@@ -192,7 +192,7 @@ const heatInk = v => v != null && v >= 25 ? '#0b1024' : css('--ink');
 // ---------- the board ----------
 const SCENES = { planet: 'On a planet', hub: 'Space station', open: 'Opening crates', crates: 'Crate bay', map: 'Star map', arena: 'Arena / 1v1', range: 'Test range', results: 'Haul results', warp: 'Warping', title: 'Title screen' };
 const CRATES = { weapon: 'Weapon', armor: 'Armor', ship: 'Ship parts', mining: 'Mining tools', skin: 'Skins', cosmetic: 'Cosmetics', backdrop: 'Backdrops', gadget: 'Gadgets', pet: 'Pets', galaxy: 'Galaxy', haul: 'Free from hauls' };
-const crateName = k => CRATES[k] || (k.startsWith('class:') ? k.slice(6).replace(/^./, c => c.toUpperCase()) + ' crate' : k.startsWith('finisher:') ? 'Finisher crate' : k.startsWith('boss:') ? 'Boss reward crates' : k);
+const crateName = k => CRATES[k] || (k.startsWith('class:') ? k.slice(6).replace(/^./, c => c.toUpperCase()) + ' crate' : k.startsWith('finisher:') ? 'Finisher crate' : k.startsWith('boss:') ? 'Boss reward crates' : k.startsWith('salvage:') ? 'Salvage crates' : k);
 const PLANETS = ['DUSTMOOR', 'VERDANCE', 'GLACIS', 'PYRRHOS', 'SALTMERE', 'NIMBUS', 'OSSUARY', 'UMBRA', 'CORALIS', 'GRAVOS', 'FUNGARA', 'FERROX', 'AURORAE', 'MIRAGE', 'VOLTARA', 'CRYSTALLOS', 'ABYSSIA', 'CINDERFALL', 'CHRONOS', 'XENITH'];
 const pName = p => (PLANETS[p - 1] || 'PLANET ' + p);
 const tileH = (k, v, h, cls = '') => `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || '&nbsp;'}</div></div>`;
@@ -201,7 +201,7 @@ function render() {
   const d = S.d, T = d.totals, days = d.days || [], lab = days.map(x => x.day), per = `last ${d.days_n} days`;
   const L = d.lengths || {}, F = d.funnel || {}, M = d.modes || {}, D = d.devices || {}, ST = d.store || {}, HL = d.health || {};
   const scenes = Object.entries(d.scenes || {}).map(([k, v]) => ({ l: SCENES[k] || k, v })).sort((a, b) => b.v - a.v);
-  const crates = Object.entries(d.crates || {}).map(([k, v]) => ({ l: crateName(k), v })).sort((a, b) => b.v - a.v).slice(0, 10);
+  const crates = Object.values(Object.entries(d.crates || {}).reduce((m, [k, v]) => { const l = crateName(k); (m[l] = m[l] || { l, v: 0 }).v += v; return m; }, {})).sort((a, b) => b.v - a.v).slice(0, 10);
   const reach = Object.entries(d.reach || {}).map(([k, v]) => [+k, v]).filter(x => x[0] > 0).sort((a, b) => a[0] - b[0]);
   const planets = d.planets || [];
   const s1 = css('--s1'), s2 = css('--s2'), s3 = css('--s3');
