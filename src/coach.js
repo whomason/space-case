@@ -37,7 +37,7 @@ function drawCoach(dt) {
   ctx.globalAlpha = 1;
   if (r) { const [x, y, w, h] = r, p = Math.floor(T_NOW * 4) % 2; ctx.strokeStyle = p ? COL.gold : '#fff2c2'; ctx.lineWidth = 1; ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3); for (const [cx, cy, sx, sy] of [[x - 2, y - 2, 1, 1], [x + w + 1, y - 2, -1, 1], [x - 2, y + h + 1, 1, -1], [x + w + 1, y + h + 1, -1, -1]]) { rect(Math.min(cx, cx + sx * 5), cy, 6, 1, COL.gold); rect(cx, Math.min(cy, cy + sy * 5), 1, 6, COL.gold); } }
   // the tip box goes on whichever side of the spotlight has room
-  const bw = st.w || 210, lines = wrap(st.t, bw - 14, FS), bh = 34 + lines.length * 8;
+  const bw = st.w || 210, txt = typeof st.t === 'function' ? st.t() : st.t, lines = wrap(txt, bw - 14, FS), bh = 34 + lines.length * 8;
   let bx, by;
   if (!r) { bx = W / 2 - bw / 2; by = H / 2 - bh / 2; }
   else {
@@ -47,10 +47,19 @@ function drawCoach(dt) {
   }
   bx = Math.round(clamp(bx, 4, W - bw - 4)); by = Math.round(clamp(by + (1 - k) * 6, 4, H - bh - 4));
   panel(bx, by, bw, bh, { bg: '#0e1630', bd: COL.gold, notch: true, notchCol: COL.pink });
-  text(`TIP ${i + 1}/${q.steps.length}`, bx + 7, by + 5, COL.pink, FS); textO(st.title, bx + 7 + textW(`TIP ${i + 1}/${q.steps.length}`, FS) + 6, by + 4, COL.gold, '#000', FS);
-  lines.forEach((l, j) => text(l, bx + 7, by + 15 + j * 8, COL.ink, FS));
+  // BOLT's face: a tiny robot head that blinks and talks while the text types
+  { const fx = bx + 6, fy = by + 3, talk = COACH.typing && Math.floor(T_NOW * 12) % 2, blink = Math.floor(T_NOW * 1.3) % 6 === 0;
+    rect(fx, fy + 1, 10, 8, '#05020c'); rect(fx + 1, fy + 2, 8, 6, '#7fe9ff'); rect(fx + 4, fy - 1, 2, 2, COL.gold);
+    if (!blink) { rect(fx + 2, fy + 3, 2, 2, '#05020c'); rect(fx + 6, fy + 3, 2, 2, '#05020c'); } else { rect(fx + 2, fy + 4, 2, 1, '#05020c'); rect(fx + 6, fy + 4, 2, 1, '#05020c'); }
+    rect(fx + 3, fy + 6, 4, talk ? 2 : 1, '#05020c'); }
+  text('BOLT', bx + 20, by + 5, COL.cyan, FS); textO(st.title, bx + 20 + textW('BOLT', FS) + 6, by + 4, COL.gold, '#000', FS);
+  if (q.steps.length > 1) text(`${i + 1}/${q.steps.length}`, bx + bw - 7, by + 5, COL.mute, FS, 2);
+  // typewriter: ~110 letters a second, a soft blip every few letters; NEXT while typing just finishes the line
+  const full = lines.join(' ').length, shown = Math.floor(COACH.t * 110); COACH.typing = shown < full;
+  if (COACH.typing && Math.floor(COACH.t * 110 / 4) !== COACH.blip) { COACH.blip = Math.floor(COACH.t * 110 / 4); SND.play('tick', 1400 + (COACH.blip % 3) * 180); }
+  { let left = shown; lines.forEach((l, j) => { if (left <= 0) return; text(l.slice(0, left), bx + 7, by + 15 + j * 8, COL.ink, FS); left -= l.length + 1; }); }
   const last = i === q.steps.length - 1, nb = st.btn || (last ? 'GOT IT' : 'NEXT'), nw = Math.max(48, textW(nb, FS) + 14);
-  const next = () => { C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; if (st.go) { COACH.on = false; st.go(); } };
+  const next = () => { if (COACH.typing) { COACH.t = 9; return; } C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; if (st.go) { COACH.on = false; st.go(); } };
   if (st.go && Math.floor(T_NOW * 3) % 2) { ctx.globalAlpha = 0.35; rect(bx + bw - nw - 8, by + bh - 19, nw + 4, 17, COL.gold); ctx.globalAlpha = 1; }
   if (button(bx + bw - nw - 6, by + bh - 17, nw, 13, nb, { kind: 'primary', font: FS }) || (COACH.t > 0.3 && (kp('Enter') || kp('Space')))) next();
   if (!last && button(bx + 7, by + bh - 17, 56, 13, 'SKIP TIPS', { font: FS })) { C.done[q.group] = q.steps.length; delete C.replay[q.group]; dirty(); SND.play('click'); }
@@ -58,55 +67,54 @@ function drawCoach(dt) {
 }
 // ---------- the tours ----------
 function coachHub(LX, LY) {
-  // first visit: one tip, straight to the first crate. The station tour waits until they have opened one.
+  // first visit: one line, then straight into the first crate. The station tour waits until later.
   if ((S.stats.crates || 0) === 0) return coach('hubstart', [
-    { title: 'WELCOME, PILOT', r: [318, 28, 156, 50], t: 'YOUR FIRST CRATE IS WAITING, AND IT IS ALWAYS RARE OR BETTER. OPEN IT, THEN TAKE YOUR NEW GEAR TO A PLANET.', btn: 'OPEN MY CRATE', go: () => openStation('crates') },
+    { title: 'INCOMING!', r: [318, 28, 156, 50], t: `${S.name ? S.name + '! ' : ''}A CRATE JUST CRASH-LANDED IN OUR BAY. COULD BE JUNK. COULD BE LEGENDARY. ONLY ONE WAY TO FIND OUT...`, btn: 'CRACK IT OPEN', go: () => openStation('crates') },
   ]);
+  if (S.planet.landings === 0) return;   // the station tour only after their first landing
   coach('hub', [
-    { title: 'WELCOME, PILOT', t: 'OPEN CRATES FOR GEAR, LAND ON PLANETS TO MINE ORE AND FIGHT ALIENS, THEN SPEND THE COINS ON BETTER CRATES. THAT IS THE WHOLE LOOP.' },
-    { title: 'YOUR NEXT STEP', r: [318, 28, 156, 50], t: 'THIS BOX ALWAYS SAYS WHAT TO DO NEXT, AND PAYS COINS WHEN YOU DO IT. CLICK GO TO JUMP STRAIGHT THERE.' },
-    { title: 'THE STATION', r: [6, 26, 170, 104], t: 'LAUNCH FLIES TO A PLANET. CRATES IS WHERE YOU SPEND COINS. LOCKER IS WHERE YOU EQUIP WHAT YOU FIND. MORE ROOMS OPEN AS YOU PLAY.' },
+    { title: 'HOME BASE', r: [6, 26, 170, 104], t: 'LAUNCH = PLANETS, ORE, ALIENS, COINS. CRATES = SPEND THE COINS. LOCKER = SUIT UP. THE BOX TOP RIGHT ALWAYS SAYS WHAT TO DO NEXT.' },
   ]);
 }
 function coachBay(kind, tier) {
   if ((S.stats.crates || 0) === 0 && kind) return coach('baystart', [
-    { title: 'OPEN IT', r: [128, 184, 46, 28], side: 'above', t: 'ONE CLICK. YOUR FIRST CRATE IS ALWAYS RARE OR BETTER.', btn: 'OPEN!', go: () => { if (S.coins >= crateCost(kind, tier)) startOpen(kind, tier, 1); } },
+    { title: 'DO IT', r: [128, 184, 46, 28], side: 'above', t: 'FIRST ONE IS ON ME, AND IT IS ALWAYS RARE OR BETTER. HIT IT.', btn: 'OPEN!', go: () => { if (S.coins >= crateCost(kind, tier)) startOpen(kind, tier, 1); } },
   ]);
+  if (S.planet.landings === 0) return;
   coach('bay', [
-    { title: 'THE CRATE BAY', r: [128, 26, 190, 150], t: 'SPEND COINS HERE ON CRATES. EVERY CRATE HOLDS ONE ITEM. THE SILHOUETTES ARE THE BEST THINGS INSIDE THIS ONE.' },
-    { title: 'CRATE TYPES', r: [4, 24, 120, 120], side: 'right', t: 'EACH TYPE DROPS DIFFERENT GEAR. WEAPONS FIGHT, ARMOR KEEPS YOU ALIVE, SHIP PARTS RAISE YOUR SHIP RATING SO YOU CAN REACH NEW PLANETS, MINING TOOLS BREAK BETTER ORE.' },
-    { title: 'TIERS', r: [322, 24, 154, 134], side: 'left', t: 'BETTER TIERS COST MORE BUT ROLL RARER ITEMS, AND THE ITEM GETS A HIGHER GRADE: STRONGER STATS. NEW TIERS UNLOCK AS YOU REACH NEW PLANETS.' },
-    { title: 'RARITY ODDS', r: [322, 157, 154, 70], side: 'left', t: 'YOUR CHANCE OF EACH RARITY, FROM COMMON (GREY) UP TO COSMIC (RAINBOW). RARER GEAR IS STRONGER AND LOOKS COOLER.' },
-    { title: 'OPEN', r: [128, 184, 190, 28], side: 'above', t: 'OPEN ONE OR SEVERAL AT ONCE. EARN MORE COINS ON PLANETS: MINE ORE FIRST, ALIENS PAY A LITTLE TOO.' },
-    { title: 'UPGRADER (OPTIONAL)', r: [130, 218, 186, 20], side: 'above', t: 'A GAMBLE: TICK IT AND YOUR CRATE MIGHT JUMP UP A TIER. IF IT MISSES, THE CRATE BURNS AND THE COINS ARE GONE.' },
+    { title: 'SHOPPING', r: [4, 24, 120, 120], side: 'right', t: 'WEAPONS HIT, ARMOR SAVES YOU, SHIP PARTS UNLOCK NEW PLANETS, MINING TOOLS CRACK RICHER ORE. THE SILHOUETTES ARE THE JACKPOTS.' },
+    { title: 'BIGGER CRATES', r: [322, 24, 154, 134], side: 'left', t: 'BETTER TIERS COST MORE AND ROLL RARER, STRONGER LOOT. EACH NEW PLANET UNLOCKS THE NEXT TIER.' },
   ]);
 }
 function coachReveal(single) {
+  const O = OPEN, r = O && O.results[O.sel >= 0 ? O.sel : 0], d = r ? getDef(r.id) : null;
+  // the very first item: hype it, wear it, and fly. No reading about buttons.
+  if (single && d && S.planet.landings === 0 && (S.stats.crates || 0) <= 1) {
+    const C = coachState(); C.done.reveal = Math.max(C.done.reveal || 0, 2);
+    const nm = RAR[d.r].n;
+    return coach('revealstart', [
+      { title: d.r >= 4 ? 'NO WAY!' : d.r >= 2 ? 'OOOH, ' + nm + '!' : 'NOT BAD!', r: [6, 20, 284, 120], side: 'below', t: `A ${nm} ${d.name}! THE RARER THE GLOW, THE HARDER IT HITS. ENOUGH STARING. LET'S GO BLAST SOMETHING WITH IT.`, btn: slotOf(d) ? 'EQUIP + LAUNCH' : 'LAUNCH',
+        go: () => { const id = r.id, sl = slotOf(d); collectOpen(); if (sl && S.inv[id]) { equipped(id); S.eq[sl] = id; S.stats.equips++; dirty(); SND.play('pickup'); } OPEN = null; if (!S.planet.visited[1]) startWarp(1); else startRun(1); } },   // straight to Dustmoor, no menus
+    ]);
+  }
+  if (S.planet.landings === 0) return;
   coach('reveal', [
-    { title: 'YOUR NEW ITEM', r: [6, 20, 284, 120], side: 'below', t: 'ITS NAME, RARITY AND STATS. THE TAG UNDER THE STATS TELLS YOU IF IT BEATS WHAT YOU HAVE EQUIPPED.' },
-    { title: 'KEEP OR SELL', r: [296, 150, 176, 20], side: 'left', t: single ? 'COLLECT KEEPS IT. SELL TURNS IT INTO COINS RIGHT AWAY.' : 'SELL TURNS IT INTO COINS RIGHT AWAY. ANYTHING YOU DO NOT SELL IS KEPT.' },
-  ]);
-  if ((S.stats.crates || 0) >= 3) coach('reveal2', [
-    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS WIN 45% OF THE TIME. THE RARER THE ITEM, THE WORSE THE ODDS.' },
+    { title: 'KEEP, SELL OR GAMBLE', r: [296, 150, 176, 44], side: 'left', t: 'KEEP IT, SELL IT FOR COINS, OR DOUBLE OR NOTHING: WIN AND IT JUMPS A RARITY, LOSE AND IT IS GONE. COMMONS WIN 45%. RARER ITEMS, WORSE ODDS.' },
   ]);
 }
 function coachLocker() {
   coach('locker', [
-    { title: 'THE LOCKER', r: [198, 30, W - 212, H - 46], side: 'left', w: 180, t: 'CLICK AN ITEM TO EQUIP IT. A GREEN ARROW MEANS IT IS AN UPGRADE. HOVER ANYTHING TO SEE ITS STATS.' },
-    { title: 'SLOTS', r: [97, 26, 92, 196], side: 'right', w: 180, t: 'GEAR CHANGES HOW YOU FIGHT AND SURVIVE. STYLE IS JUST FOR LOOKS. CLICK A SLOT TO SEE WHAT YOU OWN FOR IT.' },
-    { title: 'SELL AND FUSE', r: [W - 128, 26, 116, 14], side: 'below', w: 190, t: 'SELL SPARE GEAR FOR COINS. FUSE TURNS 5 ITEMS OF ONE RARITY INTO 1 OF THE NEXT RARITY.' },
+    { title: 'SUIT UP', r: [198, 30, W - 212, H - 46], side: 'left', w: 180, t: 'CLICK GEAR TO WEAR IT. GREEN ARROW = UPGRADE. SPARE JUNK? SELL IT. 5 OF A RARITY? FUSE THEM INTO 1 RARER.' },
   ]);
 }
 function coachMap() {
   coach('map', [
-    { title: 'THE STAR MAP', r: [4, 30, W - 8, 150], side: 'below', t: 'EACH PLANET HAS ITS OWN ORE, ALIENS, BOSS AND A TWIST. LOCKED ONES NEED A HIGHER SHIP RATING: GET BETTER SHIP PARTS FROM SHIP CRATES.' },
-    { title: 'READY TO GO', r: [4, 184, W - 8, 82], side: 'above', t: 'CHECK THE PLANET HERE, ADD A BOOST IF YOU HAVE ONE, THEN WARP. BRING ORE BACK TO YOUR SHIP BEFORE YOUR O2 RUNS OUT.' },
+    { title: 'THE GALAXY', r: [4, 30, W - 8, 150], side: 'below', t: '20 PLANETS. EACH ONE: NEW ORE, NEW ALIENS, ONE NASTY BOSS. BEAT THE BOSS AND GET YOUR SHIP RATING UP TO UNLOCK THE NEXT.' },
   ]);
 }
 function coachResults(haul) {
   coach('results', [
-    { title: 'PAYDAY', t: 'YOUR ORE IS SOLD AND YOUR ALIEN BOUNTIES ADDED UP. COINS GO STRAIGHT TO YOUR WALLET: SPEND THEM IN THE CRATE BAY.' },
-    haul ? { title: 'HAUL CRATES', r: [W / 2 - 102, 222, 204, 26], side: 'above', t: 'CRATES YOU FOUND ON THE PLANET (CARRIERS, WRECKS, BOSSES). THEY ARE FREE TO OPEN.' } : null,
+    { title: 'PAYDAY!', t: haul ? 'ORE SOLD, BOUNTIES PAID, AND YOU FOUND CRATES! THOSE OPEN FREE. THEN SPEND THE COINS ON MORE. THAT IS THE LOOP. REPEAT UNTIL LEGENDARY.' : 'ORE SOLD, BOUNTIES PAID. SPEND THE COINS ON CRATES, GET STRONGER, LAND ON TOUGHER PLANETS. THAT IS THE LOOP. REPEAT UNTIL LEGENDARY.' },
   ]);
 }
 // planet tips that don't stop the action: a short card at the top, once each

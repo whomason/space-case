@@ -5617,42 +5617,49 @@ function startRun(pi, opt = {}) {
 }
 // ---------- first-landing training ----------
 const TUT = [
-  { k: 'move', keys: ['W', 'A', 'S', 'D'], t: 'MOVE AROUND', tt: 'DRAG ON THE LEFT SIDE TO MOVE' },
-  { k: 'shoot', keys: ['CLICK'], t: 'AIM WITH THE MOUSE. HOLD CLICK TO SHOOT', tt: 'TOUCH THE RIGHT SIDE TO AIM AND SHOOT' },
-  { k: 'tool', keys: ['Q'], t: 'SWITCH TO YOUR MINING TOOL', tt: 'TAP SWAP FOR YOUR MINING TOOL' },
-  { k: 'mine', keys: ['CLICK'], t: 'WALK UP TO GLOWING ORE AND HOLD CLICK ON IT', tt: 'WALK UP TO GLOWING ORE AND HOLD ON IT' },
-  { k: 'boost', keys: ['SPACE'], t: 'BOOST FORWARD. IT RECHARGES OVER TIME', tt: 'TAP BOOST TO DASH FORWARD' },
-  { k: 'gadget', keys: ['F'], t: 'FIRE YOUR GADGET AT THE ALIENS. IT RECHARGES, SO USE IT OFTEN', tt: 'TAP GADGET TO USE YOUR GADGET' },
-  { k: 'weapon', keys: ['Q'], t: 'SWAP BACK TO YOUR WEAPON. KEYS 1 2 3 PICK A SLOT TOO', tt: 'TAP SWAP FOR YOUR WEAPON' },
-  { k: 'o2', keys: ['E'], t: 'YOUR O2 IS RUNNING NOW. GET BACK TO THE SHIP AND PRESS E BEFORE IT HITS ZERO', tt: 'YOUR O2 IS RUNNING NOW. GET BACK TO THE SHIP AND TAP USE BEFORE IT HITS ZERO' },
+  { k: 'blast', keys: ['WASD', 'CLICK'], t: 'AN ALIEN! MOVE WITH WASD, AIM WITH THE MOUSE, HOLD CLICK TO BLAST IT', tt: 'AN ALIEN! DRAG LEFT TO MOVE, TOUCH RIGHT TO AIM AND BLAST IT' },
+  { k: 'mine', keys: ['Q', 'CLICK'], t: 'NOW GET PAID. PRESS Q FOR YOUR DRILL, HOLD CLICK ON GLOWING ORE', tt: 'NOW GET PAID. TAP SWAP FOR YOUR DRILL, HOLD ON GLOWING ORE' },
+  { k: 'dash', keys: ['SPACE', 'F'], t: 'THEY ARE MAD NOW! GUN IS BACK. SPACE TO DASH THROUGH THEM, F FOR YOUR GADGET', tt: 'THEY ARE MAD NOW! GUN IS BACK. TAP BOOST TO DASH, GADGET TO BLOW THEM UP' },
+  { k: 'o2', keys: ['E'], t: 'YOUR O2 IS TICKING. GRAB MORE ORE, THEN PRESS E AT YOUR SHIP TO CASH IN', tt: 'YOUR O2 IS TICKING. GRAB MORE ORE, THEN TAP USE AT YOUR SHIP TO CASH IN' },
 ];
+const TUT_CHEER = ['NICE!', 'BOOM!', 'CLEAN!', 'PRO MOVE!', 'NAILED IT!'];
+// drop a few aliens near the player for the training to use
+function tutSpawn(R, n, weak) {
+  const w = R.w, pl = w.player, arch = R.p.alien[2][0];
+  for (let k = 0; k < n; k++) for (let tries = 0; tries < 12; tries++) {
+    const a = (k / Math.max(1, n)) * TAU + R0() * 0.8 + (n === 1 ? -0.3 : 0), d = n === 1 ? 70 : 85 + R0() * 25, x = pl.x + Math.cos(a) * d, y = pl.y + Math.sin(a) * d * 0.7;
+    if (!w.solid(x, y) && x > 30 && y > 30 && x < R.map.GW - 30 && y < R.map.GH - 30) { const e = spawnEnemy(w, arch, x, y); if (weak) { e.hp = e.maxHp = e.hp * 0.45; e.dmg *= 0.3; } w.fx.burst(x, y - 6, 12, { c: [e.col, '#fff'], sp: 70 }); break; }
+  }
+}
 function tutTick(dt, inp) {
   const R = RUN, T = R.tut; if (!T || R.state !== 'play') return; const pl = R.w.player; T.t += dt;
-  if (T.doneT !== undefined) { T.doneT += dt; if (T.doneT > 0.8) { T.i++; T.t = 0; T.doneT = undefined; if (T.i >= TUT.length) { R.tut = null; S.tutorial.planet = true; dirty(); banner('TRAINING DONE. FILL YOUR CARGO AND HUNT FOR CRATES', COL.gold); } } return; }
-  let ok = false;
-  switch (TUT[T.i].k) {
-    case 'move': if (T.lx !== undefined) T.dist += Math.hypot(pl.x - T.lx, pl.y - T.ly); T.lx = pl.x; T.ly = pl.y; ok = T.dist > 40; break;
-    case 'shoot': if (inp.fire && pl.mode === 'weapon') T.fireT += dt; ok = T.fireT > 0.6 || R.kills > 0; break;
-    case 'tool': ok = pl.mode === 'tool'; break;
-    case 'mine': ok = R.cargoN >= 2; break;
-    case 'boost': if (inp.boost) T.boosted = true; ok = !!T.boosted; break;
-    case 'gadget': if (inp.gadget) T.gad = true; ok = !!T.gad || !S.eq.gadget; break;
-    case 'weapon': ok = pl.mode === 'weapon'; break;
-    case 'o2': ok = T.t > 8; break;
+  if (T.doneT !== undefined) { T.doneT += dt; if (T.doneT > 0.8) { T.i++; T.t = 0; T.doneT = undefined; T.started = false; if (T.i >= TUT.length) { R.tut = null; S.tutorial.planet = true; dirty(); banner('TRAINING DONE! FILL YOUR CARGO, HUNT CRATES, FIND THE BOSS', COL.gold); } } return; }
+  const k = TUT[T.i].k;
+  if (!T.started) {
+    T.started = true; T.k0 = R.kills;
+    if (k === 'blast') tutSpawn(R, 1, true);
+    if (k === 'dash') { if (pl.mode !== 'weapon') setSlot(pl, R.w, 0); tutSpawn(R, 3, true); SND.play('bossroar'); shake(3); }
   }
-  if (ok) { T.doneT = 0; SND.play('win'); R.w.fx.text(pl.x, pl.y - 32, 'NICE!', COL.gold, { f: FB }); }
+  let ok = false;
+  switch (k) {
+    case 'blast': ok = R.kills > T.k0 || T.t > 20; break;
+    case 'mine': ok = R.cargoN >= 2; break;
+    case 'dash': if (inp.boost) T.boosted = true; if (inp.gadget) T.gad = true; ok = (T.boosted && (T.gad || !S.eq.gadget || R.kills >= T.k0 + 2)) || T.t > 14; break;
+    case 'o2': ok = T.t > 6; break;
+  }
+  if (ok) { T.doneT = 0; T.cheer = TUT_CHEER[T.i % TUT_CHEER.length]; SND.play('win'); R.w.fx.text(pl.x, pl.y - 32, T.cheer, COL.gold, { f: FB, sc: 2 }); shake(2); }
 }
 function drawTut(R) {
   const T = R.tut; if (!T || R.state !== 'play' || R.paused) return; const st = TUT[Math.min(T.i, TUT.length - 1)]; const done = T.doneT !== undefined;
   const msg = IN.touch ? st.tt : st.t; const lines = wrap(msg, 190, FB); const w = 270, h = 20 + lines.length * 9, x = W / 2 - w / 2, y = 38;
   const k = Math.min(1, T.t / 0.25); ctx.globalAlpha = done ? Math.max(0, 1 - T.doneT / 0.8) + 0.3 : k;
   panel(x, y, w, h, { bg: 'rgba(14,22,48,0.92)', bd: done ? COL.gold : COL.pink }); rect(x + 1, y + 1, w - 2, 9, 'rgba(30,39,73,0.95)');
-  text(`TRAINING ${Math.min(T.i + 1, TUT.length)}/${TUT.length}`, x + 6, y + 3, COL.pink, FS);
+  text(`BOLT: TRAINING ${Math.min(T.i + 1, TUT.length)}/${TUT.length}`, x + 6, y + 3, COL.cyan, FS);
   { const sx = x + w - 96, hov = inBox(sx - 2, y + 1, 30, 9); text('SKIP', sx, y + 3, hov ? COL.gold : COL.mute, FS); if (clickIn(sx - 2, y + 1, 30, 9)) { R.tut = null; S.tutorial.planet = true; dirty(); SND.play('click'); banner('TRAINING SKIPPED. GOOD LUCK OUT THERE', COL.gold); } }
   for (let i = 0; i < TUT.length; i++) rect(x + w - 8 - (TUT.length - i) * 7, y + 4, 5, 3, i < T.i || (i === T.i && done) ? COL.gold : COL.steel);
   if (!IN.touch) { let kx = x + 8; const press = Math.floor(T_NOW * 2) % 2 === 0; for (const kc of st.keys) kx += keycap(kx, y + 14 + (lines.length - 1) * 4, kc, press && !done) + 2; }
   lines.forEach((l, i) => text(l, IN.touch ? W / 2 : x + 74, y + 14 + i * 9, done ? COL.gold : COL.ink, FB, IN.touch ? 1 : 0));
-  if (done) textO('NICE!', x + w - 30, y + h - 12, COL.gold, '#000', FB, 1);
+  if (done) textO(T.cheer || 'NICE!', x + w - 34, y + h - 12, COL.gold, '#000', FB, 1);
   ctx.globalAlpha = 1;
   if (st.k === 'o2' && !done) { const a = Math.floor(T_NOW * 4) % 2; if (a) { ctx.strokeStyle = COL.gold; ctx.strokeRect(3.5, 17.5, 106, 14); } }
 }
@@ -5830,7 +5837,7 @@ function updateRun(dt) {
     // boss lair
     if (R.bossAvail && R.coop !== 'guest' && !w.boss && !R.bossBeaten && (Math.hypot(pl.x - map.lair.x, pl.y - map.lair.y) < 95 || (w.allies && w.allies.some(a => a && a.alive && Math.hypot(a.x - map.lair.x, a.y - map.lair.y) < 95)))) { spawnBoss(w, map.lair.x, map.lair.y); ptip('boss'); SND.play('bossroar'); SND.playSong('boss'); shake(6); banner(`${R.p.boss[0]}. HIT IT WHEN IT WINDS UP, PUNISH THE GLOWING CORE`, COL.coral); R.bossHit = false; }
     // spawns
-    R.spawnT -= dt * (R.tut ? (R.tut.i < 1 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
+    R.spawnT -= dt * (R.tut ? (R.tut.i < 3 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
     if (R.spawnT <= 0) {
       R.spawnT = Math.max(0.65, (R.pi <= 2 ? 2.9 : 2.5) - R.t * 0.018) * (w.boss ? 1.8 : 1) / (1 + 0.35 * (w.hiP || 0));
       if (w.ents.length < 42 + Math.round(14 * (w.hiP || 0))) {
@@ -5865,7 +5872,7 @@ function updateRun(dt) {
   if (IN.rdown && pl.W && pl.W.cls === 'sniper' && pl.mode === 'weapon') { lx = (IN.mx - W / 2) * 0.9; ly = (IN.my - H / 2) * 0.9; R.scope = true; } else R.scope = false;
   const tx = clamp(pl.x - W / 2 + lx, 0, map.GW - W), ty = clamp(pl.y - 12 - H / 2 + ly, 0, map.GH - H);
   R.cam.x = lerp(R.cam.x, tx, Math.min(1, dt * 6)); R.cam.y = lerp(R.cam.y, ty, Math.min(1, dt * 6));
-  if (R.msgT > 0) R.msgT -= dt;
+  if (R.msgT > 0 && !R.tut) R.msgT -= dt;   // banners wait until training is over
   if (kp('Escape') || kp('KeyP')) { R.paused = true; SND.play('click'); IN.kp.delete('Escape'); IN.kp.delete('KeyP'); }   // eat the key, or the pause menu would read it as resume
 }
 function updateExtract(dt, inp) {
@@ -6121,7 +6128,7 @@ function drawRunHUD(R) {
   const nCr = R.crates.length + R.choices; if (nCr) { miniCrate(W - 52, H - 14, R.haulTier); text('X' + nCr, W - 37, H - 11, COL.gold, FS); }
   drawEventHUD(R);
   // banner
-  if (R.msgT > 0 && R.msg) { const a = Math.min(1, R.msgT); ctx.globalAlpha = a; const lines = wrap(R.msg, 320); lines.forEach((l, i) => textO(l, W / 2, (R.tut ? 82 : 92) + i * 10, R.msgC, '#000', FB, 1)); ctx.globalAlpha = 1; }
+  if (R.msgT > 0 && R.msg && !R.tut) { const a = Math.min(1, R.msgT); ctx.globalAlpha = a; const lines = wrap(R.msg, 320); lines.forEach((l, i) => textO(l, W / 2, (R.tut ? 82 : 92) + i * 10, R.msgC, '#000', FB, 1)); ctx.globalAlpha = 1; }
   if (R.state === 'land' && R.st < 1.4) { ctx.globalAlpha = Math.max(0, 1 - R.st / 1.4); rect(0, 0, W, H, '#fff'); ctx.globalAlpha = 1; }
   if (R.state === 'leave') { ctx.globalAlpha = Math.min(1, R.st / 2.2); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1; }
   if (IN.touch) {
@@ -7154,7 +7161,7 @@ function buildReel() {
   }
   if (wr < 4 && R0() < 0.6) { for (let r = 6; r > wr; r--) if (pool[r].length) { items[WI + 1] = pool[r][R0.int(pool[r].length)]; break; } }
   if (R0() < 0.4) { for (let r = 5; r > wr; r--) if (pool[r].length) { items[WI - 1] = pool[r][R0.int(pool[r].length)]; break; } }
-  O.reel = { items, WI, CW: 56, pos: 0, target: WI * 56 + (R0() - 0.5) * 44, dur: 6.4, t: 0, last: -1 };
+  O.reel = { items, WI, CW: 56, pos: 0, target: WI * 56 + (R0() - 0.5) * 44, dur: (S.stats.crates || 0) <= 1 ? 4.3 : 6.4, t: 0, last: -1 };   // the very first spin is a bit quicker
 }
 function updateReel(dt) {
   const O = OPEN, rl = O.reel; rl.t += dt * (IN.down && rl.t > 0.3 ? 3 : 1);
@@ -11143,7 +11150,7 @@ function drawCoach(dt) {
   ctx.globalAlpha = 1;
   if (r) { const [x, y, w, h] = r, p = Math.floor(T_NOW * 4) % 2; ctx.strokeStyle = p ? COL.gold : '#fff2c2'; ctx.lineWidth = 1; ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3); for (const [cx, cy, sx, sy] of [[x - 2, y - 2, 1, 1], [x + w + 1, y - 2, -1, 1], [x - 2, y + h + 1, 1, -1], [x + w + 1, y + h + 1, -1, -1]]) { rect(Math.min(cx, cx + sx * 5), cy, 6, 1, COL.gold); rect(cx, Math.min(cy, cy + sy * 5), 1, 6, COL.gold); } }
   // the tip box goes on whichever side of the spotlight has room
-  const bw = st.w || 210, lines = wrap(st.t, bw - 14, FS), bh = 34 + lines.length * 8;
+  const bw = st.w || 210, txt = typeof st.t === 'function' ? st.t() : st.t, lines = wrap(txt, bw - 14, FS), bh = 34 + lines.length * 8;
   let bx, by;
   if (!r) { bx = W / 2 - bw / 2; by = H / 2 - bh / 2; }
   else {
@@ -11153,10 +11160,19 @@ function drawCoach(dt) {
   }
   bx = Math.round(clamp(bx, 4, W - bw - 4)); by = Math.round(clamp(by + (1 - k) * 6, 4, H - bh - 4));
   panel(bx, by, bw, bh, { bg: '#0e1630', bd: COL.gold, notch: true, notchCol: COL.pink });
-  text(`TIP ${i + 1}/${q.steps.length}`, bx + 7, by + 5, COL.pink, FS); textO(st.title, bx + 7 + textW(`TIP ${i + 1}/${q.steps.length}`, FS) + 6, by + 4, COL.gold, '#000', FS);
-  lines.forEach((l, j) => text(l, bx + 7, by + 15 + j * 8, COL.ink, FS));
+  // BOLT's face: a tiny robot head that blinks and talks while the text types
+  { const fx = bx + 6, fy = by + 3, talk = COACH.typing && Math.floor(T_NOW * 12) % 2, blink = Math.floor(T_NOW * 1.3) % 6 === 0;
+    rect(fx, fy + 1, 10, 8, '#05020c'); rect(fx + 1, fy + 2, 8, 6, '#7fe9ff'); rect(fx + 4, fy - 1, 2, 2, COL.gold);
+    if (!blink) { rect(fx + 2, fy + 3, 2, 2, '#05020c'); rect(fx + 6, fy + 3, 2, 2, '#05020c'); } else { rect(fx + 2, fy + 4, 2, 1, '#05020c'); rect(fx + 6, fy + 4, 2, 1, '#05020c'); }
+    rect(fx + 3, fy + 6, 4, talk ? 2 : 1, '#05020c'); }
+  text('BOLT', bx + 20, by + 5, COL.cyan, FS); textO(st.title, bx + 20 + textW('BOLT', FS) + 6, by + 4, COL.gold, '#000', FS);
+  if (q.steps.length > 1) text(`${i + 1}/${q.steps.length}`, bx + bw - 7, by + 5, COL.mute, FS, 2);
+  // typewriter: ~110 letters a second, a soft blip every few letters; NEXT while typing just finishes the line
+  const full = lines.join(' ').length, shown = Math.floor(COACH.t * 110); COACH.typing = shown < full;
+  if (COACH.typing && Math.floor(COACH.t * 110 / 4) !== COACH.blip) { COACH.blip = Math.floor(COACH.t * 110 / 4); SND.play('tick', 1400 + (COACH.blip % 3) * 180); }
+  { let left = shown; lines.forEach((l, j) => { if (left <= 0) return; text(l.slice(0, left), bx + 7, by + 15 + j * 8, COL.ink, FS); left -= l.length + 1; }); }
   const last = i === q.steps.length - 1, nb = st.btn || (last ? 'GOT IT' : 'NEXT'), nw = Math.max(48, textW(nb, FS) + 14);
-  const next = () => { C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; if (st.go) { COACH.on = false; st.go(); } };
+  const next = () => { if (COACH.typing) { COACH.t = 9; return; } C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; if (st.go) { COACH.on = false; st.go(); } };
   if (st.go && Math.floor(T_NOW * 3) % 2) { ctx.globalAlpha = 0.35; rect(bx + bw - nw - 8, by + bh - 19, nw + 4, 17, COL.gold); ctx.globalAlpha = 1; }
   if (button(bx + bw - nw - 6, by + bh - 17, nw, 13, nb, { kind: 'primary', font: FS }) || (COACH.t > 0.3 && (kp('Enter') || kp('Space')))) next();
   if (!last && button(bx + 7, by + bh - 17, 56, 13, 'SKIP TIPS', { font: FS })) { C.done[q.group] = q.steps.length; delete C.replay[q.group]; dirty(); SND.play('click'); }
@@ -11164,55 +11180,54 @@ function drawCoach(dt) {
 }
 // ---------- the tours ----------
 function coachHub(LX, LY) {
-  // first visit: one tip, straight to the first crate. The station tour waits until they have opened one.
+  // first visit: one line, then straight into the first crate. The station tour waits until later.
   if ((S.stats.crates || 0) === 0) return coach('hubstart', [
-    { title: 'WELCOME, PILOT', r: [318, 28, 156, 50], t: 'YOUR FIRST CRATE IS WAITING, AND IT IS ALWAYS RARE OR BETTER. OPEN IT, THEN TAKE YOUR NEW GEAR TO A PLANET.', btn: 'OPEN MY CRATE', go: () => openStation('crates') },
+    { title: 'INCOMING!', r: [318, 28, 156, 50], t: `${S.name ? S.name + '! ' : ''}A CRATE JUST CRASH-LANDED IN OUR BAY. COULD BE JUNK. COULD BE LEGENDARY. ONLY ONE WAY TO FIND OUT...`, btn: 'CRACK IT OPEN', go: () => openStation('crates') },
   ]);
+  if (S.planet.landings === 0) return;   // the station tour only after their first landing
   coach('hub', [
-    { title: 'WELCOME, PILOT', t: 'OPEN CRATES FOR GEAR, LAND ON PLANETS TO MINE ORE AND FIGHT ALIENS, THEN SPEND THE COINS ON BETTER CRATES. THAT IS THE WHOLE LOOP.' },
-    { title: 'YOUR NEXT STEP', r: [318, 28, 156, 50], t: 'THIS BOX ALWAYS SAYS WHAT TO DO NEXT, AND PAYS COINS WHEN YOU DO IT. CLICK GO TO JUMP STRAIGHT THERE.' },
-    { title: 'THE STATION', r: [6, 26, 170, 104], t: 'LAUNCH FLIES TO A PLANET. CRATES IS WHERE YOU SPEND COINS. LOCKER IS WHERE YOU EQUIP WHAT YOU FIND. MORE ROOMS OPEN AS YOU PLAY.' },
+    { title: 'HOME BASE', r: [6, 26, 170, 104], t: 'LAUNCH = PLANETS, ORE, ALIENS, COINS. CRATES = SPEND THE COINS. LOCKER = SUIT UP. THE BOX TOP RIGHT ALWAYS SAYS WHAT TO DO NEXT.' },
   ]);
 }
 function coachBay(kind, tier) {
   if ((S.stats.crates || 0) === 0 && kind) return coach('baystart', [
-    { title: 'OPEN IT', r: [128, 184, 46, 28], side: 'above', t: 'ONE CLICK. YOUR FIRST CRATE IS ALWAYS RARE OR BETTER.', btn: 'OPEN!', go: () => { if (S.coins >= crateCost(kind, tier)) startOpen(kind, tier, 1); } },
+    { title: 'DO IT', r: [128, 184, 46, 28], side: 'above', t: 'FIRST ONE IS ON ME, AND IT IS ALWAYS RARE OR BETTER. HIT IT.', btn: 'OPEN!', go: () => { if (S.coins >= crateCost(kind, tier)) startOpen(kind, tier, 1); } },
   ]);
+  if (S.planet.landings === 0) return;
   coach('bay', [
-    { title: 'THE CRATE BAY', r: [128, 26, 190, 150], t: 'SPEND COINS HERE ON CRATES. EVERY CRATE HOLDS ONE ITEM. THE SILHOUETTES ARE THE BEST THINGS INSIDE THIS ONE.' },
-    { title: 'CRATE TYPES', r: [4, 24, 120, 120], side: 'right', t: 'EACH TYPE DROPS DIFFERENT GEAR. WEAPONS FIGHT, ARMOR KEEPS YOU ALIVE, SHIP PARTS RAISE YOUR SHIP RATING SO YOU CAN REACH NEW PLANETS, MINING TOOLS BREAK BETTER ORE.' },
-    { title: 'TIERS', r: [322, 24, 154, 134], side: 'left', t: 'BETTER TIERS COST MORE BUT ROLL RARER ITEMS, AND THE ITEM GETS A HIGHER GRADE: STRONGER STATS. NEW TIERS UNLOCK AS YOU REACH NEW PLANETS.' },
-    { title: 'RARITY ODDS', r: [322, 157, 154, 70], side: 'left', t: 'YOUR CHANCE OF EACH RARITY, FROM COMMON (GREY) UP TO COSMIC (RAINBOW). RARER GEAR IS STRONGER AND LOOKS COOLER.' },
-    { title: 'OPEN', r: [128, 184, 190, 28], side: 'above', t: 'OPEN ONE OR SEVERAL AT ONCE. EARN MORE COINS ON PLANETS: MINE ORE FIRST, ALIENS PAY A LITTLE TOO.' },
-    { title: 'UPGRADER (OPTIONAL)', r: [130, 218, 186, 20], side: 'above', t: 'A GAMBLE: TICK IT AND YOUR CRATE MIGHT JUMP UP A TIER. IF IT MISSES, THE CRATE BURNS AND THE COINS ARE GONE.' },
+    { title: 'SHOPPING', r: [4, 24, 120, 120], side: 'right', t: 'WEAPONS HIT, ARMOR SAVES YOU, SHIP PARTS UNLOCK NEW PLANETS, MINING TOOLS CRACK RICHER ORE. THE SILHOUETTES ARE THE JACKPOTS.' },
+    { title: 'BIGGER CRATES', r: [322, 24, 154, 134], side: 'left', t: 'BETTER TIERS COST MORE AND ROLL RARER, STRONGER LOOT. EACH NEW PLANET UNLOCKS THE NEXT TIER.' },
   ]);
 }
 function coachReveal(single) {
+  const O = OPEN, r = O && O.results[O.sel >= 0 ? O.sel : 0], d = r ? getDef(r.id) : null;
+  // the very first item: hype it, wear it, and fly. No reading about buttons.
+  if (single && d && S.planet.landings === 0 && (S.stats.crates || 0) <= 1) {
+    const C = coachState(); C.done.reveal = Math.max(C.done.reveal || 0, 2);
+    const nm = RAR[d.r].n;
+    return coach('revealstart', [
+      { title: d.r >= 4 ? 'NO WAY!' : d.r >= 2 ? 'OOOH, ' + nm + '!' : 'NOT BAD!', r: [6, 20, 284, 120], side: 'below', t: `A ${nm} ${d.name}! THE RARER THE GLOW, THE HARDER IT HITS. ENOUGH STARING. LET'S GO BLAST SOMETHING WITH IT.`, btn: slotOf(d) ? 'EQUIP + LAUNCH' : 'LAUNCH',
+        go: () => { const id = r.id, sl = slotOf(d); collectOpen(); if (sl && S.inv[id]) { equipped(id); S.eq[sl] = id; S.stats.equips++; dirty(); SND.play('pickup'); } OPEN = null; if (!S.planet.visited[1]) startWarp(1); else startRun(1); } },   // straight to Dustmoor, no menus
+    ]);
+  }
+  if (S.planet.landings === 0) return;
   coach('reveal', [
-    { title: 'YOUR NEW ITEM', r: [6, 20, 284, 120], side: 'below', t: 'ITS NAME, RARITY AND STATS. THE TAG UNDER THE STATS TELLS YOU IF IT BEATS WHAT YOU HAVE EQUIPPED.' },
-    { title: 'KEEP OR SELL', r: [296, 150, 176, 20], side: 'left', t: single ? 'COLLECT KEEPS IT. SELL TURNS IT INTO COINS RIGHT AWAY.' : 'SELL TURNS IT INTO COINS RIGHT AWAY. ANYTHING YOU DO NOT SELL IS KEPT.' },
-  ]);
-  if ((S.stats.crates || 0) >= 3) coach('reveal2', [
-    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS WIN 45% OF THE TIME. THE RARER THE ITEM, THE WORSE THE ODDS.' },
+    { title: 'KEEP, SELL OR GAMBLE', r: [296, 150, 176, 44], side: 'left', t: 'KEEP IT, SELL IT FOR COINS, OR DOUBLE OR NOTHING: WIN AND IT JUMPS A RARITY, LOSE AND IT IS GONE. COMMONS WIN 45%. RARER ITEMS, WORSE ODDS.' },
   ]);
 }
 function coachLocker() {
   coach('locker', [
-    { title: 'THE LOCKER', r: [198, 30, W - 212, H - 46], side: 'left', w: 180, t: 'CLICK AN ITEM TO EQUIP IT. A GREEN ARROW MEANS IT IS AN UPGRADE. HOVER ANYTHING TO SEE ITS STATS.' },
-    { title: 'SLOTS', r: [97, 26, 92, 196], side: 'right', w: 180, t: 'GEAR CHANGES HOW YOU FIGHT AND SURVIVE. STYLE IS JUST FOR LOOKS. CLICK A SLOT TO SEE WHAT YOU OWN FOR IT.' },
-    { title: 'SELL AND FUSE', r: [W - 128, 26, 116, 14], side: 'below', w: 190, t: 'SELL SPARE GEAR FOR COINS. FUSE TURNS 5 ITEMS OF ONE RARITY INTO 1 OF THE NEXT RARITY.' },
+    { title: 'SUIT UP', r: [198, 30, W - 212, H - 46], side: 'left', w: 180, t: 'CLICK GEAR TO WEAR IT. GREEN ARROW = UPGRADE. SPARE JUNK? SELL IT. 5 OF A RARITY? FUSE THEM INTO 1 RARER.' },
   ]);
 }
 function coachMap() {
   coach('map', [
-    { title: 'THE STAR MAP', r: [4, 30, W - 8, 150], side: 'below', t: 'EACH PLANET HAS ITS OWN ORE, ALIENS, BOSS AND A TWIST. LOCKED ONES NEED A HIGHER SHIP RATING: GET BETTER SHIP PARTS FROM SHIP CRATES.' },
-    { title: 'READY TO GO', r: [4, 184, W - 8, 82], side: 'above', t: 'CHECK THE PLANET HERE, ADD A BOOST IF YOU HAVE ONE, THEN WARP. BRING ORE BACK TO YOUR SHIP BEFORE YOUR O2 RUNS OUT.' },
+    { title: 'THE GALAXY', r: [4, 30, W - 8, 150], side: 'below', t: '20 PLANETS. EACH ONE: NEW ORE, NEW ALIENS, ONE NASTY BOSS. BEAT THE BOSS AND GET YOUR SHIP RATING UP TO UNLOCK THE NEXT.' },
   ]);
 }
 function coachResults(haul) {
   coach('results', [
-    { title: 'PAYDAY', t: 'YOUR ORE IS SOLD AND YOUR ALIEN BOUNTIES ADDED UP. COINS GO STRAIGHT TO YOUR WALLET: SPEND THEM IN THE CRATE BAY.' },
-    haul ? { title: 'HAUL CRATES', r: [W / 2 - 102, 222, 204, 26], side: 'above', t: 'CRATES YOU FOUND ON THE PLANET (CARRIERS, WRECKS, BOSSES). THEY ARE FREE TO OPEN.' } : null,
+    { title: 'PAYDAY!', t: haul ? 'ORE SOLD, BOUNTIES PAID, AND YOU FOUND CRATES! THOSE OPEN FREE. THEN SPEND THE COINS ON MORE. THAT IS THE LOOP. REPEAT UNTIL LEGENDARY.' : 'ORE SOLD, BOUNTIES PAID. SPEND THE COINS ON CRATES, GET STRONGER, LAND ON TOUGHER PLANETS. THAT IS THE LOOP. REPEAT UNTIL LEGENDARY.' },
   ]);
 }
 // planet tips that don't stop the action: a short card at the top, once each

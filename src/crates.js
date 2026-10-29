@@ -282,7 +282,7 @@ function buildReel() {
   }
   if (wr < 4 && R0() < 0.6) { for (let r = 6; r > wr; r--) if (pool[r].length) { items[WI + 1] = pool[r][R0.int(pool[r].length)]; break; } }
   if (R0() < 0.4) { for (let r = 5; r > wr; r--) if (pool[r].length) { items[WI - 1] = pool[r][R0.int(pool[r].length)]; break; } }
-  O.reel = { items, WI, CW: 56, pos: 0, target: WI * 56 + (R0() - 0.5) * 44, dur: 6.4, t: 0, last: -1 };
+  O.reel = { items, WI, CW: 56, pos: 0, target: WI * 56 + (R0() - 0.5) * 44, dur: (S.stats.crates || 0) <= 1 ? 4.3 : 6.4, t: 0, last: -1 };   // the very first spin is a bit quicker
 }
 function updateReel(dt) {
   const O = OPEN, rl = O.reel; rl.t += dt * (IN.down && rl.t > 0.3 ? 3 : 1);

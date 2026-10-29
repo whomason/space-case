@@ -193,42 +193,49 @@ function startRun(pi, opt = {}) {
 }
 // ---------- first-landing training ----------
 const TUT = [
-  { k: 'move', keys: ['W', 'A', 'S', 'D'], t: 'MOVE AROUND', tt: 'DRAG ON THE LEFT SIDE TO MOVE' },
-  { k: 'shoot', keys: ['CLICK'], t: 'AIM WITH THE MOUSE. HOLD CLICK TO SHOOT', tt: 'TOUCH THE RIGHT SIDE TO AIM AND SHOOT' },
-  { k: 'tool', keys: ['Q'], t: 'SWITCH TO YOUR MINING TOOL', tt: 'TAP SWAP FOR YOUR MINING TOOL' },
-  { k: 'mine', keys: ['CLICK'], t: 'WALK UP TO GLOWING ORE AND HOLD CLICK ON IT', tt: 'WALK UP TO GLOWING ORE AND HOLD ON IT' },
-  { k: 'boost', keys: ['SPACE'], t: 'BOOST FORWARD. IT RECHARGES OVER TIME', tt: 'TAP BOOST TO DASH FORWARD' },
-  { k: 'gadget', keys: ['F'], t: 'FIRE YOUR GADGET AT THE ALIENS. IT RECHARGES, SO USE IT OFTEN', tt: 'TAP GADGET TO USE YOUR GADGET' },
-  { k: 'weapon', keys: ['Q'], t: 'SWAP BACK TO YOUR WEAPON. KEYS 1 2 3 PICK A SLOT TOO', tt: 'TAP SWAP FOR YOUR WEAPON' },
-  { k: 'o2', keys: ['E'], t: 'YOUR O2 IS RUNNING NOW. GET BACK TO THE SHIP AND PRESS E BEFORE IT HITS ZERO', tt: 'YOUR O2 IS RUNNING NOW. GET BACK TO THE SHIP AND TAP USE BEFORE IT HITS ZERO' },
+  { k: 'blast', keys: ['WASD', 'CLICK'], t: 'AN ALIEN! MOVE WITH WASD, AIM WITH THE MOUSE, HOLD CLICK TO BLAST IT', tt: 'AN ALIEN! DRAG LEFT TO MOVE, TOUCH RIGHT TO AIM AND BLAST IT' },
+  { k: 'mine', keys: ['Q', 'CLICK'], t: 'NOW GET PAID. PRESS Q FOR YOUR DRILL, HOLD CLICK ON GLOWING ORE', tt: 'NOW GET PAID. TAP SWAP FOR YOUR DRILL, HOLD ON GLOWING ORE' },
+  { k: 'dash', keys: ['SPACE', 'F'], t: 'THEY ARE MAD NOW! GUN IS BACK. SPACE TO DASH THROUGH THEM, F FOR YOUR GADGET', tt: 'THEY ARE MAD NOW! GUN IS BACK. TAP BOOST TO DASH, GADGET TO BLOW THEM UP' },
+  { k: 'o2', keys: ['E'], t: 'YOUR O2 IS TICKING. GRAB MORE ORE, THEN PRESS E AT YOUR SHIP TO CASH IN', tt: 'YOUR O2 IS TICKING. GRAB MORE ORE, THEN TAP USE AT YOUR SHIP TO CASH IN' },
 ];
+const TUT_CHEER = ['NICE!', 'BOOM!', 'CLEAN!', 'PRO MOVE!', 'NAILED IT!'];
+// drop a few aliens near the player for the training to use
+function tutSpawn(R, n, weak) {
+  const w = R.w, pl = w.player, arch = R.p.alien[2][0];
+  for (let k = 0; k < n; k++) for (let tries = 0; tries < 12; tries++) {
+    const a = (k / Math.max(1, n)) * TAU + R0() * 0.8 + (n === 1 ? -0.3 : 0), d = n === 1 ? 70 : 85 + R0() * 25, x = pl.x + Math.cos(a) * d, y = pl.y + Math.sin(a) * d * 0.7;
+    if (!w.solid(x, y) && x > 30 && y > 30 && x < R.map.GW - 30 && y < R.map.GH - 30) { const e = spawnEnemy(w, arch, x, y); if (weak) { e.hp = e.maxHp = e.hp * 0.45; e.dmg *= 0.3; } w.fx.burst(x, y - 6, 12, { c: [e.col, '#fff'], sp: 70 }); break; }
+  }
+}
 function tutTick(dt, inp) {
   const R = RUN, T = R.tut; if (!T || R.state !== 'play') return; const pl = R.w.player; T.t += dt;
-  if (T.doneT !== undefined) { T.doneT += dt; if (T.doneT > 0.8) { T.i++; T.t = 0; T.doneT = undefined; if (T.i >= TUT.length) { R.tut = null; S.tutorial.planet = true; dirty(); banner('TRAINING DONE. FILL YOUR CARGO AND HUNT FOR CRATES', COL.gold); } } return; }
-  let ok = false;
-  switch (TUT[T.i].k) {
-    case 'move': if (T.lx !== undefined) T.dist += Math.hypot(pl.x - T.lx, pl.y - T.ly); T.lx = pl.x; T.ly = pl.y; ok = T.dist > 40; break;
-    case 'shoot': if (inp.fire && pl.mode === 'weapon') T.fireT += dt; ok = T.fireT > 0.6 || R.kills > 0; break;
-    case 'tool': ok = pl.mode === 'tool'; break;
-    case 'mine': ok = R.cargoN >= 2; break;
-    case 'boost': if (inp.boost) T.boosted = true; ok = !!T.boosted; break;
-    case 'gadget': if (inp.gadget) T.gad = true; ok = !!T.gad || !S.eq.gadget; break;
-    case 'weapon': ok = pl.mode === 'weapon'; break;
-    case 'o2': ok = T.t > 8; break;
+  if (T.doneT !== undefined) { T.doneT += dt; if (T.doneT > 0.8) { T.i++; T.t = 0; T.doneT = undefined; T.started = false; if (T.i >= TUT.length) { R.tut = null; S.tutorial.planet = true; dirty(); banner('TRAINING DONE! FILL YOUR CARGO, HUNT CRATES, FIND THE BOSS', COL.gold); } } return; }
+  const k = TUT[T.i].k;
+  if (!T.started) {
+    T.started = true; T.k0 = R.kills;
+    if (k === 'blast') tutSpawn(R, 1, true);
+    if (k === 'dash') { if (pl.mode !== 'weapon') setSlot(pl, R.w, 0); tutSpawn(R, 3, true); SND.play('bossroar'); shake(3); }
   }
-  if (ok) { T.doneT = 0; SND.play('win'); R.w.fx.text(pl.x, pl.y - 32, 'NICE!', COL.gold, { f: FB }); }
+  let ok = false;
+  switch (k) {
+    case 'blast': ok = R.kills > T.k0 || T.t > 20; break;
+    case 'mine': ok = R.cargoN >= 2; break;
+    case 'dash': if (inp.boost) T.boosted = true; if (inp.gadget) T.gad = true; ok = (T.boosted && (T.gad || !S.eq.gadget || R.kills >= T.k0 + 2)) || T.t > 14; break;
+    case 'o2': ok = T.t > 6; break;
+  }
+  if (ok) { T.doneT = 0; T.cheer = TUT_CHEER[T.i % TUT_CHEER.length]; SND.play('win'); R.w.fx.text(pl.x, pl.y - 32, T.cheer, COL.gold, { f: FB, sc: 2 }); shake(2); }
 }
 function drawTut(R) {
   const T = R.tut; if (!T || R.state !== 'play' || R.paused) return; const st = TUT[Math.min(T.i, TUT.length - 1)]; const done = T.doneT !== undefined;
   const msg = IN.touch ? st.tt : st.t; const lines = wrap(msg, 190, FB); const w = 270, h = 20 + lines.length * 9, x = W / 2 - w / 2, y = 38;
   const k = Math.min(1, T.t / 0.25); ctx.globalAlpha = done ? Math.max(0, 1 - T.doneT / 0.8) + 0.3 : k;
   panel(x, y, w, h, { bg: 'rgba(14,22,48,0.92)', bd: done ? COL.gold : COL.pink }); rect(x + 1, y + 1, w - 2, 9, 'rgba(30,39,73,0.95)');
-  text(`TRAINING ${Math.min(T.i + 1, TUT.length)}/${TUT.length}`, x + 6, y + 3, COL.pink, FS);
+  text(`BOLT: TRAINING ${Math.min(T.i + 1, TUT.length)}/${TUT.length}`, x + 6, y + 3, COL.cyan, FS);
   { const sx = x + w - 96, hov = inBox(sx - 2, y + 1, 30, 9); text('SKIP', sx, y + 3, hov ? COL.gold : COL.mute, FS); if (clickIn(sx - 2, y + 1, 30, 9)) { R.tut = null; S.tutorial.planet = true; dirty(); SND.play('click'); banner('TRAINING SKIPPED. GOOD LUCK OUT THERE', COL.gold); } }
   for (let i = 0; i < TUT.length; i++) rect(x + w - 8 - (TUT.length - i) * 7, y + 4, 5, 3, i < T.i || (i === T.i && done) ? COL.gold : COL.steel);
   if (!IN.touch) { let kx = x + 8; const press = Math.floor(T_NOW * 2) % 2 === 0; for (const kc of st.keys) kx += keycap(kx, y + 14 + (lines.length - 1) * 4, kc, press && !done) + 2; }
   lines.forEach((l, i) => text(l, IN.touch ? W / 2 : x + 74, y + 14 + i * 9, done ? COL.gold : COL.ink, FB, IN.touch ? 1 : 0));
-  if (done) textO('NICE!', x + w - 30, y + h - 12, COL.gold, '#000', FB, 1);
+  if (done) textO(T.cheer || 'NICE!', x + w - 34, y + h - 12, COL.gold, '#000', FB, 1);
   ctx.globalAlpha = 1;
   if (st.k === 'o2' && !done) { const a = Math.floor(T_NOW * 4) % 2; if (a) { ctx.strokeStyle = COL.gold; ctx.strokeRect(3.5, 17.5, 106, 14); } }
 }
@@ -406,7 +413,7 @@ function updateRun(dt) {
     // boss lair
     if (R.bossAvail && R.coop !== 'guest' && !w.boss && !R.bossBeaten && (Math.hypot(pl.x - map.lair.x, pl.y - map.lair.y) < 95 || (w.allies && w.allies.some(a => a && a.alive && Math.hypot(a.x - map.lair.x, a.y - map.lair.y) < 95)))) { spawnBoss(w, map.lair.x, map.lair.y); ptip('boss'); SND.play('bossroar'); SND.playSong('boss'); shake(6); banner(`${R.p.boss[0]}. HIT IT WHEN IT WINDS UP, PUNISH THE GLOWING CORE`, COL.coral); R.bossHit = false; }
     // spawns
-    R.spawnT -= dt * (R.tut ? (R.tut.i < 1 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
+    R.spawnT -= dt * (R.tut ? (R.tut.i < 3 ? 0 : 0.4) : 1) * (R.coop === 'guest' ? 0 : R.coop === 'host' ? 1.6 : 1);
     if (R.spawnT <= 0) {
       R.spawnT = Math.max(0.65, (R.pi <= 2 ? 2.9 : 2.5) - R.t * 0.018) * (w.boss ? 1.8 : 1) / (1 + 0.35 * (w.hiP || 0));
       if (w.ents.length < 42 + Math.round(14 * (w.hiP || 0))) {
@@ -441,7 +448,7 @@ function updateRun(dt) {
   if (IN.rdown && pl.W && pl.W.cls === 'sniper' && pl.mode === 'weapon') { lx = (IN.mx - W / 2) * 0.9; ly = (IN.my - H / 2) * 0.9; R.scope = true; } else R.scope = false;
   const tx = clamp(pl.x - W / 2 + lx, 0, map.GW - W), ty = clamp(pl.y - 12 - H / 2 + ly, 0, map.GH - H);
   R.cam.x = lerp(R.cam.x, tx, Math.min(1, dt * 6)); R.cam.y = lerp(R.cam.y, ty, Math.min(1, dt * 6));
-  if (R.msgT > 0) R.msgT -= dt;
+  if (R.msgT > 0 && !R.tut) R.msgT -= dt;   // banners wait until training is over
   if (kp('Escape') || kp('KeyP')) { R.paused = true; SND.play('click'); IN.kp.delete('Escape'); IN.kp.delete('KeyP'); }   // eat the key, or the pause menu would read it as resume
 }
 function updateExtract(dt, inp) {
@@ -697,7 +704,7 @@ function drawRunHUD(R) {
   const nCr = R.crates.length + R.choices; if (nCr) { miniCrate(W - 52, H - 14, R.haulTier); text('X' + nCr, W - 37, H - 11, COL.gold, FS); }
   drawEventHUD(R);
   // banner
-  if (R.msgT > 0 && R.msg) { const a = Math.min(1, R.msgT); ctx.globalAlpha = a; const lines = wrap(R.msg, 320); lines.forEach((l, i) => textO(l, W / 2, (R.tut ? 82 : 92) + i * 10, R.msgC, '#000', FB, 1)); ctx.globalAlpha = 1; }
+  if (R.msgT > 0 && R.msg && !R.tut) { const a = Math.min(1, R.msgT); ctx.globalAlpha = a; const lines = wrap(R.msg, 320); lines.forEach((l, i) => textO(l, W / 2, (R.tut ? 82 : 92) + i * 10, R.msgC, '#000', FB, 1)); ctx.globalAlpha = 1; }
   if (R.state === 'land' && R.st < 1.4) { ctx.globalAlpha = Math.max(0, 1 - R.st / 1.4); rect(0, 0, W, H, '#fff'); ctx.globalAlpha = 1; }
   if (R.state === 'leave') { ctx.globalAlpha = Math.min(1, R.st / 2.2); rect(0, 0, W, H, '#000'); ctx.globalAlpha = 1; }
   if (IN.touch) {
