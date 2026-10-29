@@ -61,7 +61,8 @@ async def main():
         await cX.close()
         # ---- B: brand new player picks a callsign on the prompt, then signs up
         B, eB = await boot(cB, None, 'B'); await B.wait_for_timeout(700)
-        ok('B gets callsign prompt', await B.evaluate('NAMEUI.open'))
+        ok('B gets a random callsign instead of a form in the way', not await B.evaluate('NAMEUI.open') and len(await B.evaluate('S.name')) >= 3, await B.evaluate('[NAMEUI.open, S.name]'))
+        await B.evaluate("openNameUI(false); nameEl().value = ''"); await B.wait_for_timeout(200)
         await B.keyboard.type('kai 7'); await B.keyboard.press('Enter'); await B.wait_for_timeout(300)
         ok('B local callsign', await B.evaluate("S.name") == 'KAI 7')
         await B.evaluate("netSignIn('kai@example.com', 'secret2', true)")

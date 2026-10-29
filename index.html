@@ -5363,7 +5363,7 @@ function drawNameUI(dt) {
   if (v) textO(v, W / 2, fy + 5, COL.ink, '#000', FB, 1, 2); else text(focused ? 'TYPE A NAME' : 'CLICK HERE TO TYPE', W / 2, fy + 9, COL.mute, FS, 1);
   if (focused && Math.floor(NAMEUI.t * 2.5) % 2 === 0) rect(W / 2 + (v ? textW(v, FB, 2) / 2 + 2 : 26), fy + 4, 2, 16, COL.cyan);
   if (inBox(fx, fy, fw, fh)) IN.cursor = 'text';
-  if (clickIn(fx, fy, fw, fh)) { try { el.focus({ preventScroll: true }); } catch (e) { } }
+  if (IN.pr && inBox(bx, by, bw, bh - 26) && document.activeElement !== el) { try { el.focus({ preventScroll: true }); } catch (e) { } }
   text(`${v.length}/12  LETTERS, NUMBERS, SPACES AND -`, W / 2, fy + fh + 4, COL.mute, FS, 1);
   if (NAMEUI.err) text(NAMEUI.err, W / 2, fy + fh + 13, COL.coral, FS, 1);
   if (v && NAMEUI.err && !nameProblem(v)) NAMEUI.err = '';
@@ -7013,7 +7013,7 @@ function drawCrateBay(dt) {
   if (BAY.upgrader && tier < 7) mods.push([`UPGRADER: ${Math.round(UPG_CHANCE[tier] * 100)}% BUMP, ${100 - Math.round(UPG_CHANCE[tier] * 100)}% BURN`, COL.pink]);
   mods.push([`DOUBLE OR NOTHING: ${donChance(0)}% ON COMMONS, LESS THE RARER IT IS`, COL.dim]);
   for (const [m, c] of mods) { if (yy > H - 12) break; text(m, RX + 6, yy, c, FS); yy += 8; }
-  coachBay();
+  coachBay(kind, tier);
 }
 function drawCoinMini(x, y, c = COL.gold) { x = Math.floor(x); y = Math.floor(y); rect(x + 1, y, 3, 5, c); rect(x, y + 1, 5, 3, c); px(x + 1, y + 1, c === COL.gold ? '#fff2c4' : c); }
 function drawBeam(cx, y0, y1, wd, c) {
@@ -7750,7 +7750,8 @@ function drawHub(dt) {
   if (flashing) { ctx.globalAlpha = 0.1 * Math.min(1, HUB.flashT) * (0.5 + 0.5 * Math.sin(T_NOW * 12)); rect(0, 0, W, H, fc); ctx.globalAlpha = 1; }
   if (LT !== null) { if (LT > 1.2) { ctx.globalAlpha = Math.min(1, (LT - 1.2) / 0.25); rect(0, 0, W, H, '#fafaff'); ctx.globalAlpha = 1; } textO(LT < 0.4 ? 'BOARDING' : LT < 0.75 ? 'ENGINES HOT' : 'LAUNCH!', W / 2 - 40, 34, COL.gold, '#000', FB, 1, 2); return; }
   if (!HUB.panel) drawHubTop();
-  if (!S.name && !S.nameAsked && !NAMEUI.open && !HUB.panel && !HUB.choice && T_NOW > 0.6) openNameUI(true);
+  if (!S.name && !S.nameAsked && !NAMEUI.open && !HUB.panel && !HUB.choice) { S.name = randomName(); S.nameAsked = true; dirty(); HUB.autoName = T_NOW; }
+  if (HUB.autoName && !COACH.on && T_NOW - HUB.autoName > 0.5) { toast(`YOU ARE ${S.name}. RENAME ANY TIME IN YOUR PROFILE`, COL.gold); HUB.autoName = 0; }
   if (!HUB.panel && !HUB.choice) { drawNav(); drawNextUp(); }
   else { ctx.globalAlpha = 0.35; drawNav(true); ctx.globalAlpha = 1; }
   if (HUB.panel) drawPanel();
@@ -10986,7 +10987,7 @@ function storeProfile(st) {
 
 // ===== META: analytics, crash logs, bug reports, legal pages, and the moderator stats screen =====
 // Analytics are our own (no outside trackers): a random id per browser, a few events, no personal info.
-const GAME_VER = '2026.10.28';
+const GAME_VER = '2026.10.29';
 const META = { q: [], sendT: 5, beatT: 60, sess: Math.random().toString(36).slice(2, 10), t0: Date.now(), act: 0, crashes: new Set(), on: false };
 // only talk to a real server (the website, or the local test server); never from a saved copy of the page
 META.on = (() => { try { return location.protocol === 'https:' || /^http:\/\/(localhost|127\.0\.0\.1)/.test(NET.url); } catch (e) { return false; } })();
@@ -11154,27 +11155,35 @@ function drawCoach(dt) {
   panel(bx, by, bw, bh, { bg: '#0e1630', bd: COL.gold, notch: true, notchCol: COL.pink });
   text(`TIP ${i + 1}/${q.steps.length}`, bx + 7, by + 5, COL.pink, FS); textO(st.title, bx + 7 + textW(`TIP ${i + 1}/${q.steps.length}`, FS) + 6, by + 4, COL.gold, '#000', FS);
   lines.forEach((l, j) => text(l, bx + 7, by + 15 + j * 8, COL.ink, FS));
-  const last = i === q.steps.length - 1, nb = last ? 'GOT IT' : 'NEXT';
-  const next = () => { C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; };
-  if (button(bx + bw - 54, by + bh - 17, 48, 13, nb, { kind: 'primary', font: FS }) || (COACH.t > 0.3 && (kp('Enter') || kp('Space')))) next();
+  const last = i === q.steps.length - 1, nb = st.btn || (last ? 'GOT IT' : 'NEXT'), nw = Math.max(48, textW(nb, FS) + 14);
+  const next = () => { C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; if (st.go) { COACH.on = false; st.go(); } };
+  if (st.go && Math.floor(T_NOW * 3) % 2) { ctx.globalAlpha = 0.35; rect(bx + bw - nw - 8, by + bh - 19, nw + 4, 17, COL.gold); ctx.globalAlpha = 1; }
+  if (button(bx + bw - nw - 6, by + bh - 17, nw, 13, nb, { kind: 'primary', font: FS }) || (COACH.t > 0.3 && (kp('Enter') || kp('Space')))) next();
   if (!last && button(bx + 7, by + bh - 17, 56, 13, 'SKIP TIPS', { font: FS })) { C.done[q.group] = q.steps.length; delete C.replay[q.group]; dirty(); SND.play('click'); }
   IN.used = true;   // nothing underneath reacts to this frame's click
 }
 // ---------- the tours ----------
 function coachHub(LX, LY) {
+  // first visit: one tip, straight to the first crate. The station tour waits until they have opened one.
+  if ((S.stats.crates || 0) === 0) return coach('hubstart', [
+    { title: 'WELCOME, PILOT', r: [318, 28, 156, 50], t: 'YOUR FIRST CRATE IS WAITING, AND IT IS ALWAYS RARE OR BETTER. OPEN IT, THEN TAKE YOUR NEW GEAR TO A PLANET.', btn: 'OPEN MY CRATE', go: () => openStation('crates') },
+  ]);
   coach('hub', [
     { title: 'WELCOME, PILOT', t: 'OPEN CRATES FOR GEAR, LAND ON PLANETS TO MINE ORE AND FIGHT ALIENS, THEN SPEND THE COINS ON BETTER CRATES. THAT IS THE WHOLE LOOP.' },
     { title: 'YOUR NEXT STEP', r: [318, 28, 156, 50], t: 'THIS BOX ALWAYS SAYS WHAT TO DO NEXT, AND PAYS COINS WHEN YOU DO IT. CLICK GO TO JUMP STRAIGHT THERE.' },
     { title: 'THE STATION', r: [6, 26, 170, 104], t: 'LAUNCH FLIES TO A PLANET. CRATES IS WHERE YOU SPEND COINS. LOCKER IS WHERE YOU EQUIP WHAT YOU FIND. MORE ROOMS OPEN AS YOU PLAY.' },
   ]);
 }
-function coachBay() {
+function coachBay(kind, tier) {
+  if ((S.stats.crates || 0) === 0 && kind) return coach('baystart', [
+    { title: 'OPEN IT', r: [128, 184, 46, 28], side: 'above', t: 'ONE CLICK. YOUR FIRST CRATE IS ALWAYS RARE OR BETTER.', btn: 'OPEN!', go: () => { if (S.coins >= crateCost(kind, tier)) startOpen(kind, tier, 1); } },
+  ]);
   coach('bay', [
     { title: 'THE CRATE BAY', r: [128, 26, 190, 150], t: 'SPEND COINS HERE ON CRATES. EVERY CRATE HOLDS ONE ITEM. THE SILHOUETTES ARE THE BEST THINGS INSIDE THIS ONE.' },
     { title: 'CRATE TYPES', r: [4, 24, 120, 120], side: 'right', t: 'EACH TYPE DROPS DIFFERENT GEAR. WEAPONS FIGHT, ARMOR KEEPS YOU ALIVE, SHIP PARTS RAISE YOUR SHIP RATING SO YOU CAN REACH NEW PLANETS, MINING TOOLS BREAK BETTER ORE.' },
     { title: 'TIERS', r: [322, 24, 154, 134], side: 'left', t: 'BETTER TIERS COST MORE BUT ROLL RARER ITEMS, AND THE ITEM GETS A HIGHER GRADE: STRONGER STATS. NEW TIERS UNLOCK AS YOU REACH NEW PLANETS.' },
     { title: 'RARITY ODDS', r: [322, 157, 154, 70], side: 'left', t: 'YOUR CHANCE OF EACH RARITY, FROM COMMON (GREY) UP TO COSMIC (RAINBOW). RARER GEAR IS STRONGER AND LOOKS COOLER.' },
-    { title: 'OPEN', r: [128, 184, 190, 28], side: 'above', t: (S.stats.crates || 0) === 0 ? 'OPEN ONE NOW. YOUR FIRST CRATE IS ALWAYS RARE OR BETTER. EARN MORE COINS ON PLANETS: MINE ORE AND DEFEAT ALIENS.' : 'OPEN ONE OR SEVERAL AT ONCE. EARN MORE COINS ON PLANETS: MINE ORE AND DEFEAT ALIENS.' },
+    { title: 'OPEN', r: [128, 184, 190, 28], side: 'above', t: 'OPEN ONE OR SEVERAL AT ONCE. EARN MORE COINS ON PLANETS: MINE ORE FIRST, ALIENS PAY A LITTLE TOO.' },
     { title: 'UPGRADER (OPTIONAL)', r: [130, 218, 186, 20], side: 'above', t: 'A GAMBLE: TICK IT AND YOUR CRATE MIGHT JUMP UP A TIER. IF IT MISSES, THE CRATE BURNS AND THE COINS ARE GONE.' },
   ]);
 }
@@ -11182,7 +11191,9 @@ function coachReveal(single) {
   coach('reveal', [
     { title: 'YOUR NEW ITEM', r: [6, 20, 284, 120], side: 'below', t: 'ITS NAME, RARITY AND STATS. THE TAG UNDER THE STATS TELLS YOU IF IT BEATS WHAT YOU HAVE EQUIPPED.' },
     { title: 'KEEP OR SELL', r: [296, 150, 176, 20], side: 'left', t: single ? 'COLLECT KEEPS IT. SELL TURNS IT INTO COINS RIGHT AWAY.' : 'SELL TURNS IT INTO COINS RIGHT AWAY. ANYTHING YOU DO NOT SELL IS KEPT.' },
-    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS ARE 45%, A MYTHIC IS ONLY 1%.' },
+  ]);
+  if ((S.stats.crates || 0) >= 3) coach('reveal2', [
+    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS WIN 45% OF THE TIME. THE RARER THE ITEM, THE WORSE THE ODDS.' },
   ]);
 }
 function coachLocker() {
@@ -11631,7 +11642,8 @@ function ttLogoPos() {
 function drawTitle(dt) {
   if (!TT.ready) { ttInit(); rect(0, 0, W, H, '#000'); return; }
   TT.t += dt; const t = TT.t, P = TT.P;
-  const skip = t < TT_INTRO && (IN.pr || kp('Enter') || kp('Space') || kp('Escape'));
+  const go = IN.pr || kp('Enter') || kp('Space');   // one click starts the game, even during the intro
+  const skip = t < TT_INTRO && (go || kp('Escape'));
   if (skip) { TT.t = TT_INTRO; IN.pr = false; for (let i = 0; i < LOGO_N; i++) TT['landed' + i] = true; }
   // ---- 1. hyperspace
   if (t < 1.15) {
@@ -11702,7 +11714,7 @@ function drawTitle(dt) {
     if (TT.leave > 0.5) { TT.leave = -1; TT.ready = false; flash(0.8); goHub(); }
     return;
   }
-  if (!skip && t >= TT_INTRO && (IN.pr || kp('Enter') || kp('Space'))) { SND.unlock(); SND.setMute(S.settings.mute); SND.setMusic(S.settings.music); SND.play('warp'); TT.leave = 0; }
+  if (TT.leave < 0 && (skip ? go : t >= TT_INTRO && go)) { firstTime('start'); SND.unlock(); SND.setMute(S.settings.mute); SND.setMusic(S.settings.music); SND.play('warp'); TT.leave = 0; }
 }
 function ttLogo(t) {
   const xs = ttLogoPos(), letters = TT.word1.concat(TT.word2), base = 22;

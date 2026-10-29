@@ -208,7 +208,7 @@ function render() {
   const actS = [{ name: 'Active players', color: s1, values: days.map(x => x.active) }, { name: 'New players', color: s2, values: days.map(x => x.new) }];
   const hrs = d.hours || []; const hrLab = hrs.map((_, i) => i);
   const lenRows = [['Under 2 min', L.u2], ['2–5 min', L.m2_5], ['5–15 min', L.m5_15], ['15–30 min', L.m15_30], ['30–60 min', L.m30_60], ['Over 1 hour', L.m60]];
-  const fun = [['Opened the game', F.opened], ['Opened a crate', F.crate], ['Equipped an item', F.equip], ['Finished a landing', F.land], ['Beat a boss', F.boss], ['Made an account', F.signup]];
+  const fun = [['Opened the game', F.opened], ['Clicked start', F.start], ['Opened a crate', F.crate], ['Equipped an item', F.equip], ['Finished a landing', F.land], ['Beat a boss', F.boss], ['Made an account', F.signup]];
   const touch = D.touch || 0, desk = D.desktop || 0;
   $('#app').innerHTML = `
   <header>

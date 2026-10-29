@@ -49,27 +49,35 @@ function drawCoach(dt) {
   panel(bx, by, bw, bh, { bg: '#0e1630', bd: COL.gold, notch: true, notchCol: COL.pink });
   text(`TIP ${i + 1}/${q.steps.length}`, bx + 7, by + 5, COL.pink, FS); textO(st.title, bx + 7 + textW(`TIP ${i + 1}/${q.steps.length}`, FS) + 6, by + 4, COL.gold, '#000', FS);
   lines.forEach((l, j) => text(l, bx + 7, by + 15 + j * 8, COL.ink, FS));
-  const last = i === q.steps.length - 1, nb = last ? 'GOT IT' : 'NEXT';
-  const next = () => { C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; };
-  if (button(bx + bw - 54, by + bh - 17, 48, 13, nb, { kind: 'primary', font: FS }) || (COACH.t > 0.3 && (kp('Enter') || kp('Space')))) next();
+  const last = i === q.steps.length - 1, nb = st.btn || (last ? 'GOT IT' : 'NEXT'), nw = Math.max(48, textW(nb, FS) + 14);
+  const next = () => { C.done[q.group] = i + 1; if (C.done[q.group] >= q.steps.length) delete C.replay[q.group]; dirty(); SND.play('click'); IN.kp.clear(); IN.pr = false; if (st.go) { COACH.on = false; st.go(); } };
+  if (st.go && Math.floor(T_NOW * 3) % 2) { ctx.globalAlpha = 0.35; rect(bx + bw - nw - 8, by + bh - 19, nw + 4, 17, COL.gold); ctx.globalAlpha = 1; }
+  if (button(bx + bw - nw - 6, by + bh - 17, nw, 13, nb, { kind: 'primary', font: FS }) || (COACH.t > 0.3 && (kp('Enter') || kp('Space')))) next();
   if (!last && button(bx + 7, by + bh - 17, 56, 13, 'SKIP TIPS', { font: FS })) { C.done[q.group] = q.steps.length; delete C.replay[q.group]; dirty(); SND.play('click'); }
   IN.used = true;   // nothing underneath reacts to this frame's click
 }
 // ---------- the tours ----------
 function coachHub(LX, LY) {
+  // first visit: one tip, straight to the first crate. The station tour waits until they have opened one.
+  if ((S.stats.crates || 0) === 0) return coach('hubstart', [
+    { title: 'WELCOME, PILOT', r: [318, 28, 156, 50], t: 'YOUR FIRST CRATE IS WAITING, AND IT IS ALWAYS RARE OR BETTER. OPEN IT, THEN TAKE YOUR NEW GEAR TO A PLANET.', btn: 'OPEN MY CRATE', go: () => openStation('crates') },
+  ]);
   coach('hub', [
     { title: 'WELCOME, PILOT', t: 'OPEN CRATES FOR GEAR, LAND ON PLANETS TO MINE ORE AND FIGHT ALIENS, THEN SPEND THE COINS ON BETTER CRATES. THAT IS THE WHOLE LOOP.' },
     { title: 'YOUR NEXT STEP', r: [318, 28, 156, 50], t: 'THIS BOX ALWAYS SAYS WHAT TO DO NEXT, AND PAYS COINS WHEN YOU DO IT. CLICK GO TO JUMP STRAIGHT THERE.' },
     { title: 'THE STATION', r: [6, 26, 170, 104], t: 'LAUNCH FLIES TO A PLANET. CRATES IS WHERE YOU SPEND COINS. LOCKER IS WHERE YOU EQUIP WHAT YOU FIND. MORE ROOMS OPEN AS YOU PLAY.' },
   ]);
 }
-function coachBay() {
+function coachBay(kind, tier) {
+  if ((S.stats.crates || 0) === 0 && kind) return coach('baystart', [
+    { title: 'OPEN IT', r: [128, 184, 46, 28], side: 'above', t: 'ONE CLICK. YOUR FIRST CRATE IS ALWAYS RARE OR BETTER.', btn: 'OPEN!', go: () => { if (S.coins >= crateCost(kind, tier)) startOpen(kind, tier, 1); } },
+  ]);
   coach('bay', [
     { title: 'THE CRATE BAY', r: [128, 26, 190, 150], t: 'SPEND COINS HERE ON CRATES. EVERY CRATE HOLDS ONE ITEM. THE SILHOUETTES ARE THE BEST THINGS INSIDE THIS ONE.' },
     { title: 'CRATE TYPES', r: [4, 24, 120, 120], side: 'right', t: 'EACH TYPE DROPS DIFFERENT GEAR. WEAPONS FIGHT, ARMOR KEEPS YOU ALIVE, SHIP PARTS RAISE YOUR SHIP RATING SO YOU CAN REACH NEW PLANETS, MINING TOOLS BREAK BETTER ORE.' },
     { title: 'TIERS', r: [322, 24, 154, 134], side: 'left', t: 'BETTER TIERS COST MORE BUT ROLL RARER ITEMS, AND THE ITEM GETS A HIGHER GRADE: STRONGER STATS. NEW TIERS UNLOCK AS YOU REACH NEW PLANETS.' },
     { title: 'RARITY ODDS', r: [322, 157, 154, 70], side: 'left', t: 'YOUR CHANCE OF EACH RARITY, FROM COMMON (GREY) UP TO COSMIC (RAINBOW). RARER GEAR IS STRONGER AND LOOKS COOLER.' },
-    { title: 'OPEN', r: [128, 184, 190, 28], side: 'above', t: (S.stats.crates || 0) === 0 ? 'OPEN ONE NOW. YOUR FIRST CRATE IS ALWAYS RARE OR BETTER. EARN MORE COINS ON PLANETS: MINE ORE AND DEFEAT ALIENS.' : 'OPEN ONE OR SEVERAL AT ONCE. EARN MORE COINS ON PLANETS: MINE ORE AND DEFEAT ALIENS.' },
+    { title: 'OPEN', r: [128, 184, 190, 28], side: 'above', t: 'OPEN ONE OR SEVERAL AT ONCE. EARN MORE COINS ON PLANETS: MINE ORE FIRST, ALIENS PAY A LITTLE TOO.' },
     { title: 'UPGRADER (OPTIONAL)', r: [130, 218, 186, 20], side: 'above', t: 'A GAMBLE: TICK IT AND YOUR CRATE MIGHT JUMP UP A TIER. IF IT MISSES, THE CRATE BURNS AND THE COINS ARE GONE.' },
   ]);
 }
@@ -77,7 +85,9 @@ function coachReveal(single) {
   coach('reveal', [
     { title: 'YOUR NEW ITEM', r: [6, 20, 284, 120], side: 'below', t: 'ITS NAME, RARITY AND STATS. THE TAG UNDER THE STATS TELLS YOU IF IT BEATS WHAT YOU HAVE EQUIPPED.' },
     { title: 'KEEP OR SELL', r: [296, 150, 176, 20], side: 'left', t: single ? 'COLLECT KEEPS IT. SELL TURNS IT INTO COINS RIGHT AWAY.' : 'SELL TURNS IT INTO COINS RIGHT AWAY. ANYTHING YOU DO NOT SELL IS KEPT.' },
-    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS ARE 45%, A MYTHIC IS ONLY 1%.' },
+  ]);
+  if ((S.stats.crates || 0) >= 3) coach('reveal2', [
+    { title: 'DOUBLE OR NOTHING', r: [296, 174, 176, 20], side: 'left', t: 'A GAMBLE: WIN AND THE ITEM BECOMES THE NEXT RARITY UP. LOSE AND IT IS GONE. COMMONS WIN 45% OF THE TIME. THE RARER THE ITEM, THE WORSE THE ODDS.' },
   ]);
 }
 function coachLocker() {

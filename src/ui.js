@@ -146,7 +146,7 @@ function drawNameUI(dt) {
   if (v) textO(v, W / 2, fy + 5, COL.ink, '#000', FB, 1, 2); else text(focused ? 'TYPE A NAME' : 'CLICK HERE TO TYPE', W / 2, fy + 9, COL.mute, FS, 1);
   if (focused && Math.floor(NAMEUI.t * 2.5) % 2 === 0) rect(W / 2 + (v ? textW(v, FB, 2) / 2 + 2 : 26), fy + 4, 2, 16, COL.cyan);
   if (inBox(fx, fy, fw, fh)) IN.cursor = 'text';
-  if (clickIn(fx, fy, fw, fh)) { try { el.focus({ preventScroll: true }); } catch (e) { } }
+  if (IN.pr && inBox(bx, by, bw, bh - 26) && document.activeElement !== el) { try { el.focus({ preventScroll: true }); } catch (e) { } }
   text(`${v.length}/12  LETTERS, NUMBERS, SPACES AND -`, W / 2, fy + fh + 4, COL.mute, FS, 1);
   if (NAMEUI.err) text(NAMEUI.err, W / 2, fy + fh + 13, COL.coral, FS, 1);
   if (v && NAMEUI.err && !nameProblem(v)) NAMEUI.err = '';

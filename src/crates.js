@@ -142,7 +142,7 @@ function drawCrateBay(dt) {
   if (BAY.upgrader && tier < 7) mods.push([`UPGRADER: ${Math.round(UPG_CHANCE[tier] * 100)}% BUMP, ${100 - Math.round(UPG_CHANCE[tier] * 100)}% BURN`, COL.pink]);
   mods.push([`DOUBLE OR NOTHING: ${donChance(0)}% ON COMMONS, LESS THE RARER IT IS`, COL.dim]);
   for (const [m, c] of mods) { if (yy > H - 12) break; text(m, RX + 6, yy, c, FS); yy += 8; }
-  coachBay();
+  coachBay(kind, tier);
 }
 function drawCoinMini(x, y, c = COL.gold) { x = Math.floor(x); y = Math.floor(y); rect(x + 1, y, 3, 5, c); rect(x, y + 1, 5, 3, c); px(x + 1, y + 1, c === COL.gold ? '#fff2c4' : c); }
 function drawBeam(cx, y0, y1, wd, c) {

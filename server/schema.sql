@@ -1873,6 +1873,7 @@ begin
       group by g.day) c),
     'funnel', (select jsonb_build_object(
       'opened', (select count(*) from public.devices where first_at >= since),
+      'start', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'start' and at >= since),
       'crate', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'crate' and at >= since),
       'equip', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'equip' and at >= since),
       'land', (select count(distinct device) from public.events where kind = 'first' and data ->> 'what' = 'land' and at >= since),
